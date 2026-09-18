@@ -1,27 +1,33 @@
 package com.example.mikayala.ui.main
 
-import com.example.mikayala.data.DataRepository
-import junit.framework.TestCase.assertEquals
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.test.runTest
+import com.example.mikayala.data.model.CoupleSpaceEntity
+import com.example.mikayala.data.model.UserSettingsEntity
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class MainScreenViewModelTest {
-  @Test
-  fun uiState_initiallyLoading() = runTest {
-    val viewModel = MainScreenViewModel(FakeMyModelRepository())
-    assertEquals(viewModel.uiState.first(), MainScreenUiState.Loading)
-  }
+class CoupleSpaceEntityTest {
+    @Test
+    fun coupleSpace_defaultStatus_isNone() {
+        val couple = CoupleSpaceEntity()
+        assertEquals("none", couple.status)
+        assertFalse(couple.isPaired)
+        assertFalse(couple.isActive)
+    }
 
-  @Test
-  fun uiState_onItemSaved_isDisplayed() = runTest {
-    val viewModel = MainScreenViewModel(FakeMyModelRepository())
-    assertEquals(viewModel.uiState.first(), MainScreenUiState.Loading)
-  }
-}
+    @Test
+    fun coupleSpace_pairedStatus_isPairedTrue() {
+        val couple = CoupleSpaceEntity(status = "paired", isPaired = true, isActive = true)
+        assertEquals("paired", couple.status)
+        assertTrue(couple.isPaired)
+        assertTrue(couple.isActive)
+    }
 
-private class FakeMyModelRepository : DataRepository {
-  override val data: Flow<List<String>> = flow { emit(listOf("Sample")) }
+    @Test
+    fun userSettings_defaultHasLocalPassword_isFalse() {
+        val settings = UserSettingsEntity()
+        assertFalse(settings.hasLocalPassword)
+        assertEquals("", settings.pinCode)
+    }
 }

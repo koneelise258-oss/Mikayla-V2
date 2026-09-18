@@ -62,8 +62,8 @@ fun MainDashboardScreen(
     val userSettings by repository.userSettings.collectAsState()
 
     // Background Realtime Sync for Supabase (Messages, Shared Vault, Call Signals)
-    LaunchedEffect(coupleSpace.pairingCode) {
-        if (coupleSpace.pairingCode.isNotEmpty()) {
+    LaunchedEffect(coupleSpace.pairingCode, coupleSpace.isPaired) {
+        if (coupleSpace.pairingCode.isNotEmpty() && coupleSpace.isPaired) {
             while (true) {
                 try {
                     repository.syncWithSupabase()

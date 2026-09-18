@@ -36,9 +36,35 @@ fun SecurityLockScreen(
 ) {
     val context = LocalContext.current
     val settings by repository.userSettings.collectAsState()
+    val coupleSpace by repository.activeCoupleSpace.collectAsState()
 
     var enteredPin by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
+
+    fun triggerBiometricAuth() {
+        if (!coupleSpace.isPaired) {
+            Toast.makeText(context, "Espace non jumelé", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!settings.hasLocalPassword || settings.pinCode.isEmpty()) {
+            Toast.makeText(context, "Veuillez d'abord configurer votre mot de passe", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!settings.biometricEnabled) {
+            Toast.makeText(context, "Biométrie désactivée dans les réglages", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        com.example.mikayala.util.BiometricHelper.authenticate(
+            context = context,
+            onSuccess = {
+                onUnlockSuccess()
+            },
+            onError = { errMsg ->
+                Toast.makeText(context, errMsg, Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 
     // Concentric ripple animation for biometric fingerprint scanner
     val infiniteTransition = rememberInfiniteTransition(label = "biometric_ripple")
@@ -53,11 +79,15 @@ fun SecurityLockScreen(
     )
 
     fun handlePinDigit(digit: String) {
+        if (!settings.hasLocalPassword || settings.pinCode.isEmpty()) {
+            Toast.makeText(context, "Aucun mot de passe configuré", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (enteredPin.length < 4) {
             val newPin = enteredPin + digit
             enteredPin = newPin
             if (newPin.length == 4) {
-                if (newPin == settings.fakePinCode) {
+                if (settings.fakePinCode.isNotEmpty() && newPin == settings.fakePinCode) {
                     enteredPin = ""
                     onDecoyTriggered()
                 } else if (newPin == settings.pinCode) {
@@ -136,7 +166,7 @@ fun SecurityLockScreen(
                     )
                 )
                 .clickable {
-                    onUnlockSuccess()
+                    triggerBiometricAuth()
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -197,7 +227,7 @@ fun SecurityLockScreen(
                                     modifier = Modifier
                                         .size(64.dp)
                                         .clip(CircleShape)
-                                        .clickable { onUnlockSuccess() },
+                                        .clickable { triggerBiometricAuth() },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(

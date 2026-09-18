@@ -195,7 +195,13 @@ class SupabaseService(
     suspend fun getCoupleSpaceForUser(userId: String): JSONObject? = withContext(Dispatchers.IO) {
         if (!isConfigured() || userId.isEmpty()) return@withContext null
         try {
-            var res = executeGet("/rest/v1/couples?partner_1_id=eq.$userId")
+            var res = executeGet("/rest/v1/couples?user1_id=eq.$userId")
+            if (res == null || res == "[]") {
+                res = executeGet("/rest/v1/couples?user2_id=eq.$userId")
+            }
+            if (res == null || res == "[]") {
+                res = executeGet("/rest/v1/couples?partner_1_id=eq.$userId")
+            }
             if (res == null || res == "[]") {
                 res = executeGet("/rest/v1/couples?partner_2_id=eq.$userId")
             }

@@ -29,6 +29,7 @@ enum class AppNavigationState {
     SPLASH,
     AUTH,
     ONBOARDING,
+    SET_FIRST_PASSWORD,
     LOCK,
     DECOY_CALCULATOR,
     MAIN_APP,
@@ -110,10 +111,23 @@ class MainActivity : ComponentActivity() {
                             AppNavigationState.SPLASH -> {
                                 SplashScreen(
                                     onSplashFinished = {
-                                        if (repository.getCurrentUserId().isEmpty()) {
-                                            navigationState = AppNavigationState.AUTH
-                                        } else {
-                                            navigationState = AppNavigationState.LOCK
+                                        lifecycleScope.launch {
+                                            if (repository.getCurrentUserId().isEmpty()) {
+                                                navigationState = AppNavigationState.AUTH
+                                            } else {
+                                                repository.findExistingCoupleSpace()
+                                                val coupleSpace = repository.activeCoupleSpace.value
+                                                val userSettings = repository.userSettings.value
+                                                if (coupleSpace.isPaired) {
+                                                    if (!userSettings.hasLocalPassword) {
+                                                        navigationState = AppNavigationState.SET_FIRST_PASSWORD
+                                                    } else {
+                                                        navigationState = AppNavigationState.LOCK
+                                                    }
+                                                } else {
+                                                    navigationState = AppNavigationState.ONBOARDING
+                                                }
+                                            }
                                         }
                                     }
                                 )
@@ -125,12 +139,25 @@ class MainActivity : ComponentActivity() {
                                         lifecycleScope.launch {
                                             repository.findExistingCoupleSpace()
                                             val coupleSpace = repository.activeCoupleSpace.value
-                                            if (coupleSpace.pairingCode.isNotEmpty()) {
-                                                navigationState = AppNavigationState.MAIN_APP
+                                            val userSettings = repository.userSettings.value
+                                            if (coupleSpace.isPaired) {
+                                                if (!userSettings.hasLocalPassword) {
+                                                    navigationState = AppNavigationState.SET_FIRST_PASSWORD
+                                                } else {
+                                                    navigationState = AppNavigationState.LOCK
+                                                }
                                             } else {
                                                 navigationState = AppNavigationState.ONBOARDING
                                             }
                                         }
+                                    }
+                                )
+                            }
+                            AppNavigationState.SET_FIRST_PASSWORD -> {
+                                SetFirstPasswordScreen(
+                                    repository = repository,
+                                    onPasswordSet = {
+                                        navigationState = AppNavigationState.MAIN_APP
                                     }
                                 )
                             }
@@ -143,7 +170,7 @@ class MainActivity : ComponentActivity() {
                                             val coupleSpace = repository.activeCoupleSpace.value
                                             if (repository.getCurrentUserId().isEmpty()) {
                                                 navigationState = AppNavigationState.AUTH
-                                            } else if (coupleSpace.pairingCode.isEmpty()) {
+                                            } else if (!coupleSpace.isPaired) {
                                                 navigationState = AppNavigationState.ONBOARDING
                                             } else {
                                                 navigationState = AppNavigationState.MAIN_APP
@@ -174,11 +201,16 @@ class MainActivity : ComponentActivity() {
                                 OnboardingScreen(
                                     repository = repository,
                                     onCompleteOnboarding = {
-                                        navigationState = AppNavigationState.MAIN_APP
+                                        val userSettings = repository.userSettings.value
+                                        if (!userSettings.hasLocalPassword) {
+                                            navigationState = AppNavigationState.SET_FIRST_PASSWORD
+                                        } else {
+                                            navigationState = AppNavigationState.MAIN_APP
+                                        }
                                     },
-                                    onBackToApp = {
-                                        navigationState = AppNavigationState.MAIN_APP
-                                    }
+                                    onBackToApp = if (repository.activeCoupleSpace.value.isPaired) {
+                                        { navigationState = AppNavigationState.MAIN_APP }
+                                    } else null
                                 )
                             }
                         }

@@ -85,7 +85,7 @@ fun OnboardingScreen(
     var currentStep by remember {
         mutableStateOf(
             when {
-                coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isActive -> OnboardingStep.CREATE_SPACE
+                coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isPaired -> OnboardingStep.CREATE_SPACE
                 initialStepStr == "create" -> OnboardingStep.CREATE_SPACE
                 initialStepStr == "join" -> OnboardingStep.JOIN_SPACE
                 else -> OnboardingStep.LANDING
@@ -97,15 +97,15 @@ fun OnboardingScreen(
     var createName by remember { mutableStateOf(userSettings.displayName.ifEmpty { "Partenaire 1" }) }
     var selectedAvatarIndex by remember { mutableIntStateOf(0) }
     var generatedCode by remember {
-        mutableStateOf("")
+        mutableStateOf(if (coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isPaired) coupleSpace.pairingCode else "")
     }
     var isCreatingSpace by remember { mutableStateOf(false) }
-    var isWaitingPartner by remember { mutableStateOf(coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isActive) }
-    var isPartnerConnected by remember { mutableStateOf(coupleSpace.pairingCode.isNotEmpty() && coupleSpace.isActive) }
+    var isWaitingPartner by remember { mutableStateOf(coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isPaired) }
+    var isPartnerConnected by remember { mutableStateOf(coupleSpace.pairingCode.isNotEmpty() && coupleSpace.isPaired) }
 
     // Init code if already waiting
     LaunchedEffect(Unit) {
-        if (coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isActive) {
+        if (coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isPaired) {
             generatedCode = coupleSpace.pairingCode
         }
     }

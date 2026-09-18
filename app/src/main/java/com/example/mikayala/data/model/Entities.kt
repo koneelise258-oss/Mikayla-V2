@@ -6,6 +6,8 @@ import androidx.compose.runtime.Immutable
 data class CoupleSpaceEntity(
     val id: String = "couple_main",
     val pairingCode: String = "",
+    val status: String = "none", // "none", "waiting", "paired"
+    val isPaired: Boolean = false,
     val partner1Id: String = "me",
     val partner2Id: String = "",
     val partner1Name: String = "Moi",
@@ -175,8 +177,9 @@ data class UserSettingsEntity(
     val partnerAvatarUrl: String = "",
     val partnerBio: String = "",
     val biometricEnabled: Boolean = true,
-    val pinCode: String = "1234",
-    val fakePinCode: String = "0000",
+    val hasLocalPassword: Boolean = false,
+    val pinCode: String = "",
+    val fakePinCode: String = "",
     val lockTimeoutSeconds: Int = 0, // 0 = Immédiat, 60 = 1 min, 300 = 5 min, -1 = Désactivé
     val screenBlurOnSwitch: Boolean = true,
     val antiScreenshotEnabled: Boolean = true,
