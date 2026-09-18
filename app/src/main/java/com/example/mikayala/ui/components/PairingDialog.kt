@@ -26,6 +26,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
+import com.example.mikayala.util.QRCodeGenerator
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -302,32 +305,29 @@ private fun TabButton(
 
 @Composable
 private fun SimulatedQrCanvas(code: String) {
-    Canvas(
+    val qrBitmap = remember(code) {
+        QRCodeGenerator.generateQRCode(code, 512)
+    }
+
+    Box(
         modifier = Modifier
             .size(160.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .padding(14.dp)
+            .background(androidx.compose.ui.graphics.Color.White)
+            .padding(10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        val rows = 12
-        val cols = 12
-        val cellW = size.width / cols
-        val cellH = size.height / rows
-
-        for (r in 0 until rows) {
-            for (c in 0 until cols) {
-                val isCorner = (r < 3 && c < 3) || (r < 3 && c >= cols - 3) || (r >= rows - 3 && c < 3)
-                val isFilled = isCorner || ((r + c + code.hashCode()) % 3 == 0)
-
-                if (isFilled) {
-                    drawRoundRect(
-                        color = Color(0xFF0E0B16),
-                        topLeft = Offset(c * cellW, r * cellH),
-                        size = Size(cellW * 0.9f, cellH * 0.9f),
-                        cornerRadius = CornerRadius(2.dp.toPx())
-                    )
-                }
-            }
+        if (qrBitmap != null) {
+            Image(
+                bitmap = qrBitmap.asImageBitmap(),
+                contentDescription = "QR Code Jumelage",
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            CircularProgressIndicator(
+                color = AccentRose,
+                modifier = Modifier.size(32.dp)
+            )
         }
     }
 }

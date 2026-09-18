@@ -176,12 +176,9 @@ class SupabaseService(
     }
 
     suspend fun getCoupleSpace(pairingCode: String): JSONObject? = withContext(Dispatchers.IO) {
-        if (!isConfigured()) return@withContext null
+        if (!isConfigured() || pairingCode.isEmpty()) return@withContext null
         try {
-            var existing = executeGet("/rest/v1/couples?pairing_code=eq.$pairingCode")
-            if (existing == null || existing == "[]") {
-                existing = executeGet("/rest/v1/couple_spaces?pairing_code=eq.$pairingCode")
-            }
+            val existing = executeGet("/rest/v1/couples?pairing_code=eq.$pairingCode")
             if (existing != null && existing != "[]") {
                 val array = JSONArray(existing)
                 if (array.length() > 0) return@withContext array.getJSONObject(0)
@@ -199,18 +196,6 @@ class SupabaseService(
             if (res == null || res == "[]") {
                 res = executeGet("/rest/v1/couples?user2_id=eq.$userId")
             }
-            if (res == null || res == "[]") {
-                res = executeGet("/rest/v1/couples?partner_1_id=eq.$userId")
-            }
-            if (res == null || res == "[]") {
-                res = executeGet("/rest/v1/couples?partner_2_id=eq.$userId")
-            }
-            if (res == null || res == "[]") {
-                res = executeGet("/rest/v1/couple_spaces?partner_1_id=eq.$userId")
-            }
-            if (res == null || res == "[]") {
-                res = executeGet("/rest/v1/couple_spaces?partner_2_id=eq.$userId")
-            }
             if (res != null && res != "[]") {
                 val array = JSONArray(res)
                 if (array.length() > 0) return@withContext array.getJSONObject(0)
@@ -224,10 +209,7 @@ class SupabaseService(
     suspend fun fetchMessages(coupleId: String, pairingCode: String = ""): JSONArray? = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty()) return@withContext null
         try {
-            var res = executeGet("/rest/v1/messages?couple_id=eq.$coupleId&order=created_at.asc")
-            if ((res == null || res == "[]") && pairingCode.isNotEmpty()) {
-                res = executeGet("/rest/v1/messages?pairing_code=eq.$pairingCode&order=created_at.asc")
-            }
+            val res = executeGet("/rest/v1/messages?couple_id=eq.$coupleId&order=created_at.asc")
             if (res != null) return@withContext JSONArray(res)
         } catch (e: Exception) {
             Log.e("SupabaseService", "fetchMessages error: ${e.message}")
@@ -249,9 +231,6 @@ class SupabaseService(
             val body = JSONObject().apply {
                 put("id", msgId)
                 put("couple_id", coupleId)
-                if (pairingCode.isNotEmpty()) {
-                    put("pairing_code", pairingCode)
-                }
                 put("sender_id", senderId)
                 put("receiver_id", receiverId)
                 put("content", content)
@@ -281,10 +260,7 @@ class SupabaseService(
     suspend fun fetchVaultItems(coupleId: String, pairingCode: String = ""): JSONArray? = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty()) return@withContext null
         try {
-            var res = executeGet("/rest/v1/vault_items?couple_id=eq.$coupleId&order=created_at.desc")
-            if ((res == null || res == "[]") && pairingCode.isNotEmpty()) {
-                res = executeGet("/rest/v1/vault_items?pairing_code=eq.$pairingCode&order=created_at.desc")
-            }
+            val res = executeGet("/rest/v1/vault_items?couple_id=eq.$coupleId&order=created_at.desc")
             if (res != null) return@withContext JSONArray(res)
         } catch (e: Exception) {
             Log.e("SupabaseService", "fetchVaultItems error: ${e.message}")
@@ -309,9 +285,6 @@ class SupabaseService(
             val body = JSONObject().apply {
                 put("id", vId)
                 put("couple_id", coupleId)
-                if (pairingCode.isNotEmpty()) {
-                    put("pairing_code", pairingCode)
-                }
                 put("title", title)
                 put("type", type)
                 put("media_type", type)
@@ -351,9 +324,6 @@ class SupabaseService(
             val body = JSONObject().apply {
                 put("id", callId)
                 put("couple_id", coupleId)
-                if (pairingCode.isNotEmpty()) {
-                    put("pairing_code", pairingCode)
-                }
                 put("caller_name", callerName)
                 put("call_type", callType) // "voice" or "video"
                 put("status", "ringing") // "ringing", "active", "ended", "declined"
@@ -373,10 +343,7 @@ class SupabaseService(
     suspend fun fetchActiveCall(coupleId: String, pairingCode: String = ""): JSONObject? = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty()) return@withContext null
         try {
-            var res = executeGet("/rest/v1/call_signals?couple_id=eq.$coupleId&status=in.(ringing,active)&order=created_at.desc&limit=1")
-            if ((res == null || res == "[]") && pairingCode.isNotEmpty()) {
-                res = executeGet("/rest/v1/call_signals?pairing_code=eq.$pairingCode&status=in.(ringing,active)&order=created_at.desc&limit=1")
-            }
+            val res = executeGet("/rest/v1/call_signals?couple_id=eq.$coupleId&status=in.(ringing,active)&order=created_at.desc&limit=1")
             if (res != null) {
                 val array = JSONArray(res)
                 if (array.length() > 0) return@withContext array.getJSONObject(0)

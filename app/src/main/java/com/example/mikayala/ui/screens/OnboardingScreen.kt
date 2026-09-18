@@ -50,6 +50,7 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
+import com.example.mikayala.BuildConfig
 import com.example.mikayala.util.QRCodeGenerator
 import com.example.mikayala.ui.components.QRScanner
 import com.example.mikayala.data.repository.MikayalaRepository
@@ -396,6 +397,19 @@ fun OnboardingScreen(
                         )
                     }
                 }
+            }
+
+            if (BuildConfig.DEBUG) {
+                Text(
+                    text = "BUILD CURRENT-2026 • v1.1 • DEBUG",
+                    color = Color.White.copy(alpha = 0.45f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp, top = 2.dp)
+                )
             }
         }
 

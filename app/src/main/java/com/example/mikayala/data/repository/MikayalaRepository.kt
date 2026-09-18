@@ -77,9 +77,9 @@ class MikayalaRepository(private val context: Context) {
         val storedPairingCode = prefs.getString("pairing_code", "") ?: ""
         val storedPartnerName = prefs.getString("partner_name", "Mon Partenaire") ?: "Mon Partenaire"
         val storedCoupleId = prefs.getString("couple_id", "") ?: ""
-        val storedPartner1Id = prefs.getString("partner_1_id", "") ?: ""
-        val storedPartner2Id = prefs.getString("partner_2_id", "") ?: ""
-        val storedCoupleStatus = prefs.getString("couple_status", if (storedPairingCode.isNotEmpty()) "waiting" else "none") ?: "none"
+        val storedUser1Id = prefs.getString("user1_id", "") ?: ""
+        val storedUser2Id = prefs.getString("user2_id", "") ?: ""
+        val storedCoupleStatus = prefs.getString("couple_status", "none") ?: "none"
 
         val storedPinCode = prefs.getString("pin_code", "") ?: ""
         val storedFakePinCode = prefs.getString("fake_pin_code", "") ?: ""
@@ -102,12 +102,13 @@ class MikayalaRepository(private val context: Context) {
                 hasCompletedPairingSetup = storedPairingSetupCompleted,
                 connectionMode = storedConnMode
             )
+            // Stored state is loaded purely as cache, status starts unverified until Supabase sync
             if (storedPairingCode.isNotEmpty()) {
                 _coupleSpace.value = _coupleSpace.value.copy(
                     id = storedCoupleId,
                     pairingCode = storedPairingCode,
-                    partner1Id = storedPartner1Id,
-                    partner2Id = storedPartner2Id,
+                    partner1Id = storedUser1Id,
+                    partner2Id = storedUser2Id,
                     partner1Name = storedDisplayName.ifEmpty { "Moi" },
                     partner2Name = storedPartnerName,
                     status = storedCoupleStatus
@@ -156,11 +157,16 @@ class MikayalaRepository(private val context: Context) {
         if (space != null) {
             val pairingCode = space.optString("pairing_code", "")
             val status = space.optString("status", "")
-            val u1Id = space.optString("user1_id", space.optString("partner_1_id", ""))
-            val u2Id = space.optString("user2_id", space.optString("partner_2_id", ""))
+            val u1Id = space.optString("user1_id", "")
+            val u2Id = space.optString("user2_id", "")
             val coupleId = space.optString("id", "")
 
-            val isPaired = (status == "paired") && u1Id.isNotBlank() && u1Id != "null" && u2Id.isNotBlank() && u2Id != "null"
+            val isPaired = (status == "paired") && 
+                    u1Id.isNotBlank() && u1Id != "null" && 
+                    u2Id.isNotBlank() && u2Id != "null" &&
+                    coupleId.isNotBlank() &&
+                    (myUserId == u1Id || myUserId == u2Id)
+
             val normalizedStatus = if (isPaired) "paired" else if (pairingCode.isNotEmpty()) "waiting" else "none"
 
             val isP1 = (myUserId == u1Id)
@@ -186,9 +192,27 @@ class MikayalaRepository(private val context: Context) {
                 u1Id = u1Id,
                 u2Id = u2Id
             )
-            return true
+            return isPaired
+        } else {
+            // No couple exists in Supabase for current user -> Invalidate any stale local couple cache
+            clearCoupleCache()
+            return false
         }
-        return false
+    }
+
+    fun clearCoupleCache() {
+        prefs.edit().apply {
+            remove("pairing_code")
+            remove("couple_id")
+            remove("couple_status")
+            remove("partner_name")
+            remove("user1_id")
+            remove("user2_id")
+            remove("partner_1_id")
+            remove("partner_2_id")
+            apply()
+        }
+        _coupleSpace.value = CoupleSpaceEntity()
     }
 
     fun savePairingCode(
@@ -199,9 +223,12 @@ class MikayalaRepository(private val context: Context) {
         u1Id: String = "",
         u2Id: String = ""
     ) {
+        val myUserId = getCurrentUserId()
         val hasU1 = u1Id.isNotBlank() && u1Id != "null"
         val hasU2 = u2Id.isNotBlank() && u2Id != "null"
-        val isPaired = (status == "paired") && hasU1 && hasU2
+        val hasValidId = coupleId.isNotBlank()
+        val isUserInCouple = (myUserId.isEmpty() || myUserId == u1Id || myUserId == u2Id)
+        val isPaired = (status == "paired") && hasU1 && hasU2 && hasValidId && isUserInCouple
         val normalizedStatus = if (isPaired) "paired" else if (code.isNotEmpty()) "waiting" else "none"
 
         prefs.edit().apply {
@@ -212,10 +239,10 @@ class MikayalaRepository(private val context: Context) {
                 putString("couple_id", coupleId)
             }
             if (u1Id.isNotEmpty()) {
-                putString("partner_1_id", u1Id)
+                putString("user1_id", u1Id)
             }
             if (u2Id.isNotEmpty()) {
-                putString("partner_2_id", u2Id)
+                putString("user2_id", u2Id)
             }
             apply()
         }
@@ -525,12 +552,12 @@ class MikayalaRepository(private val context: Context) {
             repositoryScope.launch {
                 val spaceJson = supabaseService.getCoupleSpace(pairingCode)
                 if (spaceJson != null) {
-                    val p1Id = spaceJson.optString("partner_1_id", "")
-                    val p2Id = spaceJson.optString("partner_2_id", "")
+                    val p1Id = spaceJson.optString("user1_id", "")
+                    val p2Id = spaceJson.optString("user2_id", "")
                     val partnerUserId = if (myUserId == p1Id) p2Id else p1Id
                     val coupleId = spaceJson.optString("id", "")
 
-                    if (partnerUserId.isNotEmpty() && partnerUserId != "p1" && partnerUserId != "p2" && coupleId.isNotEmpty()) {
+                    if (partnerUserId.isNotEmpty() && coupleId.isNotEmpty()) {
                         supabaseService.upsertPartnerNickname(coupleId, myUserId, partnerUserId, nickname)
                         syncProfiles()
                     }
@@ -952,8 +979,8 @@ class MikayalaRepository(private val context: Context) {
 
             // Retrieve updated couple row to get accurate user1_id and user2_id
             val coupleRow = supabaseService.getCoupleSpace(pairingCode)
-            val u1Id = coupleRow?.optString("user1_id", coupleRow.optString("partner_1_id", "")) ?: ""
-            val u2Id = coupleRow?.optString("user2_id", coupleRow.optString("partner_2_id", actualUid)) ?: actualUid
+            val u1Id = coupleRow?.optString("user1_id", "") ?: ""
+            val u2Id = coupleRow?.optString("user2_id", actualUid) ?: actualUid
 
             savePairingCode(
                 code = pairingCode,
@@ -976,14 +1003,15 @@ class MikayalaRepository(private val context: Context) {
         val result = supabaseService.getCoupleSpace(pairingCode)
         if (result != null) {
             val status = result.optString("status", "")
-            val u1Id = result.optString("user1_id", result.optString("partner_1_id", getCurrentUserId()))
-            val u2Id = result.optString("user2_id", result.optString("partner_2_id", ""))
+            val u1Id = result.optString("user1_id", getCurrentUserId())
+            val u2Id = result.optString("user2_id", "")
             val p2Name = result.optString("partner_2_name", result.optString("partner2_name", ""))
             val coupleId = result.optString("id", "")
 
             val hasU1 = u1Id.isNotBlank() && u1Id != "null"
             val hasU2 = u2Id.isNotBlank() && u2Id != "null"
-            val isPaired = (status == "paired") && hasU1 && hasU2
+            val hasValidId = coupleId.isNotBlank()
+            val isPaired = (status == "paired") && hasU1 && hasU2 && hasValidId
             if (isPaired) {
                 var finalP2Name = p2Name.ifEmpty { "Partenaire" }
                 if (finalP2Name == "Partenaire" && hasU2) {
@@ -1047,14 +1075,14 @@ class MikayalaRepository(private val context: Context) {
             val spaceJson = supabaseService.getCoupleSpace(pairingCode)
             if (spaceJson != null) {
                 val status = spaceJson.optString("status", "")
-                val p1Id = spaceJson.optString("partner_1_id", "")
-                val p2Id = spaceJson.optString("partner_2_id", "")
+                val p1Id = spaceJson.optString("user1_id", "")
+                val p2Id = spaceJson.optString("user2_id", "")
                 val coupleId = spaceJson.optString("id", "")
 
                 // Find partner user ID
                 val partnerUserId = if (myUserId == p1Id) p2Id else p1Id
 
-                if (partnerUserId.isNotEmpty() && partnerUserId != "p1" && partnerUserId != "p2" && (status == "connected" || status == "paired")) {
+                if (partnerUserId.isNotEmpty() && (status == "connected" || status == "paired")) {
                     val partnerProfileJson = supabaseService.getProfile(partnerUserId)
                     if (partnerProfileJson != null) {
                         val partnerDispName = partnerProfileJson.optString("display_name", "")

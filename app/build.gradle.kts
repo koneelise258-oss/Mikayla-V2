@@ -20,6 +20,7 @@ android {
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "BUILD_MARKER", "\"MIKAYALA_CURRENT_BUILD_2026\"")
     }
 
     buildTypes {
