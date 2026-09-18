@@ -4,17 +4,17 @@ import androidx.compose.runtime.Immutable
 
 @Immutable
 data class CoupleSpaceEntity(
-    val id: String = "couple_main",
+    val id: String = "",
     val pairingCode: String = "",
     val status: String = "none", // "none", "waiting", "paired"
     val partner1Id: String = "",
     val partner2Id: String = "",
-    val partner1Name: String = "Moi",
-    val partner2Name: String = "Mon Partenaire",
+    val partner1Name: String = "",
+    val partner2Name: String = "",
     val partner1Avatar: String = "",
     val partner2Avatar: String = "",
-    val partner1Status: String = "En ligne avec mon cœur",
-    val partner2Status: String = "En ligne avec mon cœur",
+    val partner1Status: String = "En ligne",
+    val partner2Status: String = "En ligne",
     val anniversaryDate: Long = System.currentTimeMillis(),
     val loveQuote: String = "Chaque seconde à tes côtés est magique.",
     val themePreference: String = "twilight",
@@ -22,8 +22,9 @@ data class CoupleSpaceEntity(
 ) {
     val isPaired: Boolean
         get() = (status == "paired") &&
-                partner1Id.isNotBlank() && partner1Id != "null" &&
-                partner2Id.isNotBlank() && partner2Id != "null"
+                id.isNotBlank() && id != "couple_main" &&
+                partner1Id.isNotBlank() && partner1Id != "null" && partner1Id != "p1" &&
+                partner2Id.isNotBlank() && partner2Id != "null" && partner2Id != "p2"
 
     val isActive: Boolean
         get() = isPaired
@@ -62,8 +63,8 @@ data class LoveCapsuleEntity(
     val id: String,
     val title: String,
     val message: String,
-    val senderId: String = "me",
-    val senderName: String = "Mikey",
+    val senderId: String = "",
+    val senderName: String = "",
     val unlockDate: Long, // timestamp
     val isUnlocked: Boolean = false,
     val isOpened: Boolean = false,
@@ -117,24 +118,24 @@ data class MenstrualCycleInfo(
 @Immutable
 data class MessageEntity(
     val id: String,
-    val coupleId: String = "couple_main",
+    val coupleId: String = "",
     val senderId: String,
-    val receiverId: String = "partner",
+    val receiverId: String = "",
     val content: String,
     val type: String = "text", // "text", "image", "audio", "video", "scratch_card", "quiz"
     val mediaUrl: String? = null,
     val thumbnailUrl: String? = null,
     val duration: Int = 0, // In seconds for voice notes
     val createdAt: Long = System.currentTimeMillis(),
-    val status: String = "read", // "pending", "sent", "delivered", "read"
-    val readAt: Long? = System.currentTimeMillis(),
+    val status: String = "sent", // "pending", "sent", "delivered", "read"
+    val readAt: Long? = null,
     val isBurned: Boolean = false,
     val isViewOnce: Boolean = false,
     val isViewed: Boolean = false,
     val isDeletedForEveryone: Boolean = false,
     val deletedFor: List<String> = emptyList(),
     val editedAt: Long? = null,
-    val reactions: String = "{}", // JSON map string "{ \"me\": \"❤️\" }"
+    val reactions: String = "{}", // JSON map string
     val isStarred: Boolean = false,
     val isPinned: Boolean = false,
     val replyToId: String? = null,
@@ -145,7 +146,7 @@ data class MessageEntity(
 @Immutable
 data class VaultItemEntity(
     val id: String,
-    val coupleId: String = "couple_main",
+    val coupleId: String = "",
     val title: String,
     val type: String = "photo", // "photo", "video", "audio", "note", "letter"
     val mediaType: String = "photo",
@@ -153,8 +154,8 @@ data class VaultItemEntity(
     val thumbnailUrl: String = "",
     val duration: Int = 0,
     val category: String = "intime", // "intime", "souvenirs", "projets", "sauvegardes"
-    val addedBy: String = "me",
-    val addedByName: String = "Mikey",
+    val addedBy: String = "",
+    val addedByName: String = "",
     val addedByAvatar: String = "",
     val dateAdded: Long = System.currentTimeMillis(),
     val isViewOnce: Boolean = false,
@@ -171,15 +172,15 @@ enum class ConnectionMode {
 
 @Immutable
 data class UserSettingsEntity(
-    val userId: String = "me",
-    val coupleId: String = "couple_main",
-    val displayName: String = "Moi",
+    val userId: String = "",
+    val coupleId: String = "",
+    val displayName: String = "",
     val customStatus: String = "Toujours amoureux ❤️",
     val avatarUrl: String = "",
     val moodEmoji: String = "🥰",
     val bio: String = "",
-    val partnerNickname: String = "Mon Partenaire",
-    val partnerStatus: String = "En ligne avec mon cœur",
+    val partnerNickname: String = "",
+    val partnerStatus: String = "En ligne",
     val partnerAvatarUrl: String = "",
     val partnerBio: String = "",
     val biometricEnabled: Boolean = true,
@@ -220,7 +221,7 @@ data class UserSettingsEntity(
 @Immutable
 data class CallLogEntity(
     val id: String,
-    val partnerName: String = "Mikayala",
+    val partnerName: String = "",
     val isVideo: Boolean = false,
     val isIncoming: Boolean = false,
     val isMissed: Boolean = false,

@@ -12,8 +12,8 @@ android {
         applicationId = "com.aistudio.mikayala.mkyzlv"
         minSdk = 23
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         val supabaseUrl = System.getenv("SUPABASE_URL") ?: "https://xyzcompany.supabase.co"
         val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummykey"

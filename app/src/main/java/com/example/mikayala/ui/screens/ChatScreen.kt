@@ -278,6 +278,7 @@ fun ChatScreen(
                 items(messages, key = { it.id }) { message ->
                     MessageBubble(
                         message = message,
+                        currentUserId = repository.getCurrentUserId(),
                         timeFormatted = timeFormat.format(Date(message.createdAt)),
                         userSettings = userSettings,
                         onLongPress = { selectedMessageForOptions = message },
@@ -905,6 +906,7 @@ fun ChatScreen(
 @Composable
 private fun MessageBubble(
     message: MessageEntity,
+    currentUserId: String,
     timeFormatted: String,
     userSettings: com.example.mikayala.data.model.UserSettingsEntity,
     onLongPress: () -> Unit,
@@ -913,7 +915,7 @@ private fun MessageBubble(
     onViewOnceClicked: () -> Unit
 ) {
     val context = LocalContext.current
-    val isSender = message.senderId == "me"
+    val isSender = (currentUserId.isNotEmpty() && message.senderId == currentUserId) || message.senderId == "me"
 
     var dragOffsetX by remember { mutableFloatStateOf(0f) }
     var replyTriggered by remember { mutableStateOf(false) }

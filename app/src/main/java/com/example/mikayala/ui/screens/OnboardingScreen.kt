@@ -66,6 +66,12 @@ enum class OnboardingStep {
     RECOVERY
 }
 
+const val PAIRING_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+fun generatePairingCode(): String {
+    return "MIK-" + (1..4).map { PAIRING_CODE_ALPHABET.random() }.joinToString("")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(
@@ -283,7 +289,7 @@ fun OnboardingScreen(
                             isPartnerConnected = isPartnerConnected,
                             isCreating = isCreatingSpace,
                             onStartWaiting = {
-                                val newCode = "MIK-${(1..4).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".random() }.joinToString("")}"
+                                val newCode = generatePairingCode()
                                 isCreatingSpace = true
                                 android.util.Log.d("SupabaseDiag", "[CREATE] Tentative de création avec le code: $newCode")
                                 coroutineScope.launch {

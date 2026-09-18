@@ -258,7 +258,7 @@ class MikayalaRepository(private val context: Context) {
         return prefs.getString("pairing_code", "") ?: ""
     }
 
-    // --- Message Actions (Optimistic 0ms & 100% Wired) ---
+    // --- Message Actions (Real Couple Checked & Supabase Synced) ---
     fun sendMessage(
         content: String,
         type: String = "text",
@@ -268,9 +268,22 @@ class MikayalaRepository(private val context: Context) {
         replyToSender: String? = null,
         replyToContent: String? = null
     ) {
+        val couple = _coupleSpace.value
+        val myUserId = getCurrentUserId()
+        if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank()) {
+            Log.w("MikayalaRepository", "Cannot send message: no active paired couple space.")
+            return
+        }
+
+        val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
+        val coupleId = couple.id
+        val pairingCode = couple.pairingCode
+
         val newMsg = MessageEntity(
             id = "msg_" + UUID.randomUUID().toString().take(8),
-            senderId = "me",
+            coupleId = coupleId,
+            senderId = myUserId,
+            receiverId = partnerId,
             content = content,
             type = type,
             mediaUrl = mediaUrl,
@@ -284,10 +297,17 @@ class MikayalaRepository(private val context: Context) {
         _messages.value = _messages.value + newMsg
 
         // Sync with Supabase
-        val pairingCode = _coupleSpace.value.pairingCode
-        if (pairingCode.isNotEmpty()) {
-            repositoryScope.launch {
-                supabaseService.postMessage(pairingCode, "me", content, type)
+        repositoryScope.launch {
+            val success = supabaseService.postMessage(
+                coupleId = coupleId,
+                senderId = myUserId,
+                receiverId = partnerId,
+                content = content,
+                type = type,
+                pairingCode = pairingCode
+            )
+            if (!success) {
+                Log.e("MikayalaRepository", "Failed to post message to Supabase")
             }
         }
     }
@@ -360,8 +380,14 @@ class MikayalaRepository(private val context: Context) {
 
     // --- Shared Vault Actions ---
     fun addVaultItem(title: String, type: String, category: String, caption: String, isViewOnce: Boolean = false) {
+        val couple = _coupleSpace.value
+        val myUserId = getCurrentUserId()
+        val coupleId = couple.id
+        val pairingCode = couple.pairingCode
+
         val newItem = VaultItemEntity(
             id = "v_" + UUID.randomUUID().toString().take(8),
+            coupleId = coupleId,
             title = title,
             type = type,
             category = category,
@@ -372,10 +398,18 @@ class MikayalaRepository(private val context: Context) {
         _vaultItems.value = listOf(newItem) + _vaultItems.value
 
         // Sync with Supabase Shared Vault
-        val pairingCode = _coupleSpace.value.pairingCode
-        if (pairingCode.isNotEmpty()) {
+        if (couple.isPaired && coupleId.isNotEmpty()) {
             repositoryScope.launch {
-                supabaseService.insertVaultItem(pairingCode, title, type, category, caption)
+                supabaseService.insertVaultItem(
+                    coupleId = coupleId,
+                    senderId = myUserId,
+                    title = title,
+                    type = type,
+                    category = category,
+                    caption = caption,
+                    mediaUrl = "",
+                    pairingCode = pairingCode
+                )
             }
         }
     }
@@ -389,9 +423,11 @@ class MikayalaRepository(private val context: Context) {
 
     // --- Calls Actions ---
     fun addCallLog(isVideo: Boolean, durationSeconds: Int) {
+        val couple = _coupleSpace.value
+        val partnerName = if (couple.partner2Name.isNotBlank()) couple.partner2Name else "Partenaire"
         val newCall = CallLogEntity(
             id = "call_" + UUID.randomUUID().toString().take(8),
-            partnerName = "Mikayala",
+            partnerName = partnerName,
             isVideo = isVideo,
             isIncoming = false,
             isMissed = false,
@@ -822,11 +858,12 @@ class MikayalaRepository(private val context: Context) {
         audioNote: String? = null,
         photoHint: String? = null
     ) {
+        val myUserId = getCurrentUserId()
         val newCapsule = LoveCapsuleEntity(
             id = "cap_" + UUID.randomUUID().toString().take(8),
             title = title,
             message = message,
-            senderId = "me",
+            senderId = myUserId,
             senderName = _userSettings.value.displayName,
             unlockDate = unlockDate,
             isUnlocked = System.currentTimeMillis() >= unlockDate,
@@ -1165,21 +1202,23 @@ class MikayalaRepository(private val context: Context) {
 
     suspend fun syncWithSupabase() {
         val couple = _coupleSpace.value
-        if (!couple.isPaired || couple.pairingCode.isEmpty()) return
+        if (!couple.isPaired || couple.id.isBlank()) return
+        val coupleId = couple.id
         val pairingCode = couple.pairingCode
 
         // 0. Sync profiles
         syncProfiles()
 
         // 1. Sync messages from Supabase
-        val remoteMsgs = supabaseService.fetchMessages(pairingCode)
+        val remoteMsgs = supabaseService.fetchMessages(coupleId, pairingCode)
         if (remoteMsgs != null) {
             val fetchedList = mutableListOf<MessageEntity>()
             val myUserId = getCurrentUserId()
             for (i in 0 until remoteMsgs.length()) {
                 val obj = remoteMsgs.getJSONObject(i)
                 val id = obj.optString("id", "remote_$i")
-                val senderId = obj.optString("sender_id", "partner")
+                val senderId = obj.optString("sender_id", "")
+                val receiverId = obj.optString("receiver_id", "")
                 val content = obj.optString("content", "")
                 val type = obj.optString("type", "text")
                 val createdAt = obj.optLong("created_at", System.currentTimeMillis())
@@ -1198,7 +1237,9 @@ class MikayalaRepository(private val context: Context) {
                 fetchedList.add(
                     MessageEntity(
                         id = id,
-                        senderId = if (senderId == myUserId || senderId == "me") "me" else "partner",
+                        coupleId = coupleId,
+                        senderId = senderId,
+                        receiverId = receiverId,
                         content = content,
                         type = type,
                         createdAt = createdAt,
@@ -1230,7 +1271,7 @@ class MikayalaRepository(private val context: Context) {
         }
 
         // 2. Sync Shared Vault from Supabase
-        val remoteVault = supabaseService.fetchVaultItems(pairingCode)
+        val remoteVault = supabaseService.fetchVaultItems(coupleId, pairingCode)
         if (remoteVault != null) {
             val fetchedVault = mutableListOf<VaultItemEntity>()
             for (i in 0 until remoteVault.length()) {
@@ -1245,6 +1286,7 @@ class MikayalaRepository(private val context: Context) {
                 fetchedVault.add(
                     VaultItemEntity(
                         id = id,
+                        coupleId = coupleId,
                         title = title,
                         type = type,
                         category = category,
@@ -1264,22 +1306,24 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun initiateSupabaseCall(isVideo: Boolean): JSONObject? {
-        val pairingCode = _coupleSpace.value.pairingCode
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return null
+        val coupleId = couple.id
+        val pairingCode = couple.pairingCode
         addCallLog(isVideo, 0)
-        if (pairingCode.isNotEmpty()) {
-            val myName = if (_coupleSpace.value.partner1Name.isNotEmpty()) _coupleSpace.value.partner1Name else "Moi"
-            return supabaseService.initiateCall(pairingCode, myName, if (isVideo) "video" else "voice")
-        }
-        return null
+        val myName = if (couple.partner1Name.isNotEmpty()) couple.partner1Name else "Moi"
+        return supabaseService.initiateCall(coupleId, myName, if (isVideo) "video" else "voice", pairingCode)
     }
 
     suspend fun checkForIncomingCall(): Pair<Boolean, Boolean>? {
-        val pairingCode = _coupleSpace.value.pairingCode
-        if (pairingCode.isEmpty()) return null
-        val activeCall = supabaseService.fetchActiveCall(pairingCode)
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return null
+        val coupleId = couple.id
+        val pairingCode = couple.pairingCode
+        val activeCall = supabaseService.fetchActiveCall(coupleId, pairingCode)
         if (activeCall != null) {
             val status = activeCall.optString("status")
-            val callerName = activeCall.optString("caller_name", "Mon Amour")
+            val callerName = activeCall.optString("caller_name", if (couple.partner2Name.isNotBlank()) couple.partner2Name else "Partenaire")
             val callType = activeCall.optString("call_type", "voice")
             val isVideo = callType == "video"
 
