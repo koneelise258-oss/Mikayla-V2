@@ -102,72 +102,75 @@ class SupabaseService(
         }
     }
 
-    suspend fun createCoupleSpace(pairingCode: String, partnerName: String, userId: String, token: String): JSONObject? = withContext(Dispatchers.IO) {
+    suspend fun createCoupleSpace(pairingCode: String): JSONObject? = withContext(Dispatchers.IO) {
         Log.d("SupabaseDiag", "[CREATE] createCoupleSpace starting...")
-        Log.d("SupabaseDiag", "[CREATE] Code généré (reçu par le service): $pairingCode")
         
-        val initialSession = supabase.auth.currentSessionOrNull()
-        Log.d("SupabaseDiag", "[CREATE] Session présente avant ensure: ${initialSession != null}")
-        Log.d("SupabaseDiag", "[CREATE] UID actuel avant ensure: ${initialSession?.user?.id}")
-
+        // 1. Garantir une session active avant l'appel
         if (!ensureAnonymousSession()) {
-            Log.e("SupabaseDiag", "[CREATE] ensureAnonymousSession FAILED in createCoupleSpace")
+            Log.e("SupabaseDiag", "[CREATE] Échec ensureAnonymousSession")
             return@withContext null
         }
         
-        val actualSession = supabase.auth.currentSessionOrNull()
-        val actualUid = actualSession?.user?.id ?: ""
-        Log.d("SupabaseDiag", "[CREATE] UID Supabase Anonymous Auth utilisé: $actualUid")
+        val session = supabase.auth.currentSessionOrNull()
+        Log.d("SupabaseDiag", "[CREATE] Session UID active: ${session?.user?.id}")
 
         try {
+            // Le RPC SQL n'attend que "requested_code"
             val parameters = buildJsonObject {
                 put("requested_code", pairingCode)
-                put("partner_name", partnerName)
-                put("user_id", userId)
             }
-            Log.d("SupabaseDiag", "[CREATE] Code envoyé au RPC: $pairingCode")
-            Log.d("SupabaseDiag", "[CREATE] Payload RPC 'create_couple': $parameters")
+            Log.d("SupabaseDiag", "[CREATE] Appel RPC 'create_couple' avec: $parameters")
             
             val result = supabase.postgrest.rpc("create_couple", parameters)
             Log.d("SupabaseDiag", "[CREATE] Réponse brute du RPC: ${result.data}")
             
-            JSONObject(result.data.toString())
+            val dataString = result.data.toString()
+            if (dataString == "null" || dataString.isEmpty()) {
+                Log.e("SupabaseDiag", "[CREATE] Le RPC a retourné une donnée vide")
+                return@withContext null
+            }
+            
+            // Si le retour est une liste [ {...} ], on prend le premier élément
+            if (dataString.startsWith("[")) {
+                val array = JSONArray(dataString)
+                if (array.length() > 0) array.getJSONObject(0) else null
+            } else {
+                JSONObject(dataString)
+            }
         } catch (e: Exception) {
-            Log.e("SupabaseDiag", "[CREATE] Erreur éventuelle RPC: ${e.message}")
-            Log.e("SupabaseDiag", "[CREATE] StackTrace complet: ${e.stackTraceToString()}")
+            Log.e("SupabaseDiag", "[CREATE] Erreur RPC 'create_couple': ${e.message}")
             null
         }
     }
 
-    suspend fun joinCoupleSpace(pairingCode: String, partnerName: String, userId: String, token: String): JSONObject? = withContext(Dispatchers.IO) {
-        Log.d("SupabaseDiag", "joinCoupleSpace starting...")
-        Log.d("SupabaseDiag", "Args -> code: $pairingCode, name: $partnerName, userId: $userId")
+    suspend fun joinCoupleSpace(pairingCode: String): JSONObject? = withContext(Dispatchers.IO) {
+        Log.d("SupabaseDiag", "[JOIN] joinCoupleSpace starting...")
         
         if (!ensureAnonymousSession()) {
-            Log.e("SupabaseDiag", "ensureAnonymousSession FAILED in joinCoupleSpace")
+            Log.e("SupabaseDiag", "[JOIN] Échec ensureAnonymousSession")
             return@withContext null
         }
-        
-        val actualSession = supabase.auth.currentSessionOrNull()
-        val actualUid = actualSession?.user?.id ?: ""
-        Log.d("SupabaseDiag", "Actual Supabase Session UID: $actualUid")
         
         try {
             val parameters = buildJsonObject {
                 put("requested_code", pairingCode)
-                put("partner_name", partnerName)
-                put("user_id", userId)
             }
-            Log.d("SupabaseDiag", "RPC 'join_couple' payload: $parameters")
+            Log.d("SupabaseDiag", "[JOIN] Appel RPC 'join_couple' avec: $parameters")
             
             val result = supabase.postgrest.rpc("join_couple", parameters)
-            Log.d("SupabaseDiag", "RPC 'join_couple' response data: ${result.data}")
+            Log.d("SupabaseDiag", "[JOIN] Réponse brute du RPC: ${result.data}")
             
-            JSONObject(result.data.toString())
+            val dataString = result.data.toString()
+            if (dataString == "null" || dataString.isEmpty()) return@withContext null
+            
+            if (dataString.startsWith("[")) {
+                val array = JSONArray(dataString)
+                if (array.length() > 0) array.getJSONObject(0) else null
+            } else {
+                JSONObject(dataString)
+            }
         } catch (e: Exception) {
-            Log.e("SupabaseDiag", "RPC 'join_couple' EXCEPTION: ${e.message}")
-            // Tenter de parser l'erreur si elle contient du JSON (souvent le cas avec Supabase)
-            Log.e("SupabaseDiag", "Exception details: ${e.stackTraceToString()}")
+            Log.e("SupabaseDiag", "[JOIN] Erreur RPC 'join_couple': ${e.message}")
             null
         }
     }
@@ -374,40 +377,9 @@ class SupabaseService(
             conn.requestMethod = "GET"
             conn.setRequestProperty("apikey", supabaseKey)
             conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
-            conn.setRequestProperty("Accept", "application/json")
             conn.connectTimeout = 6000
             conn.readTimeout = 6000
 
-            if (conn.responseCode in 200..299) {
-                val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                val sb = java.lang.StringBuilder()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    sb.append(line)
-                }
-                reader.close()
-                sb.toString()
-            } else null
-        } catch (e: Exception) {
-            Log.e("SupabaseService", "executeGet failed: ${e.message}")
-            null
-        }
-    }
-
-    private fun executeGet(path: String, accessToken: String? = null): String? {
-        return try {
-            val url = URL("$supabaseUrl$path")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.setRequestProperty("apikey", supabaseKey)
-            if (accessToken != null) {
-                conn.setRequestProperty("Authorization", "Bearer $accessToken")
-            } else {
-                conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
-            }
-            conn.connectTimeout = 6000
-            conn.readTimeout = 6000
-            
             if (conn.responseCode in 200..299) {
                 val reader = BufferedReader(InputStreamReader(conn.inputStream))
                 val sb = java.lang.StringBuilder()

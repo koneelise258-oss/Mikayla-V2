@@ -97,17 +97,21 @@ fun OnboardingScreen(
     var createName by remember { mutableStateOf(userSettings.displayName.ifEmpty { "Partenaire 1" }) }
     var selectedAvatarIndex by remember { mutableIntStateOf(0) }
     var generatedCode by remember {
-        mutableStateOf(
-            coupleSpace.pairingCode.ifEmpty {
-                "MIK-${(1..4).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".random() }.joinToString("")}"
-            }
-        )
+        mutableStateOf("")
     }
+    var isCreatingSpace by remember { mutableStateOf(false) }
     var isWaitingPartner by remember { mutableStateOf(coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isActive) }
     var isPartnerConnected by remember { mutableStateOf(coupleSpace.pairingCode.isNotEmpty() && coupleSpace.isActive) }
 
+    // Init code if already waiting
+    LaunchedEffect(Unit) {
+        if (coupleSpace.pairingCode.isNotEmpty() && !coupleSpace.isActive) {
+            generatedCode = coupleSpace.pairingCode
+        }
+    }
+
     LaunchedEffect(isWaitingPartner) {
-        if (isWaitingPartner) {
+        if (isWaitingPartner && generatedCode.isNotEmpty()) {
             while (true) {
                 delay(3000)
                 val partnerName = repository.checkPartnerConnectedInSupabase(generatedCode)
@@ -266,17 +270,22 @@ fun OnboardingScreen(
                             generatedCode = generatedCode,
                             isWaitingPartner = isWaitingPartner,
                             isPartnerConnected = isPartnerConnected,
+                            isCreating = isCreatingSpace,
                             onStartWaiting = {
-                                isWaitingPartner = true
-                                android.util.Log.d("SupabaseDiag", "[CREATE] Code affiché à l'utilisateur: $generatedCode")
+                                val newCode = "MIK-${(1..4).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".random() }.joinToString("")}"
+                                isCreatingSpace = true
+                                android.util.Log.d("SupabaseDiag", "[CREATE] Tentative de création avec le code: $newCode")
                                 coroutineScope.launch {
-                                    val success = repository.createCoupleSpaceInSupabase(generatedCode, createName.ifEmpty { "Mikey" })
+                                    val success = repository.createCoupleSpaceInSupabase(newCode, createName.ifEmpty { "Mikey" })
+                                    isCreatingSpace = false
                                     if (success) {
-                                        Toast.makeText(context, "Espace Supabase créé ! Code: $generatedCode ✨", Toast.LENGTH_SHORT).show()
+                                        generatedCode = newCode
+                                        isWaitingPartner = true
+                                        repository.updateProfile(createName.ifEmpty { "Mikey" }, "En ligne", "", avatarPresets[selectedAvatarIndex])
+                                        Toast.makeText(context, "Espace Supabase créé avec succès ! ✨", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "Espace local initialisé pour code $generatedCode ✨", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Erreur Supabase : impossible de créer l'espace. Vérifiez les logs. ❌", Toast.LENGTH_LONG).show()
                                     }
-                                    repository.updateProfile(createName.ifEmpty { "Mikey" }, "En ligne", "", avatarPresets[selectedAvatarIndex])
                                 }
                             },
                             onComplete = {
@@ -595,6 +604,7 @@ fun CreateSpaceView(
     generatedCode: String,
     isWaitingPartner: Boolean,
     isPartnerConnected: Boolean,
+    isCreating: Boolean = false,
     onStartWaiting: () -> Unit,
     onComplete: () -> Unit
 ) {
@@ -609,7 +619,7 @@ fun CreateSpaceView(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = if (isWaitingPartner) "Espace créé ✨" else "Créer votre Espace ✨",
+            text = if (isWaitingPartner) "Espace partagé ✨" else "Créer votre Espace ✨",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White
@@ -618,7 +628,7 @@ fun CreateSpaceView(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = if (isWaitingPartner) "Partagez ce code avec votre partenaire pour qu'il/elle rejoigne votre espace privé." else "Configurez votre profil et partagez le code à votre partenaire",
+            text = if (isWaitingPartner) "Partagez ce code avec votre partenaire pour qu'il/elle rejoigne votre espace privé." else "Configurez votre profil pour générer votre code unique",
             fontSize = 12.sp,
             color = TextSecondary,
             textAlign = TextAlign.Center
@@ -685,38 +695,40 @@ fun CreateSpaceView(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Interactive Canvas QR Code
-        InteractiveQRCodeCanvas(code = generatedCode, sizeDp = 180)
+        if (isWaitingPartner && generatedCode.isNotEmpty()) {
+            // Interactive Canvas QR Code
+            InteractiveQRCodeCanvas(code = generatedCode, sizeDp = 180)
 
-        Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-        // Pairing Code Banner
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color(0xFF1B182B),
-            border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.5f)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Code Mikayala", generatedCode))
-                    Toast.makeText(context, "Code copié : $generatedCode 📋", Toast.LENGTH_SHORT).show()
-                }
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            // Pairing Code Banner
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF1B182B),
+                border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Code Mikayala", generatedCode))
+                        Toast.makeText(context, "Code copié : $generatedCode 📋", Toast.LENGTH_SHORT).show()
+                    }
             ) {
-                Column {
-                    Text(text = "Code de Jumelage", fontSize = 11.sp, color = TextSecondary)
-                    Text(text = generatedCode, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = AccentRose, letterSpacing = 3.sp)
-                }
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(text = "Code de Jumelage", fontSize = 11.sp, color = TextSecondary)
+                        Text(text = generatedCode, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = AccentRose, letterSpacing = 3.sp)
+                    }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Rounded.ContentCopy, contentDescription = "Copier", tint = AccentRose, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Copier", fontSize = 12.sp, color = AccentRose, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Rounded.ContentCopy, contentDescription = "Copier", tint = AccentRose, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(text = "Copier", fontSize = 12.sp, color = AccentRose, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -756,20 +768,27 @@ fun CreateSpaceView(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), color = AccentRose, strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(10.dp))
-                Text(text = "Écoute Supabase Realtime en cours...", fontSize = 13.sp, color = AccentRose)
+                Text(text = "En attente de votre partenaire...", fontSize = 13.sp, color = AccentRose)
             }
         } else {
             Button(
                 onClick = onStartWaiting,
+                enabled = !isCreating,
                 colors = ButtonDefaults.buttonColors(containerColor = AccentViolet),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Icon(Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "Attendre la connexion du partenaire", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                if (isCreating) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(text = "Création de l'espace...", fontSize = 14.sp, color = Color.White)
+                } else {
+                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Générer mon code de couple ✨", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
             }
         }
 

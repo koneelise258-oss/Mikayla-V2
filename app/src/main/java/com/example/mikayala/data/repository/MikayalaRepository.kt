@@ -789,13 +789,26 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun createCoupleSpaceInSupabase(pairingCode: String, partnerName: String): Boolean {
-        val myUserId = getCurrentUserId()
-        val token = getAccessToken()
-        Log.d("RepoDiag", "createCoupleSpaceInSupabase: code=$pairingCode, userId=$myUserId")
-        val result = supabaseService.createCoupleSpace(pairingCode, partnerName, myUserId, token)
+        Log.d("RepoDiag", "createCoupleSpaceInSupabase: code=$pairingCode")
+        
+        // On s'assure d'avoir un UID Supabase avant d'appeler le RPC
+        if (!ensureAnonymousSession(partnerName)) {
+            Log.e("RepoDiag", "createCoupleSpaceInSupabase FAILED: No anonymous session")
+            return false
+        }
+
+        val result = supabaseService.createCoupleSpace(pairingCode)
         return if (result != null) {
             Log.d("RepoDiag", "createCoupleSpaceInSupabase SUCCESS: $result")
             val coupleId = result.optString("id", "")
+            
+            // On sauvegarde l'UID réel retourné par Supabase si possible
+            val session = supabaseService.supabase.auth.currentSessionOrNull()
+            val actualUid = session?.user?.id ?: ""
+            if (actualUid.isNotEmpty()) {
+                prefs.edit().putString("user_id", actualUid).apply()
+            }
+
             savePairingCode(pairingCode, "Mon Partenaire", coupleId)
             _coupleSpace.value = _coupleSpace.value.copy(
                 id = coupleId,
@@ -812,14 +825,25 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun joinCoupleSpaceInSupabase(pairingCode: String, partnerName: String): Boolean {
-        val myUserId = getCurrentUserId()
-        val token = getAccessToken()
-        Log.d("RepoDiag", "joinCoupleSpaceInSupabase: code=$pairingCode, userId=$myUserId")
-        val result = supabaseService.joinCoupleSpace(pairingCode, partnerName, myUserId, token)
+        Log.d("RepoDiag", "joinCoupleSpaceInSupabase: code=$pairingCode")
+        
+        if (!ensureAnonymousSession(partnerName)) {
+            Log.e("RepoDiag", "joinCoupleSpaceInSupabase FAILED: No anonymous session")
+            return false
+        }
+
+        val result = supabaseService.joinCoupleSpace(pairingCode)
         return if (result != null) {
             Log.d("RepoDiag", "joinCoupleSpaceInSupabase SUCCESS: $result")
             val p1 = result.optString("partner1_name", "Partenaire")
             val coupleId = result.optString("id", "")
+            
+            val session = supabaseService.supabase.auth.currentSessionOrNull()
+            val actualUid = session?.user?.id ?: ""
+            if (actualUid.isNotEmpty()) {
+                prefs.edit().putString("user_id", actualUid).apply()
+            }
+
             savePairingCode(pairingCode, p1, coupleId)
             _coupleSpace.value = _coupleSpace.value.copy(
                 id = coupleId,
@@ -857,6 +881,8 @@ class MikayalaRepository(private val context: Context) {
     }
 
     private var myProfileVersion = 0
+
+    private var partnerProfileVersion = 0
 
     suspend fun syncProfiles() {
         val myUserId = getCurrentUserId()
