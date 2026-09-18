@@ -224,9 +224,20 @@ fun OnboardingScreen(
                     color = Color.White
                 )
 
-                if (onBackToApp != null) {
+                val canShowClose = (currentStep != OnboardingStep.LANDING) || (coupleSpace.isPaired && onBackToApp != null)
+                if (canShowClose) {
                     IconButton(
-                        onClick = { onBackToApp() },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (currentStep != OnboardingStep.LANDING) {
+                                currentStep = OnboardingStep.LANDING
+                                joinErrorMessage = null
+                                linkError = null
+                                recoveryError = null
+                            } else if (coupleSpace.isPaired && onBackToApp != null) {
+                                onBackToApp()
+                            }
+                        },
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(cardElevated)

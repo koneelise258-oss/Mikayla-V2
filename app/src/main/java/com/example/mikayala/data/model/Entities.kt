@@ -7,8 +7,7 @@ data class CoupleSpaceEntity(
     val id: String = "couple_main",
     val pairingCode: String = "",
     val status: String = "none", // "none", "waiting", "paired"
-    val isPaired: Boolean = false,
-    val partner1Id: String = "me",
+    val partner1Id: String = "",
     val partner2Id: String = "",
     val partner1Name: String = "Moi",
     val partner2Name: String = "Mon Partenaire",
@@ -19,9 +18,16 @@ data class CoupleSpaceEntity(
     val anniversaryDate: Long = System.currentTimeMillis(),
     val loveQuote: String = "Chaque seconde à tes côtés est magique.",
     val themePreference: String = "twilight",
-    val isActive: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    val isPaired: Boolean
+        get() = (status == "paired") &&
+                partner1Id.isNotBlank() && partner1Id != "null" &&
+                partner2Id.isNotBlank() && partner2Id != "null"
+
+    val isActive: Boolean
+        get() = isPaired
+}
 
 @Immutable
 data class LoveMilestoneEntity(
@@ -178,6 +184,7 @@ data class UserSettingsEntity(
     val partnerBio: String = "",
     val biometricEnabled: Boolean = true,
     val hasLocalPassword: Boolean = false,
+    val hasCompletedPairingSetup: Boolean = false,
     val pinCode: String = "",
     val fakePinCode: String = "",
     val lockTimeoutSeconds: Int = 0, // 0 = Immédiat, 60 = 1 min, 300 = 5 min, -1 = Désactivé

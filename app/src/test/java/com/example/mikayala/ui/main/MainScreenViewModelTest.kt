@@ -18,10 +18,18 @@ class CoupleSpaceEntityTest {
 
     @Test
     fun coupleSpace_pairedStatus_isPairedTrue() {
-        val couple = CoupleSpaceEntity(status = "paired", isPaired = true, isActive = true)
+        val couple = CoupleSpaceEntity(status = "paired", partner1Id = "u1", partner2Id = "u2")
         assertEquals("paired", couple.status)
         assertTrue(couple.isPaired)
         assertTrue(couple.isActive)
+    }
+
+    @Test
+    fun coupleSpace_waitingStatus_isPairedFalse() {
+        val couple = CoupleSpaceEntity(status = "waiting", partner1Id = "u1", partner2Id = "")
+        assertEquals("waiting", couple.status)
+        assertFalse(couple.isPaired)
+        assertFalse(couple.isActive)
     }
 
     @Test

@@ -77,12 +77,20 @@ class MikayalaRepository(private val context: Context) {
         val storedPairingCode = prefs.getString("pairing_code", "") ?: ""
         val storedPartnerName = prefs.getString("partner_name", "Mon Partenaire") ?: "Mon Partenaire"
         val storedCoupleId = prefs.getString("couple_id", "") ?: ""
+        val storedPartner1Id = prefs.getString("partner_1_id", "") ?: ""
+        val storedPartner2Id = prefs.getString("partner_2_id", "") ?: ""
         val storedCoupleStatus = prefs.getString("couple_status", if (storedPairingCode.isNotEmpty()) "waiting" else "none") ?: "none"
-        val isPaired = (storedCoupleStatus == "paired")
 
         val storedPinCode = prefs.getString("pin_code", "") ?: ""
         val storedFakePinCode = prefs.getString("fake_pin_code", "") ?: ""
         val storedHasPassword = prefs.getBoolean("has_local_password", false) && storedPinCode.isNotEmpty()
+        val storedPairingSetupCompleted = prefs.getBoolean("pairing_setup_completed", false)
+        val storedConnModeStr = prefs.getString("connection_mode", "ONLINE") ?: "ONLINE"
+        val storedConnMode = try {
+            com.example.mikayala.data.model.ConnectionMode.valueOf(storedConnModeStr)
+        } catch (e: Exception) {
+            com.example.mikayala.data.model.ConnectionMode.ONLINE
+        }
 
         if (storedUserId.isNotEmpty()) {
             _userSettings.value = _userSettings.value.copy(
@@ -90,17 +98,19 @@ class MikayalaRepository(private val context: Context) {
                 displayName = storedDisplayName.ifEmpty { "Moi" },
                 pinCode = storedPinCode,
                 fakePinCode = storedFakePinCode,
-                hasLocalPassword = storedHasPassword
+                hasLocalPassword = storedHasPassword,
+                hasCompletedPairingSetup = storedPairingSetupCompleted,
+                connectionMode = storedConnMode
             )
             if (storedPairingCode.isNotEmpty()) {
                 _coupleSpace.value = _coupleSpace.value.copy(
                     id = storedCoupleId,
                     pairingCode = storedPairingCode,
+                    partner1Id = storedPartner1Id,
+                    partner2Id = storedPartner2Id,
                     partner1Name = storedDisplayName.ifEmpty { "Moi" },
                     partner2Name = storedPartnerName,
-                    status = storedCoupleStatus,
-                    isPaired = isPaired,
-                    isActive = isPaired
+                    status = storedCoupleStatus
                 )
             }
         }
@@ -150,8 +160,8 @@ class MikayalaRepository(private val context: Context) {
             val u2Id = space.optString("user2_id", space.optString("partner_2_id", ""))
             val coupleId = space.optString("id", "")
 
-            val isPaired = (status == "paired" || (u1Id.isNotEmpty() && u2Id.isNotEmpty() && u2Id != "null"))
-            val normalizedStatus = if (isPaired) "paired" else "waiting"
+            val isPaired = (status == "paired") && u1Id.isNotBlank() && u1Id != "null" && u2Id.isNotBlank() && u2Id != "null"
+            val normalizedStatus = if (isPaired) "paired" else if (pairingCode.isNotEmpty()) "waiting" else "none"
 
             val isP1 = (myUserId == u1Id)
             val partnerId = if (isP1) u2Id else u1Id
@@ -168,15 +178,13 @@ class MikayalaRepository(private val context: Context) {
                 }
             }
 
-            savePairingCode(pairingCode, pName, coupleId, normalizedStatus)
-            _coupleSpace.value = _coupleSpace.value.copy(
-                id = coupleId,
-                pairingCode = pairingCode,
+            savePairingCode(
+                code = pairingCode,
+                partnerName = pName,
+                coupleId = coupleId,
                 status = normalizedStatus,
-                isPaired = isPaired,
-                partner1Name = if (isP1) userSettings.value.displayName else pName,
-                partner2Name = pName,
-                isActive = isPaired
+                u1Id = u1Id,
+                u2Id = u2Id
             )
             return true
         }
@@ -187,25 +195,37 @@ class MikayalaRepository(private val context: Context) {
         code: String,
         partnerName: String = "Mon Partenaire",
         coupleId: String = "",
-        status: String = "waiting"
+        status: String = "waiting",
+        u1Id: String = "",
+        u2Id: String = ""
     ) {
-        val isPaired = (status == "paired")
+        val hasU1 = u1Id.isNotBlank() && u1Id != "null"
+        val hasU2 = u2Id.isNotBlank() && u2Id != "null"
+        val isPaired = (status == "paired") && hasU1 && hasU2
+        val normalizedStatus = if (isPaired) "paired" else if (code.isNotEmpty()) "waiting" else "none"
+
         prefs.edit().apply {
             putString("pairing_code", code)
             putString("partner_name", partnerName)
-            putString("couple_status", status)
+            putString("couple_status", normalizedStatus)
             if (coupleId.isNotEmpty()) {
                 putString("couple_id", coupleId)
+            }
+            if (u1Id.isNotEmpty()) {
+                putString("partner_1_id", u1Id)
+            }
+            if (u2Id.isNotEmpty()) {
+                putString("partner_2_id", u2Id)
             }
             apply()
         }
         _coupleSpace.value = _coupleSpace.value.copy(
             id = coupleId.ifEmpty { _coupleSpace.value.id },
             pairingCode = code,
+            partner1Id = if (u1Id.isNotEmpty()) u1Id else _coupleSpace.value.partner1Id,
+            partner2Id = if (u2Id.isNotEmpty()) u2Id else _coupleSpace.value.partner2Id,
             partner2Name = partnerName,
-            status = status,
-            isPaired = isPaired,
-            isActive = isPaired
+            status = normalizedStatus
         )
     }
 
@@ -383,23 +403,31 @@ class MikayalaRepository(private val context: Context) {
 
     // --- Pairing Actions ---
     fun updatePairing(code: String) {
-        _coupleSpace.value = _coupleSpace.value.copy(pairingCode = code, isActive = true)
+        _coupleSpace.value = _coupleSpace.value.copy(pairingCode = code)
     }
 
     // --- Settings & Customization Actions ---
-    fun updateConnectionMode(mode: ConnectionMode) {
+    fun updateConnectionMode(mode: com.example.mikayala.data.model.ConnectionMode) {
+        prefs.edit().putString("connection_mode", mode.name).apply()
         _userSettings.value = _userSettings.value.copy(connectionMode = mode)
+    }
+
+    fun setPairingSetupCompleted(completed: Boolean) {
+        prefs.edit().putBoolean("pairing_setup_completed", completed).apply()
+        _userSettings.value = _userSettings.value.copy(hasCompletedPairingSetup = completed)
     }
 
     fun updatePinCode(newPin: String) {
         prefs.edit().apply {
             putString("pin_code", newPin)
             putBoolean("has_local_password", newPin.isNotEmpty())
+            putBoolean("pairing_setup_completed", true)
             apply()
         }
         _userSettings.value = _userSettings.value.copy(
             pinCode = newPin,
-            hasLocalPassword = newPin.isNotEmpty()
+            hasLocalPassword = newPin.isNotEmpty(),
+            hasCompletedPairingSetup = true
         )
     }
 
@@ -850,15 +878,13 @@ class MikayalaRepository(private val context: Context) {
                 prefs.edit().putString("user_id", actualUid).apply()
             }
 
-            savePairingCode(pairingCode, "En attente...", coupleId, "waiting")
-            _coupleSpace.value = _coupleSpace.value.copy(
-                id = coupleId,
-                pairingCode = pairingCode,
-                partner1Name = partnerName,
-                partner2Name = "En attente...",
+            savePairingCode(
+                code = pairingCode,
+                partnerName = "En attente...",
+                coupleId = coupleId,
                 status = "waiting",
-                isPaired = false,
-                isActive = false
+                u1Id = actualUid,
+                u2Id = ""
             )
             true
         } else {
@@ -887,15 +913,18 @@ class MikayalaRepository(private val context: Context) {
                 prefs.edit().putString("user_id", actualUid).apply()
             }
 
-            savePairingCode(pairingCode, p1, coupleId, "paired")
-            _coupleSpace.value = _coupleSpace.value.copy(
-                id = coupleId,
-                pairingCode = pairingCode,
-                partner1Name = p1,
-                partner2Name = partnerName,
+            // Retrieve updated couple row to get accurate user1_id and user2_id
+            val coupleRow = supabaseService.getCoupleSpace(pairingCode)
+            val u1Id = coupleRow?.optString("user1_id", coupleRow.optString("partner_1_id", "")) ?: ""
+            val u2Id = coupleRow?.optString("user2_id", coupleRow.optString("partner_2_id", actualUid)) ?: actualUid
+
+            savePairingCode(
+                code = pairingCode,
+                partnerName = p1,
+                coupleId = coupleId,
                 status = "paired",
-                isPaired = true,
-                isActive = true
+                u1Id = u1Id,
+                u2Id = u2Id
             )
             updatePartnerProfile(p1, "En ligne ❤️", "💖")
             syncProfiles()
@@ -910,27 +939,29 @@ class MikayalaRepository(private val context: Context) {
         val result = supabaseService.getCoupleSpace(pairingCode)
         if (result != null) {
             val status = result.optString("status", "")
+            val u1Id = result.optString("user1_id", result.optString("partner_1_id", getCurrentUserId()))
             val u2Id = result.optString("user2_id", result.optString("partner_2_id", ""))
             val p2Name = result.optString("partner_2_name", result.optString("partner2_name", ""))
             val coupleId = result.optString("id", "")
 
-            val isPaired = (status == "paired" || status == "connected" || (u2Id.isNotEmpty() && u2Id != "null"))
+            val hasU1 = u1Id.isNotBlank() && u1Id != "null"
+            val hasU2 = u2Id.isNotBlank() && u2Id != "null"
+            val isPaired = (status == "paired") && hasU1 && hasU2
             if (isPaired) {
                 var finalP2Name = p2Name.ifEmpty { "Partenaire" }
-                if (finalP2Name == "Partenaire" && u2Id.isNotEmpty() && u2Id != "null") {
+                if (finalP2Name == "Partenaire" && hasU2) {
                     val p2Profile = supabaseService.getProfile(u2Id)
                     if (p2Profile != null) {
                         finalP2Name = p2Profile.optString("display_name", finalP2Name)
                     }
                 }
-                savePairingCode(pairingCode, finalP2Name, coupleId, "paired")
-                _coupleSpace.value = _coupleSpace.value.copy(
-                    id = coupleId,
-                    pairingCode = pairingCode,
-                    partner2Name = finalP2Name,
+                savePairingCode(
+                    code = pairingCode,
+                    partnerName = finalP2Name,
+                    coupleId = coupleId,
                     status = "paired",
-                    isPaired = true,
-                    isActive = true
+                    u1Id = u1Id,
+                    u2Id = u2Id
                 )
                 updatePartnerProfile(finalP2Name, "En ligne ❤️", "💖")
                 syncProfiles()
@@ -1016,8 +1047,7 @@ class MikayalaRepository(private val context: Context) {
                             id = coupleId,
                             partner2Name = finalDisplayName,
                             partner2Avatar = partnerFinalAvatarUrl,
-                            partner2Status = "En ligne",
-                            isActive = true
+                            partner2Status = "En ligne"
                         )
                         prefs.edit().putString("partner_name", finalDisplayName).apply()
                         if (coupleId.isNotEmpty()) {
@@ -1034,8 +1064,7 @@ class MikayalaRepository(private val context: Context) {
                     _coupleSpace.value = _coupleSpace.value.copy(
                         partner2Name = "En attente du partenaire",
                         partner2Avatar = "",
-                        partner2Status = "Hors ligne",
-                        isActive = false
+                        partner2Status = "Hors ligne"
                     )
                 }
             }

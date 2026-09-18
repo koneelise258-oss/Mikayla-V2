@@ -119,10 +119,12 @@ class MainActivity : ComponentActivity() {
                                                 val coupleSpace = repository.activeCoupleSpace.value
                                                 val userSettings = repository.userSettings.value
                                                 if (coupleSpace.isPaired) {
-                                                    if (!userSettings.hasLocalPassword) {
+                                                    if (userSettings.hasLocalPassword && userSettings.pinCode.isNotEmpty()) {
+                                                        navigationState = AppNavigationState.LOCK
+                                                    } else if (!userSettings.hasCompletedPairingSetup) {
                                                         navigationState = AppNavigationState.SET_FIRST_PASSWORD
                                                     } else {
-                                                        navigationState = AppNavigationState.LOCK
+                                                        navigationState = AppNavigationState.MAIN_APP
                                                     }
                                                 } else {
                                                     navigationState = AppNavigationState.ONBOARDING
@@ -141,10 +143,12 @@ class MainActivity : ComponentActivity() {
                                             val coupleSpace = repository.activeCoupleSpace.value
                                             val userSettings = repository.userSettings.value
                                             if (coupleSpace.isPaired) {
-                                                if (!userSettings.hasLocalPassword) {
+                                                if (userSettings.hasLocalPassword && userSettings.pinCode.isNotEmpty()) {
+                                                    navigationState = AppNavigationState.LOCK
+                                                } else if (!userSettings.hasCompletedPairingSetup) {
                                                     navigationState = AppNavigationState.SET_FIRST_PASSWORD
                                                 } else {
-                                                    navigationState = AppNavigationState.LOCK
+                                                    navigationState = AppNavigationState.MAIN_APP
                                                 }
                                             } else {
                                                 navigationState = AppNavigationState.ONBOARDING
@@ -157,7 +161,20 @@ class MainActivity : ComponentActivity() {
                                 SetFirstPasswordScreen(
                                     repository = repository,
                                     onPasswordSet = {
-                                        navigationState = AppNavigationState.MAIN_APP
+                                        val couple = repository.activeCoupleSpace.value
+                                        if (couple.isPaired) {
+                                            navigationState = AppNavigationState.MAIN_APP
+                                        } else {
+                                            navigationState = AppNavigationState.ONBOARDING
+                                        }
+                                    },
+                                    onSkipPassword = {
+                                        val couple = repository.activeCoupleSpace.value
+                                        if (couple.isPaired) {
+                                            navigationState = AppNavigationState.MAIN_APP
+                                        } else {
+                                            navigationState = AppNavigationState.ONBOARDING
+                                        }
                                     }
                                 )
                             }
@@ -190,27 +207,47 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             AppNavigationState.MAIN_APP -> {
-                                MainDashboardScreen(
-                                    repository = repository,
-                                    onLockApp = {
-                                        navigationState = AppNavigationState.LOCK
+                                val coupleSpace = repository.activeCoupleSpace.value
+                                if (!coupleSpace.isPaired) {
+                                    LaunchedEffect(Unit) {
+                                        navigationState = AppNavigationState.ONBOARDING
                                     }
-                                )
+                                } else {
+                                    MainDashboardScreen(
+                                        repository = repository,
+                                        onLockApp = {
+                                            val userSettings = repository.userSettings.value
+                                            if (userSettings.hasLocalPassword && userSettings.pinCode.isNotEmpty()) {
+                                                navigationState = AppNavigationState.LOCK
+                                            } else {
+                                                android.widget.Toast.makeText(this@MainActivity, "Aucun code PIN configuré", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    )
+                                }
                             }
                             AppNavigationState.ONBOARDING -> {
                                 OnboardingScreen(
                                     repository = repository,
                                     onCompleteOnboarding = {
-                                        val userSettings = repository.userSettings.value
-                                        if (!userSettings.hasLocalPassword) {
-                                            navigationState = AppNavigationState.SET_FIRST_PASSWORD
-                                        } else {
-                                            navigationState = AppNavigationState.MAIN_APP
+                                        lifecycleScope.launch {
+                                            repository.findExistingCoupleSpace()
+                                            val coupleSpace = repository.activeCoupleSpace.value
+                                            val userSettings = repository.userSettings.value
+                                            if (coupleSpace.isPaired) {
+                                                if (userSettings.hasLocalPassword && userSettings.pinCode.isNotEmpty()) {
+                                                    navigationState = AppNavigationState.LOCK
+                                                } else if (!userSettings.hasCompletedPairingSetup) {
+                                                    navigationState = AppNavigationState.SET_FIRST_PASSWORD
+                                                } else {
+                                                    navigationState = AppNavigationState.MAIN_APP
+                                                }
+                                            } else {
+                                                navigationState = AppNavigationState.ONBOARDING
+                                            }
                                         }
                                     },
-                                    onBackToApp = if (repository.activeCoupleSpace.value.isPaired) {
-                                        { navigationState = AppNavigationState.MAIN_APP }
-                                    } else null
+                                    onBackToApp = null
                                 )
                             }
                         }

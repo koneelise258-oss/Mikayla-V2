@@ -28,6 +28,15 @@ object BiometricHelper {
         return false
     }
 
+    private fun findActivity(context: Context): android.app.Activity? {
+        var c = context
+        while (c is android.content.ContextWrapper) {
+            if (c is android.app.Activity) return c
+            c = c.baseContext
+        }
+        return null
+    }
+
     fun authenticate(
         context: Context,
         onSuccess: () -> Unit,
@@ -40,9 +49,10 @@ object BiometricHelper {
             }
 
             try {
-                val executor = ContextCompat.getMainExecutor(context)
+                val activityContext = findActivity(context) ?: context
+                val executor = ContextCompat.getMainExecutor(activityContext)
                 val cancellationSignal = CancellationSignal()
-                val prompt = BiometricPrompt.Builder(context)
+                val prompt = BiometricPrompt.Builder(activityContext)
                     .setTitle("Authentification Mikayala")
                     .setSubtitle("Espace Sécurisé")
                     .setDescription("Scannez votre empreinte digitale pour déverrouiller")
