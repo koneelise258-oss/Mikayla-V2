@@ -1,0 +1,6 @@
+{
+  "name": "Mikayala",
+  "description": "Couple Intimate Chat & Shared Memory Vault",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
