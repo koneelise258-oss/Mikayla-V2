@@ -342,6 +342,16 @@ class SupabaseService(
         return@withContext null
     }
 
+    private fun isValidUuid(str: String?): Boolean {
+        if (str.isNullOrEmpty()) return false
+        return try {
+            java.util.UUID.fromString(str)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun postMessage(
         coupleId: String,
         senderId: String,
@@ -350,58 +360,147 @@ class SupabaseService(
         type: String = "text",
         pairingCode: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured() || coupleId.isEmpty()) return@withContext true
+        val dummyEntity = MessageEntity(
+            id = java.util.UUID.randomUUID().toString(),
+            coupleId = coupleId,
+            senderId = senderId,
+            content = content,
+            type = type
+        )
+        return@withContext postMessageEntity(dummyEntity)
+    }
+
+    suspend fun postMessageEntity(
+        msg: MessageEntity,
+        storagePath: String? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || msg.coupleId.isEmpty()) {
+            Log.e("SupabaseMessage", "[MESSAGE INSERT FAILED] Supabase not configured or coupleId empty: ${msg.coupleId}")
+            return@withContext false
+        }
+
+        val session = supabase.auth.currentSessionOrNull()
+        val authUid = session?.user?.id ?: getCurrentSessionUid() ?: msg.senderId
+        if (authUid.isEmpty()) {
+            Log.e("SupabaseMessage", "[MESSAGE INSERT FAILED] No active auth session (auth.uid() is null/empty)")
+            return@withContext false
+        }
+
         try {
-            val msgId = "m_" + java.util.UUID.randomUUID().toString()
-            val body = JSONObject().apply {
-                put("id", msgId)
-                put("couple_id", coupleId)
-                put("sender_id", senderId)
-                put("receiver_id", receiverId)
-                put("content", content)
-                put("type", type)
-                put("status", "sent")
-                put("created_at", System.currentTimeMillis())
+            val validUuid = if (isValidUuid(msg.id)) msg.id else java.util.UUID.randomUUID().toString()
+
+            val messageType = when (msg.type.lowercase()) {
+                "image", "photo", "camera" -> "image"
+                "audio", "voice", "voice_note" -> "audio"
+                "video" -> "video"
+                else -> "text"
             }
+
+            val body = JSONObject().apply {
+                put("id", validUuid)
+                put("couple_id", msg.coupleId)
+                put("sender_id", authUid)
+                put("content", msg.content)
+                put("message_type", messageType)
+                put("is_ephemeral", msg.isViewOnce)
+                put("status", msg.status.ifEmpty { "sent" })
+
+                val path = storagePath ?: if (!msg.mediaUrl.isNullOrEmpty() && !msg.mediaUrl.startsWith("http://") && !msg.mediaUrl.startsWith("https://")) msg.mediaUrl else null
+                if (!path.isNullOrEmpty()) {
+                    put("storage_path", path)
+                    put("media_url", "$supabaseUrl/storage/v1/object/public/messages-media/$path")
+                } else if (!msg.mediaUrl.isNullOrEmpty()) {
+                    put("media_url", msg.mediaUrl)
+                }
+
+                if (msg.duration > 0) put("audio_duration", msg.duration)
+                if (!msg.replyToId.isNullOrEmpty() && isValidUuid(msg.replyToId)) put("reply_to_id", msg.replyToId)
+                if (msg.reactions.isNotEmpty() && msg.reactions != "{}") {
+                    try {
+                        put("reactions", JSONObject(msg.reactions))
+                    } catch (e: Exception) {
+                        put("reactions", JSONObject())
+                    }
+                }
+            }
+
+            Log.d("SupabaseMessage", "Posting message to /rest/v1/messages: $body")
             val res = executePost("/rest/v1/messages", body.toString())
-            return@withContext res != null
+            if (res != null) {
+                Log.d("SupabaseMessage", "MESSAGE INSERT SUCCESS: $res")
+                return@withContext true
+            } else {
+                Log.e("SupabaseMessage", "MESSAGE INSERT FAILED: executePost returned null for payload $body")
+                return@withContext false
+            }
         } catch (e: Exception) {
-            Log.e("SupabaseService", "postMessage error: ${e.message}")
+            Log.e("SupabaseMessage", "MESSAGE INSERT FAILED exception: ${e.message}", e)
             return@withContext false
         }
     }
 
-    suspend fun postMessageEntity(msg: MessageEntity): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured() || msg.coupleId.isEmpty()) return@withContext true
+    suspend fun uploadMessageMedia(
+        coupleId: String,
+        storagePath: String,
+        bytes: ByteArray,
+        mimeType: String
+    ): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || coupleId.isEmpty()) return@withContext null
         try {
-            val body = JSONObject().apply {
-                put("id", msg.id)
-                put("couple_id", msg.coupleId)
-                put("sender_id", msg.senderId)
-                put("receiver_id", msg.receiverId)
-                put("content", msg.content)
-                put("type", msg.type)
-                put("status", msg.status)
-                put("created_at", msg.createdAt)
-                if (!msg.mediaUrl.isNullOrEmpty()) put("media_url", msg.mediaUrl)
-                if (!msg.thumbnailUrl.isNullOrEmpty()) put("thumbnail_url", msg.thumbnailUrl)
-                if (msg.duration > 0) put("duration", msg.duration)
-                if (msg.isViewOnce) put("is_view_once", true)
-                if (msg.isViewed) put("is_viewed", true)
-                if (msg.isStarred) put("is_starred", true)
-                if (msg.isPinned) put("is_pinned", true)
-                if (msg.isDeletedForEveryone) put("is_deleted_for_everyone", true)
-                if (msg.reactions.isNotEmpty() && msg.reactions != "{}") put("reactions", msg.reactions)
-                if (!msg.replyToId.isNullOrEmpty()) put("reply_to_id", msg.replyToId)
-                if (!msg.replyToSender.isNullOrEmpty()) put("reply_to_sender", msg.replyToSender)
-                if (!msg.replyToContent.isNullOrEmpty()) put("reply_to_content", msg.replyToContent)
-                if (msg.editedAt != null) put("edited_at", msg.editedAt)
+            val bucket = "messages-media"
+            val url = URL("$supabaseUrl/storage/v1/object/$bucket/$storagePath")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("apikey", supabaseKey)
+            val token = getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Content-Type", mimeType)
+            conn.setRequestProperty("x-upsert", "true")
+            conn.doOutput = true
+            conn.connectTimeout = 25000
+            conn.readTimeout = 25000
+
+            val os = conn.outputStream
+            os.write(bytes)
+            os.flush()
+            os.close()
+
+            if (conn.responseCode in 200..299) {
+                Log.d("SupabaseStorage", "[STORAGE] Successfully uploaded to $bucket/$storagePath")
+                return@withContext storagePath
+            } else {
+                val errorStream = conn.errorStream
+                val errorMsg = errorStream?.bufferedReader()?.use { it.readText() } ?: "No error stream"
+                Log.e("SupabaseStorage", "[STORAGE] Upload failed code ${conn.responseCode}: $errorMsg")
+                null
             }
-            val res = executePost("/rest/v1/messages", body.toString())
-            return@withContext res != null
         } catch (e: Exception) {
-            Log.e("SupabaseService", "postMessageEntity error: ${e.message}")
-            return@withContext false
+            Log.e("SupabaseStorage", "[STORAGE] Upload exception: ${e.message}", e)
+            null
+        }
+    }
+
+    suspend fun deleteMessageMedia(storagePath: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || storagePath.isEmpty()) return@withContext false
+        try {
+            val bucket = "messages-media"
+            val url = URL("$supabaseUrl/storage/v1/object/$bucket/$storagePath")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "DELETE"
+            conn.setRequestProperty("apikey", supabaseKey)
+            val token = getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+
+            val success = conn.responseCode in 200..299
+            if (success) {
+                Log.d("SupabaseStorage", "[STORAGE] Deleted file $storagePath from $bucket")
+            }
+            success
+        } catch (e: Exception) {
+            Log.e("SupabaseStorage", "Failed to delete storage file $storagePath: ${e.message}")
+            false
         }
     }
 
@@ -954,7 +1053,7 @@ class SupabaseService(
                     put("status", "delivered")
                     put("delivered_at", nowIso)
                 }
-                executePatch("/rest/v1/messages?couple_id=eq.$coupleId&receiver_id=eq.$myUserId&status=eq.sent", patchBody.toString())
+                executePatch("/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$myUserId&status=eq.sent", patchBody.toString())
             }
             val body = JSONObject().apply {
                 put("target_couple_id", coupleId)
@@ -978,7 +1077,7 @@ class SupabaseService(
                     put("status", "read")
                     put("read_at", nowIso)
                 }
-                executePatch("/rest/v1/messages?couple_id=eq.$coupleId&receiver_id=eq.$myUserId&status=neq.read", patchBody.toString())
+                executePatch("/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$myUserId&status=neq.read", patchBody.toString())
             }
             val body = JSONObject().apply {
                 put("target_couple_id", coupleId)
