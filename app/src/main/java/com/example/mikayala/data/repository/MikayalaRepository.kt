@@ -817,6 +817,61 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
+    fun sendVideoMedia(uri: Uri) {
+        val couple = _coupleSpace.value
+        val myUserId = getCurrentUserId()
+        if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank()) return
+        val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
+        val coupleId = couple.id
+
+        repositoryScope.launch {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+
+                if (bytes == null || bytes.isEmpty()) return@launch
+
+                val messageId = UUID.randomUUID().toString()
+                val mimeType = context.contentResolver.getType(uri) ?: "video/mp4"
+                val extension = if (mimeType.contains("mkv")) "mkv" else if (mimeType.contains("3gp")) "3gp" else "mp4"
+                val storagePath = "$coupleId/video/$messageId.$extension"
+
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, mimeType)
+                if (uploadedPath == null) {
+                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED: Video upload failed")
+                    return@launch
+                }
+
+                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                val newMsg = MessageEntity(
+                    id = messageId,
+                    coupleId = coupleId,
+                    senderId = myUserId,
+                    receiverId = partnerId,
+                    content = "Vidéo partagée 🎬",
+                    type = "video",
+                    mediaUrl = publicMediaUrl,
+                    createdAt = System.currentTimeMillis(),
+                    status = "sent"
+                )
+
+                _messages.value = _messages.value + newMsg
+
+                val success = supabaseService.postMessageEntity(newMsg, storagePath = storagePath)
+                if (success) {
+                    Log.d("MikayalaRepository", "MESSAGE INSERT SUCCESS for video ID $messageId")
+                } else {
+                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED for video ID $messageId")
+                    supabaseService.deleteMessageMedia(storagePath)
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                }
+            } catch (e: Exception) {
+                Log.e("MikayalaRepository", "Failed to send video media: ${e.message}", e)
+            }
+        }
+    }
+
     fun sendDocumentMedia(uri: Uri, fileName: String) {
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return

@@ -1,5 +1,9 @@
 package com.example.mikayala.ui.components
 
+import android.media.MediaPlayer
+import android.net.Uri
+import android.os.Build
+import android.util.Log
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,22 +33,76 @@ import kotlinx.coroutines.delay
 fun VoicePlayerWaveform(
     durationSeconds: Int,
     isSender: Boolean,
+    audioUrl: String? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
     var currentProgressSeconds by remember { mutableIntStateOf(0) }
     var playbackSpeed by remember { mutableFloatStateOf(1f) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
     val speeds = listOf(1.0f, 1.5f, 2.0f)
 
+    DisposableEffect(isPlaying, audioUrl) {
+        if (isPlaying && !audioUrl.isNullOrEmpty()) {
+            try {
+                val mp = MediaPlayer().apply {
+                    setDataSource(context, Uri.parse(audioUrl))
+                    prepareAsync()
+                    setOnPreparedListener { player ->
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            try {
+                                player.playbackParams = player.playbackParams.setSpeed(playbackSpeed)
+                            } catch (e: Exception) {
+                                Log.e("VoicePlayer", "Failed to set playback speed: ${e.message}")
+                            }
+                        }
+                        player.start()
+                    }
+                    setOnCompletionListener {
+                        isPlaying = false
+                        currentProgressSeconds = 0
+                    }
+                    setOnErrorListener { _, _, _ ->
+                        isPlaying = false
+                        true
+                    }
+                }
+                mediaPlayer = mp
+            } catch (e: Exception) {
+                Log.e("VoicePlayer", "Error initializing MediaPlayer for $audioUrl: ${e.message}")
+                isPlaying = false
+            }
+        }
+
+        onDispose {
+            try {
+                mediaPlayer?.stop()
+                mediaPlayer?.release()
+            } catch (ignored: Exception) {}
+            mediaPlayer = null
+        }
+    }
+
     LaunchedEffect(isPlaying, playbackSpeed) {
         if (isPlaying) {
-            while (currentProgressSeconds < durationSeconds) {
-                delay((1000L / playbackSpeed).toLong())
-                currentProgressSeconds++
+            if (mediaPlayer != null) {
+                while (isPlaying && mediaPlayer?.isPlaying == true) {
+                    val pos = mediaPlayer?.currentPosition ?: 0
+                    currentProgressSeconds = (pos / 1000).coerceAtMost(durationSeconds.coerceAtLeast(1))
+                    delay(200)
+                }
+            } else {
+                while (currentProgressSeconds < durationSeconds && isPlaying) {
+                    delay((1000L / playbackSpeed).toLong())
+                    currentProgressSeconds++
+                }
+                if (currentProgressSeconds >= durationSeconds) {
+                    isPlaying = false
+                    currentProgressSeconds = 0
+                }
             }
-            isPlaying = false
-            currentProgressSeconds = 0
         }
     }
 
@@ -64,7 +123,7 @@ fun VoicePlayerWaveform(
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Play / Pause Circle (Vibrant Blue as in image)
+        // Play / Pause Circle
         Box(
             modifier = Modifier
                 .size(38.dp)
@@ -74,7 +133,16 @@ fun VoicePlayerWaveform(
                         listOf(VibrantCyan, VibrantBlue)
                     )
                 )
-                .clickable { isPlaying = !isPlaying },
+                .clickable {
+                    if (isPlaying) {
+                        try {
+                            mediaPlayer?.pause()
+                        } catch (ignored: Exception) {}
+                        isPlaying = false
+                    } else {
+                        isPlaying = true
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -97,6 +165,7 @@ fun VoicePlayerWaveform(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val barCount = 24
+                val totalSecs = if (durationSeconds > 0) durationSeconds else 1
                 for (i in 0 until barCount) {
                     val staticHeight = when (i % 7) {
                         0 -> 6.dp
@@ -107,7 +176,7 @@ fun VoicePlayerWaveform(
                         5 -> 18.dp
                         else -> 14.dp
                     }
-                    val progressFraction = if (durationSeconds > 0) currentProgressSeconds.toFloat() / durationSeconds else 0f
+                    val progressFraction = currentProgressSeconds.toFloat() / totalSecs.toFloat()
                     val barFraction = i.toFloat() / barCount
                     val isPast = barFraction <= progressFraction
 
@@ -152,7 +221,13 @@ fun VoicePlayerWaveform(
                     color = HoverStateCyan,
                     modifier = Modifier.clickable {
                         val nextIdx = (speeds.indexOf(playbackSpeed) + 1) % speeds.size
-                        playbackSpeed = speeds[nextIdx]
+                        val newSpeed = speeds[nextIdx]
+                        playbackSpeed = newSpeed
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            try {
+                                mediaPlayer?.playbackParams = mediaPlayer?.playbackParams?.setSpeed(newSpeed) ?: android.media.PlaybackParams().setSpeed(newSpeed)
+                            } catch (ignored: Exception) {}
+                        }
                     }
                 ) {
                     Text(

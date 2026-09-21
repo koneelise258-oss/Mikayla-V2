@@ -70,17 +70,28 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val voiceRecorder = remember { VoiceRecorderManager(context) }
 
-    // 📸 REAL PHOTO PICKER & CAMERA LAUNCHERS
+    // 📸 REAL PHOTO, VIDEO & CAMERA LAUNCHERS
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            repository.sendMessage(
-                content = "Photo partagée de la galerie 🖼️",
-                type = "image",
-                mediaUrl = uri.toString()
-            )
-            Toast.makeText(context, "Photo envoyée ! 🖼️", Toast.LENGTH_SHORT).show()
+            val mimeType = context.contentResolver.getType(uri) ?: ""
+            if (mimeType.startsWith("video")) {
+                repository.sendVideoMedia(uri)
+                Toast.makeText(context, "Vidéo en cours d'envoi... 🎬", Toast.LENGTH_SHORT).show()
+            } else {
+                repository.sendImageMedia(uri)
+                Toast.makeText(context, "Photo en cours d'envoi... 🖼️", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            repository.sendVideoMedia(uri)
+            Toast.makeText(context, "Vidéo en cours d'envoi... 🎬", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -88,11 +99,8 @@ fun ChatScreen(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
         if (bitmap != null) {
-            repository.sendMessage(
-                content = "Photo caméra instantanée 📸",
-                type = "image"
-            )
-            Toast.makeText(context, "Photo de l'appareil photo envoyée ! 📸", Toast.LENGTH_SHORT).show()
+            repository.sendCameraPhoto(bitmap)
+            Toast.makeText(context, "Photo caméra en cours d'envoi... 📸", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -285,7 +293,7 @@ fun ChatScreen(
                         onReply = { replyToMessage = message },
                         onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) },
                         onViewOnceClicked = {
-                            Toast.makeText(context, "Média à vue unique consulté ! 👁️", Toast.LENGTH_SHORT).show()
+                            repository.markViewOnceAsViewed(message.id)
                         }
                     )
                 }
@@ -498,17 +506,13 @@ fun ChatScreen(
                                     )
                                 }
 
-                                // Camera 📷 Button (Quick snap)
+                                 // Camera 📷 Button (Quick snap)
                                 IconButton(
                                     onClick = {
                                         try {
                                             cameraLauncher.launch(null)
                                         } catch (e: Exception) {
-                                            repository.sendMessage(
-                                                content = "Instant capturé à l'instant 📷",
-                                                type = "image"
-                                            )
-                                            Toast.makeText(context, "Mode simulation actif: Photo caméra envoyée!", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Impossible d'ouvrir la caméra", Toast.LENGTH_SHORT).show()
                                         }
                                     },
                                     modifier = Modifier
@@ -662,7 +666,7 @@ fun ChatScreen(
                                     if (recordingState == RecordingState.IDLE) {
                                         recordingState = RecordingState.RECORDING
                                         dragOffsetY = 0f
-                                        voiceRecorder.startRecording("vocal_${System.currentTimeMillis()}.aac")
+                                        voiceRecorder.startRecording("vocal_${System.currentTimeMillis()}.m4a")
                                     }
 
                                     do {
@@ -673,7 +677,7 @@ fun ChatScreen(
                                             dragOffsetY = dragY
                                             if (dragY < maxDragUp) maxDragUp = dragY
 
-                                            // Option 2: Drag up to lock (-60px upward)
+                                            // Drag up to lock (-60px upward)
                                             if (dragY < -60f && recordingState == RecordingState.RECORDING) {
                                                 recordingState = RecordingState.LOCKED
                                                 isLockedViaDrag = true
@@ -684,29 +688,21 @@ fun ChatScreen(
                                     val duration = System.currentTimeMillis() - startTime
                                     dragOffsetY = 0f
 
-                                    if (duration < 250 && abs(maxDragUp) < 15f && !isLockedViaDrag) {
-                                        // Option 3: Single tap -> Lock automatically
-                                        recordingState = RecordingState.LOCKED
-                                    } else if (recordingState == RecordingState.LOCKED || isLockedViaDrag) {
-                                        // Option 2: Stay in hands-free locked mode
+                                    if (recordingState == RecordingState.LOCKED || isLockedViaDrag) {
+                                        // Stay in hands-free locked mode
                                     } else {
-                                        // Option 1: Hold -> Releasing finger sends vocal
+                                        // Hold -> Releasing finger sends vocal
                                         if (duration >= 500) {
                                             val filePath = voiceRecorder.stopRecording()
                                             recordingState = RecordingState.IDLE
                                             if (filePath != null && File(filePath).length() > 0) {
-                                                repository.sendMessage(
-                                                    content = "Note vocale d'amour 🎙️",
-                                                    type = "audio",
-                                                    mediaUrl = filePath,
-                                                    duration = recordingTimerSeconds
-                                                )
-                                                Toast.makeText(context, "Vocal envoyé ! 🎙️❤️", Toast.LENGTH_SHORT).show()
+                                                repository.sendVoiceNote(filePath, recordingTimerSeconds)
+                                                Toast.makeText(context, "Vocal en cours d'envoi... 🎙️", Toast.LENGTH_SHORT).show()
                                             } else {
                                                 Toast.makeText(context, "Erreur lors de l'enregistrement", Toast.LENGTH_SHORT).show()
                                             }
                                         } else {
-                                            // Too short, cancel
+                                            // Too short, cancel cleanly
                                             voiceRecorder.cancelRecording()
                                             recordingState = RecordingState.IDLE
                                         }
@@ -732,13 +728,8 @@ fun ChatScreen(
                                         val filePath = voiceRecorder.stopRecording()
                                         recordingState = RecordingState.IDLE
                                         if (filePath != null && File(filePath).length() > 0) {
-                                            repository.sendMessage(
-                                                content = "Note vocale d'amour 🎙️",
-                                                type = "audio",
-                                                mediaUrl = filePath,
-                                                duration = recordingTimerSeconds
-                                            )
-                                            Toast.makeText(context, "Vocal envoyé ! 🎙️❤️", Toast.LENGTH_SHORT).show()
+                                            repository.sendVoiceNote(filePath, recordingTimerSeconds)
+                                            Toast.makeText(context, "Vocal en cours d'envoi... 🎙️", Toast.LENGTH_SHORT).show()
                                         } else {
                                             Toast.makeText(context, "Erreur lors de l'enregistrement", Toast.LENGTH_SHORT).show()
                                         }
@@ -783,10 +774,9 @@ fun ChatScreen(
                 onSendGallery = {
                     showAttachmentSheet = false
                     try {
-                        galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                     } catch (e: Exception) {
-                        repository.sendMessage(content = "Photo de notre voyage 📸", type = "image")
-                        Toast.makeText(context, "Photo de la galerie partagée 📸", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Impossible d'ouvrir la galerie", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onSendCamera = {
@@ -794,8 +784,15 @@ fun ChatScreen(
                     try {
                         cameraLauncher.launch(null)
                     } catch (e: Exception) {
-                        repository.sendMessage(content = "Selfie instantané avec toi 📷", type = "image")
-                        Toast.makeText(context, "Photo caméra envoyée 📷", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Impossible d'ouvrir la caméra", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onSendVideo = {
+                    showAttachmentSheet = false
+                    try {
+                        videoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Impossible d'ouvrir le sélecteur vidéo", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onSendLocation = {
@@ -1109,63 +1106,24 @@ private fun MessageBubble(
 
         // Message Content Variants
         when (message.type) {
-            "image" -> {
-                // Media card with circular progress indicator (70% as in reference image)
-                Column(
-                    horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = MatteCardDark,
-                        border = BorderStroke(1.dp, MatteSquircleBorder),
-                        modifier = Modifier
-                            .width(180.dp)
-                            .height(180.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(Color(0xFF2C3E50), Color(0xFF1B263B))
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            // Circular 70% Progress Ring (Exact reference from image)
-                            Box(
-                                modifier = Modifier.size(60.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    progress = { 0.70f },
-                                    modifier = Modifier.fillMaxSize(),
-                                    color = Color.White,
-                                    trackColor = ProgressRingTrack,
-                                    strokeWidth = 3.5.dp,
-                                    strokeCap = StrokeCap.Round
-                                )
-                                Text(
-                                    text = "70%",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (isSender) "Sending" else timeFormatted,
-                        fontSize = 11.sp,
-                        color = TimeStampMuted,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
-                }
+            "image", "photo" -> {
+                ImageMessageItem(
+                    message = message,
+                    isSender = isSender,
+                    timeFormatted = timeFormatted,
+                    onViewOnceOpened = { onViewOnceClicked() }
+                )
             }
 
-            "audio" -> {
+            "video" -> {
+                VideoMessageItem(
+                    message = message,
+                    isSender = isSender,
+                    timeFormatted = timeFormatted
+                )
+            }
+
+            "audio", "voice" -> {
                 Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -1176,7 +1134,8 @@ private fun MessageBubble(
                         Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                             VoicePlayerWaveform(
                                 durationSeconds = message.duration,
-                                isSender = isSender
+                                isSender = isSender,
+                                audioUrl = message.mediaUrl
                             )
                         }
                     }
@@ -1818,5 +1777,288 @@ private fun MessageBubble(
     }
 }
 }
+}
+
+@Composable
+fun ImageMessageItem(
+    message: MessageEntity,
+    isSender: Boolean,
+    timeFormatted: String,
+    onViewOnceOpened: () -> Unit
+) {
+    var showFullScreenPhoto by remember { mutableStateOf(false) }
+
+    Column(
+        horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
+    ) {
+        if (message.isViewOnce) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = if (message.isViewed) CardDarkElevated else MatteCardDark,
+                border = BorderStroke(1.dp, if (message.isViewed) Color.Gray.copy(alpha = 0.3f) else AccentRose),
+                modifier = Modifier
+                    .widthIn(min = 180.dp, max = 240.dp)
+                    .clickable(enabled = !message.isViewed) {
+                        showFullScreenPhoto = true
+                        onViewOnceOpened()
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (message.isViewed) Icons.Rounded.VisibilityOff else Icons.Rounded.Lock,
+                        contentDescription = null,
+                        tint = if (message.isViewed) TextSecondary else AccentRose,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (message.isViewed) "Photo vue 👁️" else "Photo éphémère (Appuyer) 🔒",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (message.isViewed) TextSecondary else TextPrimary
+                    )
+                }
+            }
+        } else {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MatteCardDark,
+                border = BorderStroke(1.dp, MatteSquircleBorder),
+                modifier = Modifier
+                    .widthIn(min = 180.dp, max = 260.dp)
+                    .heightIn(min = 180.dp, max = 320.dp)
+                    .clickable {
+                        if (!message.mediaUrl.isNullOrEmpty()) {
+                            showFullScreenPhoto = true
+                        }
+                    }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF1E293B)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!message.mediaUrl.isNullOrEmpty()) {
+                        coil.compose.AsyncImage(
+                            model = message.mediaUrl,
+                            contentDescription = "Photo partagée",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            color = VibrantCyan,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = timeFormatted,
+            fontSize = 11.sp,
+            color = TimeStampMuted,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+    }
+
+    if (showFullScreenPhoto && !message.mediaUrl.isNullOrEmpty()) {
+        FullScreenPhotoDialog(imageUrl = message.mediaUrl, onDismiss = { showFullScreenPhoto = false })
+    }
+}
+
+@Composable
+fun VideoMessageItem(
+    message: MessageEntity,
+    isSender: Boolean,
+    timeFormatted: String
+) {
+    var showFullScreenVideo by remember { mutableStateOf(false) }
+
+    Column(
+        horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MatteCardDark,
+            border = BorderStroke(1.dp, MatteSquircleBorder),
+            modifier = Modifier
+                .width(240.dp)
+                .height(180.dp)
+                .clickable {
+                    if (!message.mediaUrl.isNullOrEmpty()) {
+                        showFullScreenVideo = true
+                    }
+                }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0F172A)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!message.mediaUrl.isNullOrEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = VibrantCyan,
+                            shadowElevation = 6.dp,
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayArrow,
+                                    contentDescription = "Lire vidéo",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.Black.copy(alpha = 0.65f),
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Videocam,
+                                    contentDescription = null,
+                                    tint = VibrantCyan,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("VIDÉO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+                } else {
+                    CircularProgressIndicator(
+                        color = VibrantCyan,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = timeFormatted,
+            fontSize = 11.sp,
+            color = TimeStampMuted,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+    }
+
+    if (showFullScreenVideo && !message.mediaUrl.isNullOrEmpty()) {
+        FullScreenVideoDialog(videoUrl = message.mediaUrl, onDismiss = { showFullScreenVideo = false })
+    }
+}
+
+@Composable
+fun FullScreenPhotoDialog(
+    imageUrl: String,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            coil.compose.AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Fermer",
+                    tint = Color.White
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun FullScreenVideoDialog(
+    videoUrl: String,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { ctx ->
+                    android.widget.VideoView(ctx).apply {
+                        val mediaController = android.widget.MediaController(ctx)
+                        mediaController.setAnchorView(this)
+                        setMediaController(mediaController)
+                        setVideoURI(android.net.Uri.parse(videoUrl))
+                        setOnPreparedListener { mp ->
+                            start()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Fermer",
+                    tint = Color.White
+                )
+            }
+        }
+    }
 }
 

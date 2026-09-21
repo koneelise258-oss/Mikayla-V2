@@ -37,6 +37,7 @@ fun ChatAttachmentAndGamesBottomSheet(
     onDismiss: () -> Unit,
     onSendGallery: () -> Unit,
     onSendCamera: () -> Unit,
+    onSendVideo: (() -> Unit)? = null,
     onSendLocation: () -> Unit,
     onSendContact: () -> Unit,
     onSendDocument: () -> Unit,
@@ -170,6 +171,13 @@ fun ChatAttachmentAndGamesBottomSheet(
                             icon = Icons.Rounded.PhotoCamera,
                             gradientColors = listOf(Color(0xFFFF2D55), Color(0xFFFF5252)),
                             onClick = onSendCamera
+                        ),
+                        AttachmentGridItem(
+                            id = "video",
+                            title = "Vidéo",
+                            icon = Icons.Rounded.Videocam,
+                            gradientColors = listOf(Color(0xFF9C27B0), Color(0xFFE040FB)),
+                            onClick = { onSendVideo?.invoke() ?: onSendGallery() }
                         ),
                         AttachmentGridItem(
                             id = "location",
