@@ -17,25 +17,32 @@ class VoiceRecorderManager(private val context: Context) {
         val file = File(context.cacheDir, fileName)
         currentFilePath = file.absolutePath
 
-        mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            MediaRecorder(context)
-        } else {
-            MediaRecorder()
-        }.apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setOutputFile(currentFilePath)
-            try {
+        return try {
+            mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                MediaRecorder()
+            }.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setOutputFile(currentFilePath)
                 prepare()
                 start()
-                isRecording = true
-                isPaused = false
-                return true
-            } catch (e: IOException) {
-                Log.e("VoiceRecorderManager", "prepare() failed: ${e.message}")
-                return false
             }
+            isRecording = true
+            isPaused = false
+            true
+        } catch (e: Exception) {
+            Log.e("VoiceRecorderManager", "startRecording failed: ${e.message}", e)
+            try {
+                mediaRecorder?.release()
+            } catch (ignored: Exception) {}
+            mediaRecorder = null
+            isRecording = false
+            isPaused = false
+            currentFilePath = null
+            false
         }
     }
 

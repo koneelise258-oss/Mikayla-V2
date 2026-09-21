@@ -1019,6 +1019,7 @@ class MikayalaRepository(private val context: Context) {
             partner2Status = status,
             partner2Avatar = avatarUrl
         )
+        prefs.edit().putString("partner_name", nickname).putString("partner_custom_nickname", nickname).apply()
 
         val myUserId = getCurrentUserId()
         val pairingCode = _coupleSpace.value.pairingCode
@@ -1031,8 +1032,16 @@ class MikayalaRepository(private val context: Context) {
                     val partnerUserId = if (myUserId == p1Id) p2Id else p1Id
                     val coupleId = spaceJson.optString("id", "")
 
+                    if (partnerUserId.isNotEmpty()) {
+                        prefs.edit().putString("partner_custom_nickname_$partnerUserId", nickname).apply()
+                    }
+
                     if (partnerUserId.isNotEmpty() && coupleId.isNotEmpty()) {
-                        supabaseService.upsertPartnerNickname(coupleId, myUserId, partnerUserId, nickname)
+                        try {
+                            supabaseService.upsertPartnerNickname(coupleId, myUserId, partnerUserId, nickname)
+                        } catch (e: Exception) {
+                            Log.w("MikayalaRepository", "upsertPartnerNickname background sync skipped: ${e.message}")
+                        }
                         syncProfiles()
                     }
                 }
@@ -1572,7 +1581,11 @@ class MikayalaRepository(private val context: Context) {
                         }
 
                         // Load private nickname if any
-                        val customNickname = supabaseService.getPartnerNickname(myUserId, partnerUserId) ?: ""
+                        val localNickname = prefs.getString("partner_custom_nickname_$partnerUserId", "")?.ifEmpty {
+                            prefs.getString("partner_custom_nickname", "")
+                        } ?: ""
+                        val remoteNickname = try { supabaseService.getPartnerNickname(myUserId, partnerUserId) ?: "" } catch (e: Exception) { "" }
+                        val customNickname = localNickname.ifEmpty { remoteNickname }
                         val finalDisplayName = customNickname.ifEmpty { partnerDispName }.ifEmpty { "Mon Partenaire" }
 
                         _userSettings.value = _userSettings.value.copy(

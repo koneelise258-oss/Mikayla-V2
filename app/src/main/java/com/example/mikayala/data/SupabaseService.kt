@@ -443,7 +443,9 @@ class SupabaseService(
 
     // --- REALTIME SUBSCRIPTION & BROADCAST ---
     private var activeRealtimeChannel: RealtimeChannel? = null
-    private var realtimeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var activeSubscribedCoupleId: String? = null
+    private var subscriptionJob: Job? = null
+    private val realtimeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun subscribeToMessagesRealtime(
         coupleId: String,
@@ -456,14 +458,31 @@ class SupabaseService(
     ) {
         if (!isConfigured() || coupleId.isEmpty()) return
 
-        realtimeScope.launch {
+        // If already connected to this couple and channel is active, do not re-register flows
+        if (activeSubscribedCoupleId == coupleId && activeRealtimeChannel?.status?.value?.name == "SUBSCRIBED") {
+            Log.d("SupabaseRealtime", "[REALTIME] Already subscribed to couple $coupleId, skipping duplicate subscribe")
+            return
+        }
+
+        subscriptionJob?.cancel()
+        subscriptionJob = realtimeScope.launch {
             try {
-                unsubscribeRealtime()
+                activeSubscribedCoupleId = null
+                val oldChannel = activeRealtimeChannel
+                activeRealtimeChannel = null
+                if (oldChannel != null) {
+                    try {
+                        supabase.realtime.removeChannel(oldChannel)
+                    } catch (e: Exception) {
+                        Log.w("SupabaseRealtime", "Error removing old channel: ${e.message}")
+                    }
+                }
 
                 Log.d("SupabaseRealtime", "[REALTIME] Connecting to messages channel for couple: $coupleId")
-                val channelId = "messages_couple_$coupleId"
+                val channelId = "messages_couple_${coupleId}_${System.currentTimeMillis()}"
                 val channel = supabase.channel(channelId)
                 activeRealtimeChannel = channel
+                activeSubscribedCoupleId = coupleId
 
                 // Listen to channel connection status
                 launch {
@@ -479,7 +498,7 @@ class SupabaseService(
                     }
                 }
 
-                // Listen to Postgres changes for 'messages' table
+                // Listen to Postgres changes for 'messages' table BEFORE subscribing
                 val changeFlow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
                     table = "messages"
                 }
@@ -523,7 +542,7 @@ class SupabaseService(
                     }
                 }
 
-                // Broadcast typing
+                // Broadcast typing flow
                 launch {
                     channel.broadcastFlow<JsonObject>(event = "typing").collect { payload ->
                         try {
@@ -538,7 +557,7 @@ class SupabaseService(
                     }
                 }
 
-                // Broadcast recording audio
+                // Broadcast recording flow
                 launch {
                     channel.broadcastFlow<JsonObject>(event = "recording").collect { payload ->
                         try {
@@ -596,7 +615,20 @@ class SupabaseService(
 
     fun unsubscribeRealtime() {
         try {
+            subscriptionJob?.cancel()
+            subscriptionJob = null
+            activeSubscribedCoupleId = null
+            val channel = activeRealtimeChannel
             activeRealtimeChannel = null
+            if (channel != null) {
+                realtimeScope.launch {
+                    try {
+                        supabase.realtime.removeChannel(channel)
+                    } catch (e: Exception) {
+                        Log.e("SupabaseRealtime", "Error in removeChannel: ${e.message}")
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e("SupabaseRealtime", "Error in unsubscribeRealtime: ${e.message}")
         }
@@ -764,13 +796,22 @@ class SupabaseService(
         }
     }
 
+    private fun getAuthToken(): String {
+        return try {
+            supabase.auth.currentSessionOrNull()?.accessToken ?: supabaseKey
+        } catch (e: Exception) {
+            supabaseKey
+        }
+    }
+
     private fun executeGet(path: String): String? {
         return try {
             val url = URL("$supabaseUrl$path")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.setRequestProperty("apikey", supabaseKey)
-            conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+            val token = getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
             conn.connectTimeout = 6000
             conn.readTimeout = 6000
 
@@ -796,11 +837,8 @@ class SupabaseService(
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("apikey", supabaseKey)
-            if (accessToken != null) {
-                conn.setRequestProperty("Authorization", "Bearer $accessToken")
-            } else {
-                conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
-            }
+            val token = accessToken ?: getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
             conn.setRequestProperty("Content-Type", "application/json")
             conn.setRequestProperty("Prefer", "return=representation")
             conn.doOutput = true
@@ -833,7 +871,7 @@ class SupabaseService(
                     reader.close()
                     sb.toString()
                 } else "No error stream"
-                Log.e("SupabaseService", "executePost failed (code ${conn.responseCode}): $errorMessage")
+                Log.w("SupabaseService", "executePost status ${conn.responseCode} on $path: $errorMessage")
                 null
             }
         } catch (e: Exception) {
@@ -849,7 +887,8 @@ class SupabaseService(
             conn.requestMethod = "POST" // HTTP connection workaround for PATCH or use X-HTTP-Method-Override
             conn.setRequestProperty("X-HTTP-Method-Override", "PATCH")
             conn.setRequestProperty("apikey", supabaseKey)
-            conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+            val token = getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
             conn.setRequestProperty("Content-Type", "application/json")
             conn.doOutput = true
             conn.connectTimeout = 6000
@@ -882,7 +921,8 @@ class SupabaseService(
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "DELETE"
             conn.setRequestProperty("apikey", supabaseKey)
-            conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+            val token = getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
             conn.connectTimeout = 6000
             conn.readTimeout = 6000
 
