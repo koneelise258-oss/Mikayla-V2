@@ -487,8 +487,11 @@ class MikayalaRepository(private val context: Context) {
         val newEntity = parseMessageJson(obj) ?: return
         val myUserId = getCurrentUserId()
 
+        Log.d("MikayalaRepository", "[MIKAYALA_REALTIME] INSERT RECEIVED id=${newEntity.id}, sender=${newEntity.senderId}, type=${newEntity.type}")
+
         if (newEntity.senderId != myUserId && newEntity.status == "sent") {
             repositoryScope.launch {
+                Log.d("MikayalaRepository", "[MIKAYALA_MESSAGING] Realtime INSERT from partner -> trigger markMessagesDelivered")
                 markMessagesDelivered(_coupleSpace.value.id)
             }
         }
@@ -505,6 +508,7 @@ class MikayalaRepository(private val context: Context) {
 
     private fun handleRealtimeMessageUpdate(obj: JSONObject) {
         val updatedEntity = parseMessageJson(obj) ?: return
+        Log.d("MikayalaRepository", "[MIKAYALA_REALTIME] UPDATE RECEIVED id=${updatedEntity.id}, status=${updatedEntity.status}")
         _messages.value = _messages.value.map { local ->
             if (local.id == updatedEntity.id) {
                 updatedEntity
@@ -616,16 +620,15 @@ class MikayalaRepository(private val context: Context) {
         val couple = _coupleSpace.value
         val myUserId = getCurrentUserId()
         if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank()) {
-            Log.w("MikayalaRepository", "Cannot send message: no active paired couple space.")
+            Log.w("MikayalaRepository", "[MIKAYALA_MESSAGING] Cannot send message: no active paired couple space.")
             return
         }
 
         val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
         val coupleId = couple.id
-
         val messageUuid = UUID.randomUUID().toString()
 
-        val newMsg = MessageEntity(
+        val pendingMsg = MessageEntity(
             id = messageUuid,
             coupleId = coupleId,
             senderId = myUserId,
@@ -635,21 +638,25 @@ class MikayalaRepository(private val context: Context) {
             mediaUrl = mediaUrl,
             duration = duration,
             createdAt = System.currentTimeMillis(),
-            status = "sent",
+            status = "pending",
             isViewOnce = isViewOnce,
             replyToId = replyToId,
             replyToSender = replyToSender,
             replyToContent = replyToContent
         )
-        _messages.value = _messages.value + newMsg
+        _messages.value = _messages.value + pendingMsg
+        Log.d("MikayalaRepository", "[MIKAYALA_MESSAGING] PENDING message added locally: $messageUuid")
 
         // Sync with Supabase
         repositoryScope.launch {
-            val success = supabaseService.postMessageEntity(newMsg)
+            val success = supabaseService.postMessageEntity(pendingMsg)
             if (success) {
-                Log.d("MikayalaRepository", "MESSAGE INSERT SUCCESS for text ID $messageUuid")
+                Log.d("MikayalaRepository", "[MIKAYALA_MESSAGING] INSERT SUCCESS for text ID $messageUuid")
+                _messages.value = _messages.value.map {
+                    if (it.id == messageUuid) it.copy(status = "sent") else it
+                }
             } else {
-                Log.e("MikayalaRepository", "MESSAGE INSERT FAILED for text ID $messageUuid")
+                Log.e("MikayalaRepository", "[MIKAYALA_MESSAGING] INSERT FAILED for text ID $messageUuid")
                 _messages.value = _messages.value.filterNot { it.id == messageUuid }
             }
         }
@@ -662,49 +669,58 @@ class MikayalaRepository(private val context: Context) {
         val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
         val coupleId = couple.id
 
+        Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] RECORDING FINISHED path=$filePath duration=$durationSeconds")
+
         repositoryScope.launch {
             try {
                 val file = File(filePath)
                 if (!file.exists()) {
-                    Log.e("MikayalaRepository", "Voice note file missing: $filePath")
+                    Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] Voice note file missing: $filePath")
                     return@launch
                 }
                 val bytes = file.readBytes()
                 val messageId = UUID.randomUUID().toString()
                 val storagePath = "$coupleId/audio/$messageId.m4a"
 
-                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "audio/m4a")
-                if (uploadedPath == null) {
-                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED: Voice note upload failed")
-                    return@launch
-                }
-
-                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                val newMsg = MessageEntity(
+                val pendingMsg = MessageEntity(
                     id = messageId,
                     coupleId = coupleId,
                     senderId = myUserId,
                     receiverId = partnerId,
-                    content = "Message vocal",
+                    content = "Message vocal 🎙️",
                     type = "audio",
-                    mediaUrl = publicMediaUrl,
+                    mediaUrl = null,
                     duration = durationSeconds,
                     createdAt = System.currentTimeMillis(),
-                    status = "sent"
+                    status = "pending"
                 )
+                _messages.value = _messages.value + pendingMsg
+                Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD START storagePath=$storagePath")
 
-                _messages.value = _messages.value + newMsg
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "audio/m4a")
+                if (uploadedPath == null) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD FAILED for $storagePath")
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                    return@launch
+                }
 
-                val success = supabaseService.postMessageEntity(newMsg, storagePath = storagePath)
+                Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD SUCCESS storagePath=$storagePath")
+                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                val updatedPending = pendingMsg.copy(mediaUrl = publicMediaUrl)
+
+                val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
                 if (success) {
-                    Log.d("MikayalaRepository", "MESSAGE INSERT SUCCESS for voice note ID $messageId")
+                    Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] INSERT SUCCESS for voice note ID $messageId")
+                    _messages.value = _messages.value.map {
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = publicMediaUrl) else it
+                    }
                 } else {
-                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED for voice note ID $messageId")
+                    Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] INSERT FAILED for voice note ID $messageId")
                     supabaseService.deleteMessageMedia(storagePath)
                     _messages.value = _messages.value.filterNot { it.id == messageId }
                 }
             } catch (e: Exception) {
-                Log.e("MikayalaRepository", "Failed to send voice note: ${e.message}", e)
+                Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] Failed to send voice note: ${e.message}", e)
             }
         }
     }
@@ -715,6 +731,8 @@ class MikayalaRepository(private val context: Context) {
         if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank()) return
         val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
         val coupleId = couple.id
+
+        Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] PICKED uri=$uri, viewOnce=$isViewOnce")
 
         repositoryScope.launch {
             try {
@@ -727,39 +745,46 @@ class MikayalaRepository(private val context: Context) {
                 val messageId = UUID.randomUUID().toString()
                 val storagePath = "$coupleId/photos/$messageId.jpg"
 
-                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/jpeg")
-                if (uploadedPath == null) {
-                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED: Image upload failed")
-                    return@launch
-                }
-
-                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                val contentText = if (isViewOnce) "Photo éphémère" else "Photo partagée"
-                val newMsg = MessageEntity(
+                val contentText = if (isViewOnce) "Photo éphémère 📸" else "Photo partagée 🖼️"
+                val pendingMsg = MessageEntity(
                     id = messageId,
                     coupleId = coupleId,
                     senderId = myUserId,
                     receiverId = partnerId,
                     content = contentText,
                     type = "image",
-                    mediaUrl = publicMediaUrl,
+                    mediaUrl = null,
                     isViewOnce = isViewOnce,
                     createdAt = System.currentTimeMillis(),
-                    status = "sent"
+                    status = "pending"
                 )
+                _messages.value = _messages.value + pendingMsg
+                Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD START storagePath=$storagePath")
 
-                _messages.value = _messages.value + newMsg
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/jpeg")
+                if (uploadedPath == null) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD FAILED for $storagePath")
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                    return@launch
+                }
 
-                val success = supabaseService.postMessageEntity(newMsg, storagePath = storagePath)
+                Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD SUCCESS storagePath=$storagePath")
+                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                val updatedPending = pendingMsg.copy(mediaUrl = publicMediaUrl)
+
+                val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
                 if (success) {
-                    Log.d("MikayalaRepository", "MESSAGE INSERT SUCCESS for image ID $messageId")
+                    Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT SUCCESS for image ID $messageId")
+                    _messages.value = _messages.value.map {
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = publicMediaUrl) else it
+                    }
                 } else {
-                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED for image ID $messageId")
+                    Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT FAILED for image ID $messageId")
                     supabaseService.deleteMessageMedia(storagePath)
                     _messages.value = _messages.value.filterNot { it.id == messageId }
                 }
             } catch (e: Exception) {
-                Log.e("MikayalaRepository", "Failed to send image media: ${e.message}", e)
+                Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] Failed to send image media: ${e.message}", e)
             }
         }
     }
@@ -771,6 +796,8 @@ class MikayalaRepository(private val context: Context) {
         val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
         val coupleId = couple.id
 
+        Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] CAMERA CAPTURED bitmap ${bitmap.width}x${bitmap.height}")
+
         repositoryScope.launch {
             try {
                 val stream = ByteArrayOutputStream()
@@ -780,39 +807,46 @@ class MikayalaRepository(private val context: Context) {
                 val messageId = UUID.randomUUID().toString()
                 val storagePath = "$coupleId/photos/$messageId.jpg"
 
-                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/jpeg")
-                if (uploadedPath == null) {
-                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED: Camera photo upload failed")
-                    return@launch
-                }
-
-                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                val contentText = if (isViewOnce) "Photo instantanée éphémère" else "Photo instantanée"
-                val newMsg = MessageEntity(
+                val contentText = if (isViewOnce) "Photo instantanée éphémère 📸" else "Photo instantanée 📸"
+                val pendingMsg = MessageEntity(
                     id = messageId,
                     coupleId = coupleId,
                     senderId = myUserId,
                     receiverId = partnerId,
                     content = contentText,
                     type = "image",
-                    mediaUrl = publicMediaUrl,
+                    mediaUrl = null,
                     isViewOnce = isViewOnce,
                     createdAt = System.currentTimeMillis(),
-                    status = "sent"
+                    status = "pending"
                 )
+                _messages.value = _messages.value + pendingMsg
+                Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD START storagePath=$storagePath")
 
-                _messages.value = _messages.value + newMsg
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/jpeg")
+                if (uploadedPath == null) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD FAILED for camera photo $storagePath")
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                    return@launch
+                }
 
-                val success = supabaseService.postMessageEntity(newMsg, storagePath = storagePath)
+                Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD SUCCESS storagePath=$storagePath")
+                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                val updatedPending = pendingMsg.copy(mediaUrl = publicMediaUrl)
+
+                val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
                 if (success) {
-                    Log.d("MikayalaRepository", "MESSAGE INSERT SUCCESS for camera photo ID $messageId")
+                    Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT SUCCESS for camera photo ID $messageId")
+                    _messages.value = _messages.value.map {
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = publicMediaUrl) else it
+                    }
                 } else {
-                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED for camera photo ID $messageId")
+                    Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT FAILED for camera photo ID $messageId")
                     supabaseService.deleteMessageMedia(storagePath)
                     _messages.value = _messages.value.filterNot { it.id == messageId }
                 }
             } catch (e: Exception) {
-                Log.e("MikayalaRepository", "Failed to send camera photo: ${e.message}", e)
+                Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] Failed to send camera photo: ${e.message}", e)
             }
         }
     }
@@ -823,6 +857,8 @@ class MikayalaRepository(private val context: Context) {
         if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank()) return
         val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
         val coupleId = couple.id
+
+        Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] PICKED uri=$uri")
 
         repositoryScope.launch {
             try {
@@ -837,37 +873,44 @@ class MikayalaRepository(private val context: Context) {
                 val extension = if (mimeType.contains("mkv")) "mkv" else if (mimeType.contains("3gp")) "3gp" else "mp4"
                 val storagePath = "$coupleId/video/$messageId.$extension"
 
-                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, mimeType)
-                if (uploadedPath == null) {
-                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED: Video upload failed")
-                    return@launch
-                }
-
-                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                val newMsg = MessageEntity(
+                val pendingMsg = MessageEntity(
                     id = messageId,
                     coupleId = coupleId,
                     senderId = myUserId,
                     receiverId = partnerId,
                     content = "Vidéo partagée 🎬",
                     type = "video",
-                    mediaUrl = publicMediaUrl,
+                    mediaUrl = null,
                     createdAt = System.currentTimeMillis(),
-                    status = "sent"
+                    status = "pending"
                 )
+                _messages.value = _messages.value + pendingMsg
+                Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD START storagePath=$storagePath")
 
-                _messages.value = _messages.value + newMsg
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, mimeType)
+                if (uploadedPath == null) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD FAILED for $storagePath")
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                    return@launch
+                }
 
-                val success = supabaseService.postMessageEntity(newMsg, storagePath = storagePath)
+                Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD SUCCESS storagePath=$storagePath")
+                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                val updatedPending = pendingMsg.copy(mediaUrl = publicMediaUrl)
+
+                val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
                 if (success) {
-                    Log.d("MikayalaRepository", "MESSAGE INSERT SUCCESS for video ID $messageId")
+                    Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] INSERT SUCCESS for video ID $messageId")
+                    _messages.value = _messages.value.map {
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = publicMediaUrl) else it
+                    }
                 } else {
-                    Log.e("MikayalaRepository", "MESSAGE INSERT FAILED for video ID $messageId")
+                    Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] INSERT FAILED for video ID $messageId")
                     supabaseService.deleteMessageMedia(storagePath)
                     _messages.value = _messages.value.filterNot { it.id == messageId }
                 }
             } catch (e: Exception) {
-                Log.e("MikayalaRepository", "Failed to send video media: ${e.message}", e)
+                Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] Failed to send video media: ${e.message}", e)
             }
         }
     }
@@ -1672,9 +1715,36 @@ class MikayalaRepository(private val context: Context) {
 
     private var partnerProfileVersion = 0
 
+    private fun formatLastSeen(isoStr: String): String {
+        return try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            val cleanStr = isoStr.replace("Z", "").replace("+00:00", "")
+            val parsedDate = sdf.parse(cleanStr)
+            if (parsedDate != null) {
+                val diffMs = System.currentTimeMillis() - parsedDate.time
+                val diffMins = diffMs / 60000
+                when {
+                    diffMins < 2 -> "En ligne"
+                    diffMins < 60 -> "Vu il y a ${diffMins} min"
+                    diffMins < 1440 -> "Vu il y a ${diffMins / 60} h"
+                    else -> {
+                        val outSdf = java.text.SimpleDateFormat("dd/MM à HH:mm", java.util.Locale.FRANCE)
+                        "Vu le ${outSdf.format(parsedDate)}"
+                    }
+                }
+            } else "En ligne"
+        } catch (e: Exception) {
+            "En ligne"
+        }
+    }
+
     suspend fun syncProfiles() {
         val myUserId = getCurrentUserId()
         if (myUserId.isEmpty()) return
+
+        // 0. Update active user presence
+        supabaseService.touchUserActivity()
 
         // 1. Sync current user's profile
         val myProfileJson = supabaseService.getProfile(myUserId)
@@ -1737,18 +1807,26 @@ class MikayalaRepository(private val context: Context) {
                         val customNickname = localNickname.ifEmpty { remoteNickname }
                         val finalDisplayName = customNickname.ifEmpty { partnerDispName }.ifEmpty { "Mon Partenaire" }
 
+                        val partnerLastSeen = supabaseService.getPartnerLastSeen(partnerUserId)
+                        val presenceStatus = if (partnerLastSeen != null) {
+                            formatLastSeen(partnerLastSeen)
+                        } else {
+                            "En ligne"
+                        }
+                        Log.d("MikayalaRepository", "[MIKAYALA_PRESENCE] Partner presence status: $presenceStatus")
+
                         _userSettings.value = _userSettings.value.copy(
                             partnerNickname = finalDisplayName,
                             partnerBio = partnerBioText,
                             partnerAvatarUrl = partnerFinalAvatarUrl,
-                            partnerStatus = "En ligne"
+                            partnerStatus = presenceStatus
                         )
 
                         _coupleSpace.value = _coupleSpace.value.copy(
                             id = coupleId,
                             partner2Name = finalDisplayName,
                             partner2Avatar = partnerFinalAvatarUrl,
-                            partner2Status = "En ligne"
+                            partner2Status = presenceStatus
                         )
                         prefs.edit().putString("partner_name", finalDisplayName).apply()
                         if (coupleId.isNotEmpty()) {

@@ -1,6 +1,8 @@
 package com.example.mikayala.ui.screens
 
 import android.net.Uri
+import android.util.Log
+import kotlinx.coroutines.isActive
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
@@ -75,11 +77,14 @@ fun ChatScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
+            Log.d("ChatScreen", "[MIKAYALA_IMAGE] Gallery picker selected URI=$uri")
             val mimeType = context.contentResolver.getType(uri) ?: ""
             if (mimeType.startsWith("video")) {
+                Log.d("ChatScreen", "[MIKAYALA_VIDEO] Selected video URI=$uri")
                 repository.sendVideoMedia(uri)
                 Toast.makeText(context, "Vidéo en cours d'envoi... 🎬", Toast.LENGTH_SHORT).show()
             } else {
+                Log.d("ChatScreen", "[MIKAYALA_IMAGE] Selected image URI=$uri")
                 repository.sendImageMedia(uri)
                 Toast.makeText(context, "Photo en cours d'envoi... 🖼️", Toast.LENGTH_SHORT).show()
             }
@@ -90,6 +95,7 @@ fun ChatScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
+            Log.d("ChatScreen", "[MIKAYALA_VIDEO] Video launcher selected URI=$uri")
             repository.sendVideoMedia(uri)
             Toast.makeText(context, "Vidéo en cours d'envoi... 🎬", Toast.LENGTH_SHORT).show()
         }
@@ -99,6 +105,7 @@ fun ChatScreen(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
         if (bitmap != null) {
+            Log.d("ChatScreen", "[MIKAYALA_IMAGE] Camera captured photo bitmap ${bitmap.width}x${bitmap.height}")
             repository.sendCameraPhoto(bitmap)
             Toast.makeText(context, "Photo caméra en cours d'envoi... 📸", Toast.LENGTH_SHORT).show()
         }
@@ -151,6 +158,14 @@ fun ChatScreen(
         if (coupleId.isNotEmpty()) {
             repository.markMessagesDelivered(coupleId)
             repository.markMessagesRead(coupleId)
+        }
+    }
+
+    // Periodic presence & activity update while in chat screen
+    LaunchedEffect(Unit) {
+        while (true) {
+            repository.syncProfiles()
+            delay(30000)
         }
     }
 

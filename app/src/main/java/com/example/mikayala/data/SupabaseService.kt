@@ -1045,23 +1045,33 @@ class SupabaseService(
     suspend fun markMessagesDelivered(coupleId: String, myUserId: String = ""): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main") return@withContext false
         try {
-            if (myUserId.isNotEmpty()) {
-                val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
-                    timeZone = java.util.TimeZone.getTimeZone("UTC")
-                }.format(java.util.Date())
-                val patchBody = JSONObject().apply {
-                    put("status", "delivered")
-                    put("delivered_at", nowIso)
-                }
-                executePatch("/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$myUserId&status=eq.sent", patchBody.toString())
+            val uid = myUserId.ifEmpty { getCurrentSessionUid() ?: "" }
+            val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.format(java.util.Date())
+            val patchBody = JSONObject().apply {
+                put("status", "delivered")
+                put("delivered_at", nowIso)
             }
-            val body = JSONObject().apply {
+            val path = if (uid.isNotEmpty()) {
+                "/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$uid&status=eq.sent"
+            } else {
+                "/rest/v1/messages?couple_id=eq.$coupleId&status=eq.sent"
+            }
+            val patchRes = executePatch(path, patchBody.toString())
+            val rpcBody = JSONObject().apply {
                 put("target_couple_id", coupleId)
             }
-            val res = executePost("/rest/v1/rpc/mark_messages_delivered", body.toString())
-            res != null
+            val rpcRes = executePost("/rest/v1/rpc/mark_messages_delivered", rpcBody.toString())
+            val success = patchRes != null || rpcRes != null
+            if (success) {
+                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered SUCCESS for coupleId=$coupleId, sender!==$uid")
+            } else {
+                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered returned no matching rows or null")
+            }
+            success
         } catch (e: Exception) {
-            Log.e("SupabaseService", "markMessagesDelivered error: ${e.message}")
+            Log.e("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered error: ${e.message}")
             false
         }
     }
@@ -1069,25 +1079,86 @@ class SupabaseService(
     suspend fun markMessagesRead(coupleId: String, myUserId: String = ""): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main") return@withContext false
         try {
-            if (myUserId.isNotEmpty()) {
+            val uid = myUserId.ifEmpty { getCurrentSessionUid() ?: "" }
+            val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.format(java.util.Date())
+            val patchBody = JSONObject().apply {
+                put("status", "read")
+                put("read_at", nowIso)
+            }
+            val path = if (uid.isNotEmpty()) {
+                "/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$uid&status=neq.read"
+            } else {
+                "/rest/v1/messages?couple_id=eq.$coupleId&status=neq.read"
+            }
+            val patchRes = executePatch(path, patchBody.toString())
+            val rpcBody = JSONObject().apply {
+                put("target_couple_id", coupleId)
+            }
+            val rpcRes = executePost("/rest/v1/rpc/mark_messages_read", rpcBody.toString())
+            val success = patchRes != null || rpcRes != null
+            if (success) {
+                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead SUCCESS for coupleId=$coupleId, sender!==$uid")
+            } else {
+                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead returned no matching rows or null")
+            }
+            success
+        } catch (e: Exception) {
+            Log.e("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead error: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun touchUserActivity(): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext false
+        try {
+            val myUserId = getCurrentSessionUid() ?: return@withContext false
+            val body = JSONObject().apply {
+                put("user_id", myUserId)
+            }
+            val res = executePost("/rest/v1/rpc/touch_user_activity", body.toString())
+            if (res != null) {
+                Log.d("SupabaseService", "[MIKAYALA_PRESENCE] touch_user_activity RPC SUCCESS for $myUserId")
+                true
+            } else {
                 val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
                     timeZone = java.util.TimeZone.getTimeZone("UTC")
                 }.format(java.util.Date())
                 val patchBody = JSONObject().apply {
-                    put("status", "read")
-                    put("read_at", nowIso)
+                    put("user_id", myUserId)
+                    put("last_seen_at", nowIso)
+                    put("updated_at", nowIso)
                 }
-                executePatch("/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$myUserId&status=neq.read", patchBody.toString())
+                val patchRes = executePatch("/rest/v1/user_activity?user_id=eq.$myUserId", patchBody.toString())
+                if (patchRes == null) {
+                    executePost("/rest/v1/user_activity", patchBody.toString())
+                }
+                Log.d("SupabaseService", "[MIKAYALA_PRESENCE] user_activity updated via direct REST fallback for $myUserId")
+                true
             }
-            val body = JSONObject().apply {
-                put("target_couple_id", coupleId)
-            }
-            val res = executePost("/rest/v1/rpc/mark_messages_read", body.toString())
-            res != null
         } catch (e: Exception) {
-            Log.e("SupabaseService", "markMessagesRead error: ${e.message}")
+            Log.e("SupabaseService", "[MIKAYALA_PRESENCE] touch_user_activity error: ${e.message}")
             false
         }
+    }
+
+    suspend fun getPartnerLastSeen(partnerUserId: String): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || partnerUserId.isEmpty()) return@withContext null
+        try {
+            val res = executeGet("/rest/v1/user_activity?user_id=eq.$partnerUserId&select=last_seen_at")
+            if (res != null && res != "[]") {
+                val array = JSONArray(res)
+                if (array.length() > 0) {
+                    val lastSeen = array.getJSONObject(0).optString("last_seen_at", null)
+                    Log.d("SupabaseService", "[MIKAYALA_PRESENCE] Partner $partnerUserId last_seen_at: $lastSeen")
+                    return@withContext lastSeen
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseService", "[MIKAYALA_PRESENCE] getPartnerLastSeen error: ${e.message}")
+        }
+        return@withContext null
     }
 
     suspend fun getProfile(userId: String): JSONObject? = withContext(Dispatchers.IO) {
