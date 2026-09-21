@@ -1,6 +1,8 @@
 package com.example.mikayala.data.repository
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
 import android.util.Log
 import com.example.mikayala.data.SupabaseService
 import com.example.mikayala.data.model.*
@@ -11,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
 import java.util.UUID
 
 class MikayalaRepository(private val context: Context) {
@@ -24,6 +29,17 @@ class MikayalaRepository(private val context: Context) {
 
     private val _messages = MutableStateFlow<List<MessageEntity>>(emptyList())
     val allMessages: StateFlow<List<MessageEntity>> = _messages.asStateFlow()
+
+    private val _partnerIsTyping = MutableStateFlow(false)
+    val partnerIsTyping: StateFlow<Boolean> = _partnerIsTyping.asStateFlow()
+    val isPartnerTyping: StateFlow<Boolean> get() = partnerIsTyping
+
+    private val _partnerIsRecordingAudio = MutableStateFlow(false)
+    val partnerIsRecordingAudio: StateFlow<Boolean> = _partnerIsRecordingAudio.asStateFlow()
+    val isPartnerRecordingAudio: StateFlow<Boolean> get() = partnerIsRecordingAudio
+
+    private var typingResetJob: Job? = null
+    private var recordingResetJob: Job? = null
 
     private val _vaultItems = MutableStateFlow<List<VaultItemEntity>>(emptyList())
     val allVaultItems: StateFlow<List<VaultItemEntity>> = _vaultItems.asStateFlow()
@@ -60,12 +76,6 @@ class MikayalaRepository(private val context: Context) {
 
     private val _cycleInfo = MutableStateFlow(MenstrualCycleInfo())
     val cycleInfo: StateFlow<MenstrualCycleInfo> = _cycleInfo.asStateFlow()
-
-    private val _isPartnerTyping = MutableStateFlow(false)
-    val isPartnerTyping: StateFlow<Boolean> = _isPartnerTyping.asStateFlow()
-
-    private val _isPartnerRecordingAudio = MutableStateFlow(false)
-    val isPartnerRecordingAudio: StateFlow<Boolean> = _isPartnerRecordingAudio.asStateFlow()
 
     private val prefs = context.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
 
@@ -137,66 +147,209 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun ensureAnonymousSession(displayName: String = "Moi"): Boolean {
-        Log.d("RepoDiag", "ensureAnonymousSession starting for $displayName...")
+        Log.d("MikayalaAuth", "ensureAnonymousSession starting for $displayName...")
         val success = supabaseService.ensureAnonymousSession()
         if (success) {
             val session = supabaseService.supabase.auth.currentSessionOrNull()
             val userId = session?.user?.id ?: ""
-            Log.d("RepoDiag", "ensureAnonymousSession SUCCESS. Session UID: $userId")
-            Log.d("RepoDiag", "Note: user_id in prefs is currently: ${getCurrentUserId()}")
+            Log.d("MikayalaAuth", "ensureAnonymousSession SUCCESS. Session UID: $userId")
+            if (userId.isNotEmpty()) {
+                prefs.edit().putString("user_id", userId).apply()
+                _userSettings.value = _userSettings.value.copy(userId = userId)
+            }
         } else {
-            Log.e("RepoDiag", "ensureAnonymousSession FAILED")
+            Log.e("MikayalaAuth", "ensureAnonymousSession FAILED")
         }
         return success
     }
 
-    suspend fun findExistingCoupleSpace(): Boolean {
-        val myUserId = getCurrentUserId()
-        if (myUserId.isEmpty()) return false
-        val space = supabaseService.getCoupleSpaceForUser(myUserId)
-        if (space != null) {
+    suspend fun restoreSupabaseSession(): String? {
+        return try {
+            val session = supabaseService.supabase.auth.currentSessionOrNull()
+            val uid = session?.user?.id
+            if (uid != null && uid.isNotEmpty()) {
+                Log.d("MikayalaAuth", "[SESSION] Session Supabase restaurée avec succès pour UID: $uid")
+                prefs.edit().putString("user_id", uid).apply()
+                val email = session.user?.email ?: ""
+                if (email.isNotEmpty()) {
+                    prefs.edit().putString("user_email", email).apply()
+                }
+                _userSettings.value = _userSettings.value.copy(userId = uid)
+                uid
+            } else {
+                Log.d("MikayalaAuth", "[SESSION] Aucune session Supabase active trouvée en mémoire.")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("MikayalaAuth", "[SESSION] Erreur lors de la vérification de session: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun signIn(email: String, pass: String): Pair<Boolean, String?> {
+        val result = supabaseService.signInWithEmail(email, pass)
+        if (result.first) {
+            val uid = supabaseService.getCurrentSessionUid() ?: ""
+            if (uid.isNotEmpty()) {
+                prefs.edit().putString("user_id", uid).putString("user_email", email).apply()
+                _userSettings.value = _userSettings.value.copy(userId = uid)
+                // Sync profile
+                val profile = supabaseService.getProfile(uid)
+                val disp = profile?.optString("display_name", "") ?: ""
+                if (disp.isNotEmpty()) {
+                    prefs.edit().putString("display_name", disp).apply()
+                    _userSettings.value = _userSettings.value.copy(displayName = disp)
+                }
+            }
+        }
+        return result
+    }
+
+    suspend fun signUp(email: String, pass: String, displayName: String): Pair<Boolean, String?> {
+        val result = supabaseService.signUpWithEmail(email, pass, displayName)
+        if (result.first) {
+            val uid = supabaseService.getCurrentSessionUid() ?: ""
+            if (uid.isNotEmpty()) {
+                prefs.edit().putString("user_id", uid)
+                    .putString("user_email", email)
+                    .putString("display_name", displayName)
+                    .apply()
+                _userSettings.value = _userSettings.value.copy(userId = uid, displayName = displayName)
+            }
+        }
+        return result
+    }
+
+    sealed class CoupleRecoveryResult {
+        object NoSession : CoupleRecoveryResult()
+        object NoCoupleFound : CoupleRecoveryResult()
+        data class SingleCoupleFound(val couple: CoupleSpaceEntity) : CoupleRecoveryResult()
+        data class MultipleCouplesFound(val couples: List<CoupleSummaryItem>) : CoupleRecoveryResult()
+        data class WaitingCouple(val pairingCode: String) : CoupleRecoveryResult()
+    }
+
+    suspend fun recoverCoupleFromSupabase(): CoupleRecoveryResult {
+        var myUserId = getCurrentUserId()
+        if (myUserId.isEmpty()) {
+            val restoredUid = restoreSupabaseSession()
+            if (restoredUid != null) {
+                myUserId = restoredUid
+            } else {
+                Log.w("MikayalaRecovery", "[RECOVERY] Aucun utilisateur connecté.")
+                return CoupleRecoveryResult.NoSession
+            }
+        }
+
+        Log.d("MikayalaRecovery", "[RECOVERY] Interrogation de Supabase (source de vérité) pour UID: $myUserId")
+        val rawCouples = supabaseService.getAllCouplesForUser(myUserId)
+        if (rawCouples.isEmpty()) {
+            Log.d("MikayalaRecovery", "[RECOVERY] Aucun couple trouvé dans la table couples pour cet UID.")
+            clearCoupleCache()
+            return CoupleRecoveryResult.NoCoupleFound
+        }
+
+        val pairedSummaries = mutableListOf<CoupleSummaryItem>()
+        var waitingCoupleObj: JSONObject? = null
+
+        for (space in rawCouples) {
             val pairingCode = space.optString("pairing_code", "")
             val status = space.optString("status", "")
             val u1Id = space.optString("user1_id", "")
             val u2Id = space.optString("user2_id", "")
             val coupleId = space.optString("id", "")
+            val createdAt = space.optString("created_at", "")
 
-            val isPaired = (status == "paired") && 
-                    u1Id.isNotBlank() && u1Id != "null" && 
+            val isPaired = (status == "paired") &&
+                    u1Id.isNotBlank() && u1Id != "null" &&
                     u2Id.isNotBlank() && u2Id != "null" &&
                     coupleId.isNotBlank() &&
                     (myUserId == u1Id || myUserId == u2Id)
 
-            val normalizedStatus = if (isPaired) "paired" else if (pairingCode.isNotEmpty()) "waiting" else "none"
-
-            val isP1 = (myUserId == u1Id)
-            val partnerId = if (isP1) u2Id else u1Id
-            var pName = if (isP1) {
-                space.optString("partner_2_name", space.optString("partner2_name", "En attente..."))
-            } else {
-                space.optString("partner_1_name", space.optString("partner1_name", "Partenaire"))
-            }
-
-            if (isPaired && partnerId.isNotEmpty() && partnerId != "null" && (pName.isEmpty() || pName == "En attente...")) {
-                val partnerProfile = supabaseService.getProfile(partnerId)
-                if (partnerProfile != null) {
-                    pName = partnerProfile.optString("display_name", pName)
+            if (isPaired) {
+                val isP1 = (myUserId == u1Id)
+                val partnerId = if (isP1) u2Id else u1Id
+                var pName = if (isP1) {
+                    space.optString("partner_2_name", space.optString("partner2_name", "Partenaire"))
+                } else {
+                    space.optString("partner_1_name", space.optString("partner1_name", "Partenaire"))
                 }
+                if (pName.isBlank() || pName == "En attente...") {
+                    val partnerProfile = supabaseService.getProfile(partnerId)
+                    if (partnerProfile != null) {
+                        pName = partnerProfile.optString("display_name", pName)
+                    }
+                }
+                pairedSummaries.add(
+                    CoupleSummaryItem(
+                        coupleId = coupleId,
+                        pairingCode = pairingCode,
+                        status = "paired",
+                        partnerId = partnerId,
+                        partnerName = pName.ifEmpty { "Mon Partenaire" },
+                        user1Id = u1Id,
+                        user2Id = u2Id,
+                        createdAt = createdAt,
+                        isPaired = true
+                    )
+                )
+            } else if (status == "waiting" && waitingCoupleObj == null) {
+                waitingCoupleObj = space
             }
+        }
 
+        if (pairedSummaries.size > 1) {
+            Log.d("MikayalaRecovery", "[RECOVERY] Plusieurs couples connectés trouvés (${pairedSummaries.size}). Choix requis.")
+            return CoupleRecoveryResult.MultipleCouplesFound(pairedSummaries)
+        } else if (pairedSummaries.size == 1) {
+            val selected = pairedSummaries.first()
+            Log.d("MikayalaRecovery", "[RECOVERY] Un seul couple connecté trouvé. Activation: ${selected.coupleId}")
+            activateCouple(selected)
+            return CoupleRecoveryResult.SingleCoupleFound(_coupleSpace.value)
+        } else if (waitingCoupleObj != null) {
+            val wCode = waitingCoupleObj.optString("pairing_code", "")
+            val cId = waitingCoupleObj.optString("id", "")
             savePairingCode(
-                code = pairingCode,
-                partnerName = pName,
-                coupleId = coupleId,
-                status = normalizedStatus,
-                u1Id = u1Id,
-                u2Id = u2Id
+                code = wCode,
+                partnerName = "En attente...",
+                coupleId = cId,
+                status = "waiting",
+                u1Id = waitingCoupleObj.optString("user1_id", myUserId),
+                u2Id = ""
             )
-            return isPaired
+            return CoupleRecoveryResult.WaitingCouple(wCode)
         } else {
-            // No couple exists in Supabase for current user -> Invalidate any stale local couple cache
             clearCoupleCache()
-            return false
+            return CoupleRecoveryResult.NoCoupleFound
+        }
+    }
+
+    suspend fun activateCouple(summary: CoupleSummaryItem) {
+        val myUserId = getCurrentUserId()
+        val isP1 = (myUserId == summary.user1Id)
+        val pName = summary.partnerName
+
+        savePairingCode(
+            code = summary.pairingCode,
+            partnerName = pName,
+            coupleId = summary.coupleId,
+            status = "paired",
+            u1Id = summary.user1Id,
+            u2Id = summary.user2Id
+        )
+        syncWithSupabase()
+    }
+
+    suspend fun findExistingCoupleSpace(): Boolean {
+        val result = recoverCoupleFromSupabase()
+        return when (result) {
+            is CoupleRecoveryResult.SingleCoupleFound -> true
+            is CoupleRecoveryResult.MultipleCouplesFound -> {
+                // By default activate the most recent paired couple if not explicitly selected
+                val first = result.couples.first()
+                activateCouple(first)
+                true
+            }
+            else -> false
         }
     }
 
@@ -285,12 +438,169 @@ class MikayalaRepository(private val context: Context) {
         return prefs.getString("pairing_code", "") ?: ""
     }
 
+    // --- Realtime Connection & Handlers ---
+    fun connectRealtime() {
+        val couple = _coupleSpace.value
+        val myUserId = getCurrentUserId()
+        if (!couple.isPaired || couple.id.isBlank()) return
+
+        supabaseService.subscribeToMessagesRealtime(
+            coupleId = couple.id,
+            myUserId = myUserId,
+            onInsert = { obj -> handleRealtimeMessageInsert(obj) },
+            onUpdate = { obj -> handleRealtimeMessageUpdate(obj) },
+            onDelete = { id -> handleRealtimeMessageDelete(id) },
+            onTyping = { senderId, isTyping ->
+                _partnerIsTyping.value = isTyping
+                typingResetJob?.cancel()
+                if (isTyping) {
+                    typingResetJob = repositoryScope.launch {
+                        delay(4000)
+                        _partnerIsTyping.value = false
+                    }
+                }
+            },
+            onRecording = { senderId, isRecording ->
+                _partnerIsRecordingAudio.value = isRecording
+                recordingResetJob?.cancel()
+                if (isRecording) {
+                    recordingResetJob = repositoryScope.launch {
+                        delay(6000)
+                        _partnerIsRecordingAudio.value = false
+                    }
+                }
+            }
+        )
+    }
+
+    fun sendTypingBroadcast(isTyping: Boolean) {
+        val myUserId = getCurrentUserId()
+        supabaseService.broadcastTyping(isTyping, myUserId)
+    }
+
+    fun sendRecordingBroadcast(isRecording: Boolean) {
+        val myUserId = getCurrentUserId()
+        supabaseService.broadcastRecording(isRecording, myUserId)
+    }
+
+    private fun handleRealtimeMessageInsert(obj: JSONObject) {
+        val newEntity = parseMessageJson(obj) ?: return
+        val myUserId = getCurrentUserId()
+
+        if (newEntity.senderId != myUserId && newEntity.status == "sent") {
+            repositoryScope.launch {
+                markMessagesDelivered(_coupleSpace.value.id)
+            }
+        }
+
+        _messages.value = _messages.value.let { currentList ->
+            val existingIndex = currentList.indexOfFirst { it.id == newEntity.id }
+            if (existingIndex >= 0) {
+                currentList.toMutableList().apply { set(existingIndex, newEntity) }
+            } else {
+                (currentList + newEntity).sortedBy { it.createdAt }
+            }
+        }
+    }
+
+    private fun handleRealtimeMessageUpdate(obj: JSONObject) {
+        val updatedEntity = parseMessageJson(obj) ?: return
+        _messages.value = _messages.value.map { local ->
+            if (local.id == updatedEntity.id) {
+                updatedEntity
+            } else {
+                local
+            }
+        }
+    }
+
+    private fun handleRealtimeMessageDelete(id: String) {
+        _messages.value = _messages.value.filterNot { it.id == id }
+    }
+
+    private fun parseMessageJson(obj: JSONObject): MessageEntity? {
+        try {
+            val id = obj.optString("id", "")
+            if (id.isEmpty()) return null
+            val coupleId = obj.optString("couple_id", _coupleSpace.value.id)
+            val senderId = obj.optString("sender_id", "")
+            val receiverId = obj.optString("receiver_id", "")
+            val content = obj.optString("content", "")
+            val type = obj.optString("type", "text")
+            val mediaUrl = obj.optString("media_url", "").ifEmpty { null }
+            val thumbnailUrl = obj.optString("thumbnail_url", "").ifEmpty { null }
+            val duration = obj.optInt("duration", 0)
+
+            val createdAt = when {
+                obj.has("created_at") && obj.optLong("created_at", 0L) > 0L -> obj.optLong("created_at")
+                obj.has("created_at") -> parseTimestamp(obj.optString("created_at")) ?: System.currentTimeMillis()
+                else -> System.currentTimeMillis()
+            }
+            val editedAt = if (obj.has("edited_at") && !obj.isNull("edited_at")) {
+                obj.optLong("edited_at", 0L).takeIf { it > 0L } ?: parseTimestamp(obj.optString("edited_at"))
+            } else null
+
+            val deliveredAt = obj.optString("delivered_at", "null")
+            val readAt = obj.optString("read_at", "null")
+            val status = when {
+                readAt != "null" && readAt.isNotEmpty() -> "read"
+                deliveredAt != "null" && deliveredAt.isNotEmpty() -> "delivered"
+                else -> obj.optString("status", "sent")
+            }
+            val parsedReadAt = parseTimestamp(if (readAt != "null") readAt else null)
+
+            val isViewOnce = obj.optBoolean("is_view_once", false)
+            val isViewed = obj.optBoolean("is_viewed", false)
+            val isStarred = obj.optBoolean("is_starred", false)
+            val isPinned = obj.optBoolean("is_pinned", false)
+            val isDeletedForEveryone = obj.optBoolean("is_deleted_for_everyone", false)
+            val deletedForArray = obj.optJSONArray("deleted_for")
+            val deletedForList = if (deletedForArray != null) {
+                (0 until deletedForArray.length()).map { deletedForArray.getString(it) }
+            } else emptyList<String>()
+            val reactions = obj.optString("reactions", "{}")
+            val replyToId = obj.optString("reply_to_id", "").ifEmpty { null }
+            val replyToSender = obj.optString("reply_to_sender", "").ifEmpty { null }
+            val replyToContent = obj.optString("reply_to_content", "").ifEmpty { null }
+
+            return MessageEntity(
+                id = id,
+                coupleId = coupleId,
+                senderId = senderId,
+                receiverId = receiverId,
+                content = if (isDeletedForEveryone) "Ce message a été supprimé" else content,
+                type = type,
+                mediaUrl = mediaUrl,
+                thumbnailUrl = thumbnailUrl,
+                duration = duration,
+                createdAt = createdAt,
+                editedAt = editedAt,
+                status = status,
+                readAt = parsedReadAt,
+                isViewOnce = isViewOnce,
+                isViewed = isViewed,
+                isStarred = isStarred,
+                isPinned = isPinned,
+                isDeletedForEveryone = isDeletedForEveryone,
+                deletedFor = deletedForList,
+                reactions = reactions,
+                replyToId = replyToId,
+                replyToSender = replyToSender,
+                replyToContent = replyToContent
+            )
+        } catch (e: Exception) {
+            Log.e("MikayalaRepository", "Error parsing message json: ${e.message}")
+            return null
+        }
+    }
+
     // --- Message Actions (Real Couple Checked & Supabase Synced) ---
     fun sendMessage(
         content: String,
         type: String = "text",
         mediaUrl: String? = null,
         duration: Int = 0,
+        isViewOnce: Boolean = false,
         replyToId: String? = null,
         replyToSender: String? = null,
         replyToContent: String? = null
@@ -304,10 +614,9 @@ class MikayalaRepository(private val context: Context) {
 
         val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
         val coupleId = couple.id
-        val pairingCode = couple.pairingCode
 
         val newMsg = MessageEntity(
-            id = "msg_" + UUID.randomUUID().toString().take(8),
+            id = "msg_" + UUID.randomUUID().toString().take(12),
             coupleId = coupleId,
             senderId = myUserId,
             receiverId = partnerId,
@@ -317,6 +626,7 @@ class MikayalaRepository(private val context: Context) {
             duration = duration,
             createdAt = System.currentTimeMillis(),
             status = "sent",
+            isViewOnce = isViewOnce,
             replyToId = replyToId,
             replyToSender = replyToSender,
             replyToContent = replyToContent
@@ -325,21 +635,132 @@ class MikayalaRepository(private val context: Context) {
 
         // Sync with Supabase
         repositoryScope.launch {
-            val success = supabaseService.postMessage(
-                coupleId = coupleId,
-                senderId = myUserId,
-                receiverId = partnerId,
-                content = content,
-                type = type,
-                pairingCode = pairingCode
-            )
+            val success = supabaseService.postMessageEntity(newMsg)
             if (!success) {
                 Log.e("MikayalaRepository", "Failed to post message to Supabase")
             }
         }
     }
 
+    fun sendVoiceNote(filePath: String, durationSeconds: Int) {
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return
+        repositoryScope.launch {
+            try {
+                val file = File(filePath)
+                if (file.exists()) {
+                    val bytes = file.readBytes()
+                    val fileName = "voice_${UUID.randomUUID().toString().take(8)}.m4a"
+                    val uploadedUrl = supabaseService.uploadChatMedia(couple.id, fileName, bytes, "audio/mp4")
+                    sendMessage(
+                        content = "Message vocal",
+                        type = "audio",
+                        mediaUrl = uploadedUrl ?: filePath,
+                        duration = durationSeconds
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("MikayalaRepository", "Failed to upload voice note: ${e.message}")
+                sendMessage(
+                    content = "Message vocal",
+                    type = "audio",
+                    mediaUrl = filePath,
+                    duration = durationSeconds
+                )
+            }
+        }
+    }
+
+    fun sendImageMedia(uri: Uri, isViewOnce: Boolean = false) {
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return
+        repositoryScope.launch {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                if (bytes != null) {
+                    val fileName = "img_${UUID.randomUUID().toString().take(8)}.jpg"
+                    val uploadedUrl = supabaseService.uploadChatMedia(couple.id, fileName, bytes, "image/jpeg")
+                    sendMessage(
+                        content = if (isViewOnce) "Photo éphémère" else "Photo partagée",
+                        type = "image",
+                        mediaUrl = uploadedUrl ?: uri.toString(),
+                        isViewOnce = isViewOnce
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("MikayalaRepository", "Failed to send image media: ${e.message}")
+                sendMessage(
+                    content = if (isViewOnce) "Photo éphémère" else "Photo partagée",
+                    type = "image",
+                    mediaUrl = uri.toString(),
+                    isViewOnce = isViewOnce
+                )
+            }
+        }
+    }
+
+    fun sendCameraPhoto(bitmap: Bitmap, isViewOnce: Boolean = false) {
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return
+        repositoryScope.launch {
+            try {
+                val stream = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+                val bytes = stream.toByteArray()
+                val fileName = "photo_${UUID.randomUUID().toString().take(8)}.jpg"
+                val uploadedUrl = supabaseService.uploadChatMedia(couple.id, fileName, bytes, "image/jpeg")
+                sendMessage(
+                    content = if (isViewOnce) "Photo instantanée éphémère" else "Photo instantanée",
+                    type = "image",
+                    mediaUrl = uploadedUrl,
+                    isViewOnce = isViewOnce
+                )
+            } catch (e: Exception) {
+                Log.e("MikayalaRepository", "Failed to send camera photo: ${e.message}")
+            }
+        }
+    }
+
+    fun sendDocumentMedia(uri: Uri, fileName: String) {
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return
+        repositoryScope.launch {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                if (bytes != null) {
+                    val safeName = "doc_${UUID.randomUUID().toString().take(8)}_$fileName"
+                    val uploadedUrl = supabaseService.uploadChatMedia(couple.id, safeName, bytes, "application/octet-stream")
+                    sendMessage(
+                        content = fileName,
+                        type = "document",
+                        mediaUrl = uploadedUrl ?: uri.toString()
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("MikayalaRepository", "Failed to send document: ${e.message}")
+                sendMessage(
+                    content = fileName,
+                    type = "document",
+                    mediaUrl = uri.toString()
+                )
+            }
+        }
+    }
+
+    fun sendLocationMessage(latitude: Double, longitude: Double, address: String = "Ma position actuelle") {
+        sendMessage(
+            content = address,
+            type = "location",
+            mediaUrl = "$latitude,$longitude"
+        )
+    }
+
     fun toggleReaction(messageId: String, emoji: String) {
+        var updatedReactionsJson = "{}"
         _messages.value = _messages.value.map { msg ->
             if (msg.id == messageId) {
                 try {
@@ -349,29 +770,67 @@ class MikayalaRepository(private val context: Context) {
                     } else {
                         json.put("me", emoji)
                     }
-                    msg.copy(reactions = json.toString())
+                    updatedReactionsJson = json.toString()
+                    msg.copy(reactions = updatedReactionsJson)
                 } catch (e: Exception) {
-                    msg.copy(reactions = "{\"me\":\"$emoji\"}")
+                    updatedReactionsJson = "{\"me\":\"$emoji\"}"
+                    msg.copy(reactions = updatedReactionsJson)
                 }
             } else msg
+        }
+        repositoryScope.launch {
+            supabaseService.updateMessageFields(
+                messageId,
+                JSONObject().apply { put("reactions", updatedReactionsJson) }
+            )
         }
     }
 
     fun toggleStarred(messageId: String) {
+        var newStarred = false
         _messages.value = _messages.value.map {
-            if (it.id == messageId) it.copy(isStarred = !it.isStarred) else it
+            if (it.id == messageId) {
+                newStarred = !it.isStarred
+                it.copy(isStarred = newStarred)
+            } else it
+        }
+        repositoryScope.launch {
+            supabaseService.updateMessageFields(
+                messageId,
+                JSONObject().apply { put("is_starred", newStarred) }
+            )
         }
     }
 
     fun togglePinned(messageId: String) {
+        var newPinned = false
         _messages.value = _messages.value.map {
-            if (it.id == messageId) it.copy(isPinned = !it.isPinned) else it
+            if (it.id == messageId) {
+                newPinned = !it.isPinned
+                it.copy(isPinned = newPinned)
+            } else it
+        }
+        repositoryScope.launch {
+            supabaseService.updateMessageFields(
+                messageId,
+                JSONObject().apply { put("is_pinned", newPinned) }
+            )
         }
     }
 
     fun editMessage(messageId: String, newContent: String) {
+        val now = System.currentTimeMillis()
         _messages.value = _messages.value.map {
-            if (it.id == messageId) it.copy(content = newContent, editedAt = System.currentTimeMillis()) else it
+            if (it.id == messageId) it.copy(content = newContent, editedAt = now) else it
+        }
+        repositoryScope.launch {
+            supabaseService.updateMessageFields(
+                messageId,
+                JSONObject().apply {
+                    put("content", newContent)
+                    put("edited_at", now)
+                }
+            )
         }
     }
 
@@ -380,11 +839,26 @@ class MikayalaRepository(private val context: Context) {
             _messages.value = _messages.value.map {
                 if (it.id == messageId) it.copy(isDeletedForEveryone = true, content = "Ce message a été supprimé") else it
             }
+            repositoryScope.launch {
+                supabaseService.deleteMessageForEveryone(messageId)
+            }
         } else {
             _messages.value = _messages.value.filterNot { it.id == messageId }
+            repositoryScope.launch {
+                supabaseService.deleteMessage(messageId)
+            }
+        }
+    }
+
+    fun markViewOnceAsViewed(messageId: String) {
+        _messages.value = _messages.value.map {
+            if (it.id == messageId) it.copy(isViewed = true) else it
         }
         repositoryScope.launch {
-            supabaseService.deleteMessage(messageId)
+            supabaseService.updateMessageFields(
+                messageId,
+                JSONObject().apply { put("is_viewed", true) }
+            )
         }
     }
 
@@ -1241,53 +1715,18 @@ class MikayalaRepository(private val context: Context) {
         val remoteMsgs = supabaseService.fetchMessages(coupleId, pairingCode)
         if (remoteMsgs != null) {
             val fetchedList = mutableListOf<MessageEntity>()
-            val myUserId = getCurrentUserId()
             for (i in 0 until remoteMsgs.length()) {
                 val obj = remoteMsgs.getJSONObject(i)
-                val id = obj.optString("id", "remote_$i")
-                val senderId = obj.optString("sender_id", "")
-                val receiverId = obj.optString("receiver_id", "")
-                val content = obj.optString("content", "")
-                val type = obj.optString("type", "text")
-                val createdAt = obj.optLong("created_at", System.currentTimeMillis())
-
-                val deliveredAt = obj.optString("delivered_at", "null")
-                val readAt = obj.optString("read_at", "null")
-
-                val status = when {
-                    readAt != "null" && readAt.isNotEmpty() -> "read"
-                    deliveredAt != "null" && deliveredAt.isNotEmpty() -> "delivered"
-                    else -> "sent"
+                val msg = parseMessageJson(obj)
+                if (msg != null) {
+                    fetchedList.add(msg)
                 }
-
-                val parsedReadAt = parseTimestamp(if (readAt != "null") readAt else null)
-
-                fetchedList.add(
-                    MessageEntity(
-                        id = id,
-                        coupleId = coupleId,
-                        senderId = senderId,
-                        receiverId = receiverId,
-                        content = content,
-                        type = type,
-                        createdAt = createdAt,
-                        status = status,
-                        readAt = parsedReadAt
-                    )
-                )
             }
             if (fetchedList.isNotEmpty()) {
                 val remoteMap = fetchedList.associateBy { it.id }
                 val updatedList = _messages.value.map { localMsg ->
                     val remoteMsg = remoteMap[localMsg.id]
-                    if (remoteMsg != null) {
-                        localMsg.copy(
-                            status = remoteMsg.status,
-                            readAt = remoteMsg.readAt
-                        )
-                    } else {
-                        localMsg
-                    }
+                    remoteMsg ?: localMsg
                 }.toMutableList()
 
                 val localIds = _messages.value.map { it.id }.toSet()
@@ -1297,6 +1736,9 @@ class MikayalaRepository(private val context: Context) {
                 _messages.value = updatedList.sortedBy { it.createdAt }
             }
         }
+
+        // Ensure Realtime channel is connected
+        connectRealtime()
 
         // 2. Sync Shared Vault from Supabase
         val remoteVault = supabaseService.fetchVaultItems(coupleId, pairingCode)

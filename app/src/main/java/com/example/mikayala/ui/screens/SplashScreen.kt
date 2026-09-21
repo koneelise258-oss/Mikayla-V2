@@ -4,6 +4,11 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material3.Icon
@@ -18,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.mikayala.R
 import com.example.mikayala.theme.*
 import kotlinx.coroutines.delay
 
@@ -53,25 +59,39 @@ fun SplashScreen(
         ) {
             Box(
                 modifier = Modifier
-                    .size(110.dp)
+                    .size(118.dp)
                     .scale(heartScale)
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(32.dp))
                     .background(
                         Brush.radialGradient(
                             listOf(
-                                AccentRose.copy(alpha = 0.4f),
-                                AccentViolet.copy(alpha = 0.1f),
+                                AccentViolet.copy(alpha = 0.5f),
+                                AccentRose.copy(alpha = 0.2f),
                                 Color.Transparent
                             )
                         )
+                    )
+                    .border(
+                        BorderStroke(
+                            2.dp,
+                            Brush.linearGradient(
+                                listOf(
+                                    Color(0xFFE085FF),
+                                    Color(0xFF8C52FF),
+                                    Color(0xFF4A154B)
+                                )
+                            )
+                        ),
+                        RoundedCornerShape(32.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Favorite,
-                    contentDescription = "Mikayala Logo",
-                    tint = AccentRose,
-                    modifier = Modifier.size(54.dp)
+                Image(
+                    painter = painterResource(id = R.drawable.ic_butterfly_logo),
+                    contentDescription = "Mikayala Logo Papillon Liquid Glass",
+                    modifier = Modifier
+                        .size(110.dp)
+                        .clip(RoundedCornerShape(28.dp))
                 )
             }
 

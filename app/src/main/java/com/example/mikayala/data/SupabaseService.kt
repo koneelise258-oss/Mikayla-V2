@@ -2,18 +2,30 @@ package com.example.mikayala.data
 
 import android.util.Log
 import com.example.mikayala.BuildConfig
+import com.example.mikayala.data.model.MessageEntity
 import io.github.jan.supabase.auth.Auth
-import io.github.jan.supabase.postgrest.Postgrest
-import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import io.github.jan.supabase.postgrest.rpc
+import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.realtime.RealtimeChannel
+import io.github.jan.supabase.realtime.broadcast
+import io.github.jan.supabase.realtime.broadcastFlow
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.realtime
+import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.storage.storage
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.serialization.json.*
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import io.github.jan.supabase.postgrest.rpc
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -32,10 +44,11 @@ class SupabaseService(
             ) {
                 install(Auth)
                 install(Postgrest)
+                install(Realtime)
+                install(Storage)
             }
         } catch (e: Exception) {
             Log.e("SupabaseService", "Failed to create Supabase client: ${e.message}")
-            // Fallback or rethrow if critical, but lazy helps avoid crash on main thread during startup
             throw e
         }
     }
@@ -50,18 +63,98 @@ class SupabaseService(
         try {
             val session = supabase.auth.currentSessionOrNull()
             if (session != null) {
-                Log.d("SupabaseDiag", "[CREATE] Session existante pour UID: ${session.user?.id}")
+                Log.d("MikayalaAuth", "[AUTH] Session active trouvée pour UID: ${session.user?.id}")
                 return true
             }
             
-            Log.d("SupabaseDiag", "[CREATE] Aucune session trouvée, connexion anonyme en cours...")
+            Log.d("MikayalaAuth", "[AUTH] Aucune session active. Création d'une session anonyme Supabase...")
             supabase.auth.signInAnonymously()
             val newSession = supabase.auth.currentSessionOrNull()
-            Log.d("SupabaseDiag", "[CREATE] Connexion anonyme réussie. Nouvel UID: ${newSession?.user?.id}")
+            Log.d("MikayalaAuth", "[AUTH] Session anonyme créée avec succès. UID: ${newSession?.user?.id}")
             return true
         } catch (e: Exception) {
-            Log.e("SupabaseDiag", "[CREATE] ensureAnonymousSession a échoué: ${e.message}")
+            Log.e("MikayalaAuth", "[AUTH] ensureAnonymousSession a échoué: ${e.message}")
             return false
+        }
+    }
+
+    suspend fun signInWithEmail(email: String, password: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        try {
+            Log.d("MikayalaAuth", "[AUTH] Tentative de connexion par email...")
+            supabase.auth.signInWith(Email) {
+                this.email = email.trim()
+                this.password = password
+            }
+            val session = supabase.auth.currentSessionOrNull()
+            val uid = session?.user?.id
+            if (uid != null) {
+                Log.d("MikayalaAuth", "[AUTH] Connexion email réussie. UID: $uid")
+                Pair(true, null)
+            } else {
+                Log.w("MikayalaAuth", "[AUTH] Connexion email sans session retournée.")
+                Pair(false, "Session non disponible après connexion.")
+            }
+        } catch (e: Exception) {
+            Log.e("MikayalaAuth", "[AUTH] Échec de la connexion email: ${e.message}")
+            val msg = when {
+                e.message?.contains("Invalid login credentials", ignoreCase = true) == true ->
+                    "Email ou mot de passe incorrect."
+                e.message?.contains("Email not confirmed", ignoreCase = true) == true ->
+                    "Veuillez confirmer votre email avant de vous connecter."
+                else -> e.localizedMessage ?: "Erreur de connexion."
+            }
+            Pair(false, msg)
+        }
+    }
+
+    suspend fun signUpWithEmail(email: String, password: String, displayName: String): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        try {
+            Log.d("MikayalaAuth", "[AUTH] Tentative d'inscription par email...")
+            supabase.auth.signUpWith(Email) {
+                this.email = email.trim()
+                this.password = password
+            }
+            val session = supabase.auth.currentSessionOrNull()
+            val uid = session?.user?.id
+            Log.d("MikayalaAuth", "[AUTH] Inscription email effectuée. UID: $uid")
+            if (uid != null && displayName.isNotBlank()) {
+                updateProfile(uid, displayName, "En ligne ❤️", "🌹", 1)
+            }
+            Pair(true, null)
+        } catch (e: Exception) {
+            Log.e("MikayalaAuth", "[AUTH] Échec de l'inscription email: ${e.message}")
+            val msg = when {
+                e.message?.contains("User already registered", ignoreCase = true) == true ->
+                    "Un compte existe déjà avec cet email. Connectez-vous."
+                e.message?.contains("Password should be at least", ignoreCase = true) == true ->
+                    "Le mot de passe doit comporter au moins 6 caractères."
+                else -> e.localizedMessage ?: "Erreur d'inscription."
+            }
+            Pair(false, msg)
+        }
+    }
+
+    fun getCurrentSessionUid(): String? {
+        return try {
+            supabase.auth.currentSessionOrNull()?.user?.id
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun getCurrentUserEmail(): String? {
+        return try {
+            supabase.auth.currentSessionOrNull()?.user?.email
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun hasActiveSession(): Boolean {
+        return try {
+            supabase.auth.currentSessionOrNull() != null
+        } catch (e: Exception) {
+            false
         }
     }
     
@@ -190,20 +283,52 @@ class SupabaseService(
     }
     
     suspend fun getCoupleSpaceForUser(userId: String): JSONObject? = withContext(Dispatchers.IO) {
-        if (!isConfigured() || userId.isEmpty()) return@withContext null
-        try {
-            var res = executeGet("/rest/v1/couples?user1_id=eq.$userId")
-            if (res == null || res == "[]") {
-                res = executeGet("/rest/v1/couples?user2_id=eq.$userId")
-            }
-            if (res != null && res != "[]") {
-                val array = JSONArray(res)
-                if (array.length() > 0) return@withContext array.getJSONObject(0)
-            }
-        } catch (e: Exception) {
-            Log.e("SupabaseService", "getCoupleSpaceForUser error: ${e.message}")
+        val couples = getAllCouplesForUser(userId)
+        // Prioritize paired couple spaces with both users present
+        val paired = couples.firstOrNull {
+            it.optString("status") == "paired" &&
+            it.optString("user1_id").isNotBlank() && it.optString("user1_id") != "null" &&
+            it.optString("user2_id").isNotBlank() && it.optString("user2_id") != "null"
         }
-        return@withContext null
+        paired ?: couples.firstOrNull()
+    }
+
+    suspend fun getAllCouplesForUser(userId: String): List<JSONObject> = withContext(Dispatchers.IO) {
+        if (!isConfigured() || userId.isEmpty()) return@withContext emptyList()
+        val results = mutableListOf<JSONObject>()
+        val seenIds = mutableSetOf<String>()
+
+        try {
+            Log.d("MikayalaCouple", "[COUPLE] Recherche des couples pour UID dans Supabase...")
+            // Filter by user1_id or user2_id
+            val query1 = executeGet("/rest/v1/couples?user1_id=eq.$userId&order=created_at.desc")
+            if (query1 != null && query1 != "[]") {
+                val array = JSONArray(query1)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val id = obj.optString("id", "")
+                    if (id.isNotEmpty() && seenIds.add(id)) {
+                        results.add(obj)
+                    }
+                }
+            }
+
+            val query2 = executeGet("/rest/v1/couples?user2_id=eq.$userId&order=created_at.desc")
+            if (query2 != null && query2 != "[]") {
+                val array = JSONArray(query2)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val id = obj.optString("id", "")
+                    if (id.isNotEmpty() && seenIds.add(id)) {
+                        results.add(obj)
+                    }
+                }
+            }
+            Log.d("MikayalaCouple", "[COUPLE] Nombre de couples trouvés dans Supabase: ${results.size}")
+        } catch (e: Exception) {
+            Log.e("MikayalaCouple", "[COUPLE] Erreur lors de la recherche des couples: ${e.message}")
+        }
+        results
     }
 
     suspend fun fetchMessages(coupleId: String, pairingCode: String = ""): JSONArray? = withContext(Dispatchers.IO) {
@@ -246,6 +371,51 @@ class SupabaseService(
         }
     }
 
+    suspend fun postMessageEntity(msg: MessageEntity): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || msg.coupleId.isEmpty()) return@withContext true
+        try {
+            val body = JSONObject().apply {
+                put("id", msg.id)
+                put("couple_id", msg.coupleId)
+                put("sender_id", msg.senderId)
+                put("receiver_id", msg.receiverId)
+                put("content", msg.content)
+                put("type", msg.type)
+                put("status", msg.status)
+                put("created_at", msg.createdAt)
+                if (!msg.mediaUrl.isNullOrEmpty()) put("media_url", msg.mediaUrl)
+                if (!msg.thumbnailUrl.isNullOrEmpty()) put("thumbnail_url", msg.thumbnailUrl)
+                if (msg.duration > 0) put("duration", msg.duration)
+                if (msg.isViewOnce) put("is_view_once", true)
+                if (msg.isViewed) put("is_viewed", true)
+                if (msg.isStarred) put("is_starred", true)
+                if (msg.isPinned) put("is_pinned", true)
+                if (msg.isDeletedForEveryone) put("is_deleted_for_everyone", true)
+                if (msg.reactions.isNotEmpty() && msg.reactions != "{}") put("reactions", msg.reactions)
+                if (!msg.replyToId.isNullOrEmpty()) put("reply_to_id", msg.replyToId)
+                if (!msg.replyToSender.isNullOrEmpty()) put("reply_to_sender", msg.replyToSender)
+                if (!msg.replyToContent.isNullOrEmpty()) put("reply_to_content", msg.replyToContent)
+                if (msg.editedAt != null) put("edited_at", msg.editedAt)
+            }
+            val res = executePost("/rest/v1/messages", body.toString())
+            return@withContext res != null
+        } catch (e: Exception) {
+            Log.e("SupabaseService", "postMessageEntity error: ${e.message}")
+            return@withContext false
+        }
+    }
+
+    suspend fun updateMessageFields(messageId: String, fields: JSONObject): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || messageId.isEmpty()) return@withContext true
+        try {
+            val res = executePatch("/rest/v1/messages?id=eq.$messageId", fields.toString())
+            return@withContext res != null
+        } catch (e: Exception) {
+            Log.e("SupabaseService", "updateMessageFields error: ${e.message}")
+            return@withContext false
+        }
+    }
+
     suspend fun deleteMessage(messageId: String): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext true
         try {
@@ -254,6 +424,232 @@ class SupabaseService(
             Log.e("SupabaseService", "deleteMessage error: ${e.message}")
             return@withContext false
         }
+    }
+
+    suspend fun deleteMessageForEveryone(messageId: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || messageId.isEmpty()) return@withContext true
+        try {
+            val body = JSONObject().apply {
+                put("is_deleted_for_everyone", true)
+                put("content", "Ce message a été supprimé")
+            }
+            val res = executePatch("/rest/v1/messages?id=eq.$messageId", body.toString())
+            return@withContext res != null
+        } catch (e: Exception) {
+            Log.e("SupabaseService", "deleteMessageForEveryone error: ${e.message}")
+            return@withContext false
+        }
+    }
+
+    // --- REALTIME SUBSCRIPTION & BROADCAST ---
+    private var activeRealtimeChannel: RealtimeChannel? = null
+    private var realtimeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    fun subscribeToMessagesRealtime(
+        coupleId: String,
+        myUserId: String,
+        onInsert: (JSONObject) -> Unit,
+        onUpdate: (JSONObject) -> Unit,
+        onDelete: (String) -> Unit,
+        onTyping: (String, Boolean) -> Unit,
+        onRecording: (String, Boolean) -> Unit
+    ) {
+        if (!isConfigured() || coupleId.isEmpty()) return
+
+        realtimeScope.launch {
+            try {
+                unsubscribeRealtime()
+
+                Log.d("SupabaseRealtime", "[REALTIME] Connecting to messages channel for couple: $coupleId")
+                val channelId = "messages_couple_$coupleId"
+                val channel = supabase.channel(channelId)
+                activeRealtimeChannel = channel
+
+                // Listen to channel connection status
+                launch {
+                    channel.status.collectLatest { status ->
+                        val statusName = status.name
+                        Log.d("SupabaseRealtime", "[REALTIME STATUS] $statusName on $channelId")
+                        when (statusName) {
+                            "SUBSCRIBED" -> Log.i("SupabaseRealtime", "[REALTIME] SUBSCRIBED to $channelId successfully")
+                            "CHANNEL_ERROR" -> Log.e("SupabaseRealtime", "[REALTIME] CHANNEL_ERROR on $channelId")
+                            "TIMED_OUT" -> Log.w("SupabaseRealtime", "[REALTIME] TIMED_OUT on $channelId")
+                            "CLOSED" -> Log.w("SupabaseRealtime", "[REALTIME] CLOSED on $channelId")
+                        }
+                    }
+                }
+
+                // Listen to Postgres changes for 'messages' table
+                val changeFlow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
+                    table = "messages"
+                }
+
+                launch {
+                    changeFlow.collect { action ->
+                        try {
+                            when (action) {
+                                is PostgresAction.Insert -> {
+                                    val jsonStr = action.record.toString()
+                                    val obj = JSONObject(jsonStr)
+                                    val msgCoupleId = obj.optString("couple_id", "")
+                                    if (msgCoupleId == coupleId || msgCoupleId.isEmpty()) {
+                                        Log.d("SupabaseRealtime", "[REALTIME INSERT] id=${obj.optString("id")}")
+                                        onInsert(obj)
+                                    }
+                                }
+                                is PostgresAction.Update -> {
+                                    val jsonStr = action.record.toString()
+                                    val obj = JSONObject(jsonStr)
+                                    val msgCoupleId = obj.optString("couple_id", "")
+                                    if (msgCoupleId == coupleId || msgCoupleId.isEmpty()) {
+                                        Log.d("SupabaseRealtime", "[REALTIME UPDATE] id=${obj.optString("id")}")
+                                        onUpdate(obj)
+                                    }
+                                }
+                                is PostgresAction.Delete -> {
+                                    val jsonStr = action.oldRecord.toString()
+                                    val obj = JSONObject(jsonStr)
+                                    val id = obj.optString("id", "")
+                                    if (id.isNotEmpty()) {
+                                        Log.d("SupabaseRealtime", "[REALTIME DELETE] id=$id")
+                                        onDelete(id)
+                                    }
+                                }
+                                else -> {}
+                            }
+                        } catch (e: Exception) {
+                            Log.e("SupabaseRealtime", "[REALTIME] Error processing postgres change: ${e.message}")
+                        }
+                    }
+                }
+
+                // Broadcast typing
+                launch {
+                    channel.broadcastFlow<JsonObject>(event = "typing").collect { payload ->
+                        try {
+                            val senderId = payload["userId"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val isTyping = payload["isTyping"]?.jsonPrimitive?.booleanOrNull ?: false
+                            if (senderId.isNotEmpty() && senderId != myUserId) {
+                                onTyping(senderId, isTyping)
+                            }
+                        } catch (e: Exception) {
+                            Log.e("SupabaseRealtime", "Typing payload error: ${e.message}")
+                        }
+                    }
+                }
+
+                // Broadcast recording audio
+                launch {
+                    channel.broadcastFlow<JsonObject>(event = "recording").collect { payload ->
+                        try {
+                            val senderId = payload["userId"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val isRecording = payload["isRecording"]?.jsonPrimitive?.booleanOrNull ?: false
+                            if (senderId.isNotEmpty() && senderId != myUserId) {
+                                onRecording(senderId, isRecording)
+                            }
+                        } catch (e: Exception) {
+                            Log.e("SupabaseRealtime", "Recording payload error: ${e.message}")
+                        }
+                    }
+                }
+
+                channel.subscribe(blockUntilSubscribed = false)
+            } catch (e: Exception) {
+                Log.e("SupabaseRealtime", "[REALTIME] Subscription failed: ${e.message}")
+            }
+        }
+    }
+
+    fun broadcastTyping(isTyping: Boolean, myUserId: String) {
+        val channel = activeRealtimeChannel ?: return
+        realtimeScope.launch {
+            try {
+                channel.broadcast(
+                    event = "typing",
+                    message = buildJsonObject {
+                        put("userId", myUserId)
+                        put("isTyping", isTyping)
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("SupabaseRealtime", "Failed to broadcast typing: ${e.message}")
+            }
+        }
+    }
+
+    fun broadcastRecording(isRecording: Boolean, myUserId: String) {
+        val channel = activeRealtimeChannel ?: return
+        realtimeScope.launch {
+            try {
+                channel.broadcast(
+                    event = "recording",
+                    message = buildJsonObject {
+                        put("userId", myUserId)
+                        put("isRecording", isRecording)
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("SupabaseRealtime", "Failed to broadcast recording: ${e.message}")
+            }
+        }
+    }
+
+    fun unsubscribeRealtime() {
+        try {
+            activeRealtimeChannel = null
+        } catch (e: Exception) {
+            Log.e("SupabaseRealtime", "Error in unsubscribeRealtime: ${e.message}")
+        }
+    }
+
+    // --- SUPABASE STORAGE MEDIA UPLOADS ---
+    suspend fun uploadChatMedia(
+        coupleId: String,
+        fileName: String,
+        bytes: ByteArray,
+        mimeType: String
+    ): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || coupleId.isEmpty()) return@withContext null
+        val buckets = listOf("chat_media", "attachments", "media", "avatars")
+        for (bucket in buckets) {
+            try {
+                val path = "$coupleId/$fileName"
+                val url = URL("$supabaseUrl/storage/v1/object/$bucket/$path")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("apikey", supabaseKey)
+                conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+                conn.setRequestProperty("Content-Type", mimeType)
+                conn.setRequestProperty("x-upsert", "true")
+                conn.doOutput = true
+                conn.connectTimeout = 25000
+                conn.readTimeout = 25000
+
+                val os = conn.outputStream
+                os.write(bytes)
+                os.flush()
+                os.close()
+
+                if (conn.responseCode in 200..299) {
+                    Log.d("SupabaseStorage", "[STORAGE] Successfully uploaded $fileName to bucket $bucket")
+                    return@withContext "$supabaseUrl/storage/v1/object/public/$bucket/$path"
+                }
+            } catch (e: Exception) {
+                Log.w("SupabaseStorage", "Upload attempt to $bucket failed: ${e.message}")
+            }
+        }
+
+        try {
+            val path = "$coupleId/$fileName"
+            supabase.storage.from("chat_media").upload(path, bytes) {
+                upsert = true
+            }
+            return@withContext supabase.storage.from("chat_media").publicUrl(path)
+        } catch (e: Exception) {
+            Log.e("SupabaseStorage", "Supabase client upload fallback failed: ${e.message}")
+        }
+
+        null
     }
 
     // --- SHARED VAULT SUPABASE METHODS ---
@@ -507,9 +903,19 @@ class SupabaseService(
         }
     }
 
-    suspend fun markMessagesDelivered(coupleId: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun markMessagesDelivered(coupleId: String, myUserId: String = ""): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main") return@withContext false
         try {
+            if (myUserId.isNotEmpty()) {
+                val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }.format(java.util.Date())
+                val patchBody = JSONObject().apply {
+                    put("status", "delivered")
+                    put("delivered_at", nowIso)
+                }
+                executePatch("/rest/v1/messages?couple_id=eq.$coupleId&receiver_id=eq.$myUserId&status=eq.sent", patchBody.toString())
+            }
             val body = JSONObject().apply {
                 put("target_couple_id", coupleId)
             }
@@ -521,9 +927,19 @@ class SupabaseService(
         }
     }
 
-    suspend fun markMessagesRead(coupleId: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun markMessagesRead(coupleId: String, myUserId: String = ""): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main") return@withContext false
         try {
+            if (myUserId.isNotEmpty()) {
+                val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }.format(java.util.Date())
+                val patchBody = JSONObject().apply {
+                    put("status", "read")
+                    put("read_at", nowIso)
+                }
+                executePatch("/rest/v1/messages?couple_id=eq.$coupleId&receiver_id=eq.$myUserId&status=neq.read", patchBody.toString())
+            }
             val body = JSONObject().apply {
                 put("target_couple_id", coupleId)
             }
@@ -549,7 +965,7 @@ class SupabaseService(
         return@withContext null
     }
 
-    suspend fun updateProfile(userId: String, displayName: String, bio: String, avatarPath: String, avatarVersion: Int): Boolean = withContext(Dispatchers.IO) {
+    suspend fun updateProfile(userId: String, displayName: String, bio: String, avatarPath: String, avatarVersion: Int = 1): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || userId.isEmpty()) return@withContext false
         try {
             val body = JSONObject().apply {

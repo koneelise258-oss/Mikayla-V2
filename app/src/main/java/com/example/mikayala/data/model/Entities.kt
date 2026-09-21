@@ -31,6 +31,19 @@ data class CoupleSpaceEntity(
 }
 
 @Immutable
+data class CoupleSummaryItem(
+    val coupleId: String,
+    val pairingCode: String,
+    val status: String,
+    val partnerId: String,
+    val partnerName: String,
+    val user1Id: String,
+    val user2Id: String,
+    val createdAt: String = "",
+    val isPaired: Boolean = (status == "paired")
+)
+
+@Immutable
 data class LoveMilestoneEntity(
     val id: String,
     val title: String,

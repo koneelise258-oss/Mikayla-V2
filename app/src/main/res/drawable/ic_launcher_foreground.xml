@@ -1,12 +1,8 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#FF7675"
-        android:pathData="M54,75.5L51.8,73.5C44,66.4 39,61.8 39,56.2C39,51.6 42.6,48 47.2,48C49.8,48 52.3,49.2 54,51.1C55.7,49.2 58.2,48 60.8,48C65.4,48 69,51.6 69,56.2C69,61.8 64,66.4 56.2,73.5L54,75.5Z" />
-    <path
-        android:fillColor="#A29BFE"
-        android:pathData="M54,34m-4,0a4,4 0,1,1 8,0a4,4 0,1,1 -8,0" />
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="66dp"
+        android:height="66dp"
+        android:drawable="@drawable/ic_butterfly_logo"
+        android:gravity="center" />
+</layer-list>

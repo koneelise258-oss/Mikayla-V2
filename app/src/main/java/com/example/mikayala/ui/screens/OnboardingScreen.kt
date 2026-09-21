@@ -50,6 +50,8 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.example.mikayala.R
 import com.example.mikayala.BuildConfig
 import com.example.mikayala.util.QRCodeGenerator
 import com.example.mikayala.ui.components.QRScanner
@@ -459,22 +461,39 @@ fun LandingView(
 
         Box(
             modifier = Modifier
-                .size(100.dp)
+                .size(108.dp)
                 .scale(pulseScale)
-                .clip(CircleShape)
+                .clip(RoundedCornerShape(30.dp))
                 .background(
                     Brush.radialGradient(
-                        listOf(AccentRose.copy(alpha = 0.4f), AccentViolet.copy(alpha = 0.15f), Color.Transparent)
+                        listOf(
+                            AccentViolet.copy(alpha = 0.5f),
+                            AccentRose.copy(alpha = 0.2f),
+                            Color.Transparent
+                        )
                     )
                 )
-                .border(BorderStroke(2.dp, Brush.linearGradient(listOf(AccentRose, AccentViolet))), CircleShape),
+                .border(
+                    BorderStroke(
+                        2.dp,
+                        Brush.linearGradient(
+                            listOf(
+                                Color(0xFFE085FF),
+                                Color(0xFF8C52FF),
+                                Color(0xFF4A154B)
+                            )
+                        )
+                    ),
+                    RoundedCornerShape(30.dp)
+                ),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Favorite,
-                contentDescription = null,
-                tint = AccentRose,
-                modifier = Modifier.size(52.dp)
+            Image(
+                painter = painterResource(id = R.drawable.ic_butterfly_logo),
+                contentDescription = "Mikayala Logo Papillon Liquid Glass",
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(RoundedCornerShape(26.dp))
             )
         }
 
@@ -1472,17 +1491,18 @@ fun InteractiveQRCodeCanvas(
         // Mini logo in center
         Box(
             modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
+                .size(34.dp)
+                .clip(RoundedCornerShape(8.dp))
                 .background(Color.White)
-                .border(BorderStroke(1.dp, AccentRose), CircleShape),
+                .border(BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFE085FF), Color(0xFF8C52FF)))), RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Favorite,
+            Image(
+                painter = painterResource(id = R.drawable.ic_butterfly_logo),
                 contentDescription = null,
-                tint = AccentRose,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(7.dp))
             )
         }
     }
