@@ -48,6 +48,7 @@ import com.example.mikayala.utils.VoiceRecorderManager
 import com.example.mikayala.theme.*
 import com.example.mikayala.ui.components.ChatAttachmentAndGamesBottomSheet
 import com.example.mikayala.ui.components.MessageOptionBottomSheet
+import com.example.mikayala.ui.components.EmojiPicker
 import com.example.mikayala.ui.components.MessageStatusIndicator
 import com.example.mikayala.ui.components.NeumorphicSquircleButton
 import com.example.mikayala.ui.components.VoicePlayerWaveform
@@ -109,6 +110,23 @@ fun ChatScreen(
             repository.sendCameraPhoto(bitmap)
             Toast.makeText(context, "Photo caméra en cours d'envoi... 📸", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    val recordAudioLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Toast.makeText(context, "Microphone activé 🎙️ Vous pouvez enregistrer", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Permission microphone requise pour les vocaux", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun hasRecordAudioPermission(): Boolean {
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
     val documentLauncher = rememberLauncherForActivityResult(
@@ -411,39 +429,7 @@ fun ChatScreen(
                 }
             }
 
-            // Quick Emoji Drawer above input
-            AnimatedVisibility(visible = showEmojiBar) {
-                Surface(
-                    shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
-                    color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val quickEmojis = listOf("❤️", "🥰", "😘", "🔥", "💋", "🥺", "😂", "💖", "✨", "💍")
-                        quickEmojis.forEach { emoji ->
-                            Text(
-                                text = emoji,
-                                fontSize = 22.sp,
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .clickable {
-                                        textInput += emoji
-                                    }
-                                    .padding(4.dp)
-                            )
-                        }
-                    }
-                }
-            }
+            // Quick Emoji Drawer removed in favor of premium EmojiPicker below
 
             // Input Bar (Bottom) - Matching WhatsApp layout with Dark Luxury styling
             Row(
@@ -679,9 +665,18 @@ fun ChatScreen(
                                     var maxDragUp = 0f
 
                                     if (recordingState == RecordingState.IDLE) {
-                                        recordingState = RecordingState.RECORDING
-                                        dragOffsetY = 0f
-                                        voiceRecorder.startRecording("vocal_${System.currentTimeMillis()}.m4a")
+                                        if (!hasRecordAudioPermission()) {
+                                            recordAudioLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                            return@awaitEachGesture
+                                        }
+                                        val started = voiceRecorder.startRecording("vocal_${System.currentTimeMillis()}.m4a")
+                                        if (started) {
+                                            recordingState = RecordingState.RECORDING
+                                            dragOffsetY = 0f
+                                        } else {
+                                            Toast.makeText(context, "Impossible d'initialiser l'enregistrement", Toast.LENGTH_SHORT).show()
+                                            return@awaitEachGesture
+                                        }
                                     }
 
                                     do {
@@ -779,6 +774,18 @@ fun ChatScreen(
                         }
                     }
                 }
+            }
+
+            // Full Premium Emoji Picker Panel
+            AnimatedVisibility(visible = showEmojiBar) {
+                EmojiPicker(
+                    onEmojiSelected = { emoji ->
+                        textInput += emoji
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                )
             }
         }
 
@@ -1688,104 +1695,34 @@ private fun MessageBubble(
                 shape = RoundedCornerShape(24.dp),
                 color = CardModalSurface,
                 border = BorderStroke(1.dp, MatteSquircleBorder),
-                shadowElevation = 12.dp
+                shadowElevation = 12.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(420.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Text(
-                        text = "Réagir avec un émoji ✨",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Grid of popular emojis
-                    val popularEmojis = listOf(
-                        "😍", "🥳", "🤍", "🔐", "👑", "💌", "💋", "🎉",
-                        "💍", "🌹", "🚀", "💫", "🧸", "💎", "🍕", "🥂"
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        popularEmojis.take(8).forEach { emoji ->
-                            Text(
-                                text = emoji,
-                                fontSize = 22.sp,
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .clickable {
-                                        onToggleReaction(emoji)
-                                        showCustomEmojiDialog = false
-                                    }
-                                    .padding(4.dp)
-                            )
-                        }
+                        Text(
+                            text = "Réagir avec un émoji ✨",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        popularEmojis.drop(8).take(8).forEach { emoji ->
-                            Text(
-                                text = emoji,
-                                fontSize = 22.sp,
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .clickable {
-                                        onToggleReaction(emoji)
-                                        showCustomEmojiDialog = false
-                                    }
-                                    .padding(4.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Free text field to type or paste any custom emoji
-                    OutlinedTextField(
-                        value = customEmojiInput,
-                        onValueChange = { customEmojiInput = it },
-                        placeholder = { Text("Tapez un émoji personnalisé...", fontSize = 12.sp, color = TextMuted) },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = VibrantCyan,
-                            unfocusedBorderColor = BorderSubtleWhite,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                    EmojiPicker(
+                        onEmojiSelected = { emoji ->
+                            onToggleReaction(emoji)
+                            showCustomEmojiDialog = false
+                        },
+                        modifier = Modifier.fillMaxSize()
                     )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = { showCustomEmojiDialog = false }) {
-                            Text("Annuler", color = TextSecondary)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                if (customEmojiInput.isNotBlank()) {
-                                    onToggleReaction(customEmojiInput.trim())
-                                    customEmojiInput = ""
-                                    showCustomEmojiDialog = false
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Ajouter", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    }
                 }
             }
         }
@@ -2054,6 +1991,11 @@ fun FullScreenVideoDialog(
                         setVideoURI(android.net.Uri.parse(videoUrl))
                         setOnPreparedListener { mp ->
                             start()
+                        }
+                        setOnErrorListener { _, what, extra ->
+                            Log.e("ChatScreen", "Video playback error what=$what extra=$extra url=$videoUrl")
+                            android.widget.Toast.makeText(ctx, "Impossible de lire la vidéo", android.widget.Toast.LENGTH_SHORT).show()
+                            true
                         }
                     }
                 },

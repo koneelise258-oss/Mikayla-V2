@@ -60,6 +60,7 @@ fun MainDashboardScreen(
 
     val coupleSpace by repository.activeCoupleSpace.collectAsState()
     val userSettings by repository.userSettings.collectAsState()
+    val isPartnerOnline by repository.isPartnerOnline.collectAsState()
 
     // Background Realtime Sync for Supabase (Messages, Shared Vault, Call Signals)
     LaunchedEffect(coupleSpace.pairingCode, coupleSpace.isPaired) {
@@ -170,7 +171,7 @@ fun MainDashboardScreen(
                                         )
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        val isOnline = userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
+                                        val isOnline = isPartnerOnline && userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
                                         Box(
                                             modifier = Modifier
                                                 .size(6.dp)
@@ -179,7 +180,7 @@ fun MainDashboardScreen(
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            text = if (isOnline) userSettings.partnerStatus else "Vu(e) aujourd'hui à 14:32",
+                                            text = if (isOnline) "En ligne" else "Hors ligne",
                                             fontSize = 11.sp,
                                             color = TextSecondary,
                                             maxLines = 1

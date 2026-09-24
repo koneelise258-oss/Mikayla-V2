@@ -19,6 +19,8 @@ import io.github.jan.supabase.realtime.broadcastFlow
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
+import io.github.jan.supabase.realtime.presenceDataFlow
+import kotlinx.serialization.Serializable
 import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.*
@@ -405,12 +407,18 @@ class SupabaseService(
                 put("is_ephemeral", msg.isViewOnce)
                 put("status", msg.status.ifEmpty { "sent" })
 
-                val path = storagePath ?: if (!msg.mediaUrl.isNullOrEmpty() && !msg.mediaUrl.startsWith("http://") && !msg.mediaUrl.startsWith("https://")) msg.mediaUrl else null
+                val path = storagePath ?: msg.storagePath ?: if (!msg.mediaUrl.isNullOrEmpty() && !msg.mediaUrl.startsWith("http")) msg.mediaUrl else null
                 if (!path.isNullOrEmpty()) {
                     put("storage_path", path)
-                    put("media_url", "$supabaseUrl/storage/v1/object/public/messages-media/$path")
-                } else if (!msg.mediaUrl.isNullOrEmpty()) {
-                    put("media_url", msg.mediaUrl)
+                }
+                val finalMediaUrl = if (!msg.mediaUrl.isNullOrEmpty() && msg.mediaUrl.startsWith("http")) {
+                    msg.mediaUrl
+                } else if (!path.isNullOrEmpty()) {
+                    getSignedMessageMediaUrl(path)
+                } else null
+
+                if (!finalMediaUrl.isNullOrEmpty()) {
+                    put("media_url", finalMediaUrl)
                 }
 
                 if (msg.duration > 0) put("audio_duration", msg.duration)
@@ -504,6 +512,56 @@ class SupabaseService(
         }
     }
 
+    suspend fun getSignedMessageMediaUrl(storagePath: String, expiresInSeconds: Int = 604800): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || storagePath.isEmpty()) return@withContext null
+        try {
+            val bucket = "messages-media"
+            val url = URL("$supabaseUrl/storage/v1/object/sign/$bucket/$storagePath")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("apikey", supabaseKey)
+            val token = getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+
+            val body = JSONObject().apply {
+                put("expiresIn", expiresInSeconds)
+            }
+
+            val writer = OutputStreamWriter(conn.outputStream)
+            writer.write(body.toString())
+            writer.flush()
+            writer.close()
+
+            if (conn.responseCode in 200..299) {
+                val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                val sb = java.lang.StringBuilder()
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    sb.append(line)
+                }
+                reader.close()
+                val obj = JSONObject(sb.toString())
+                val partialUrl = obj.optString("signedURL", obj.optString("signedUrl", ""))
+                if (partialUrl.isNotEmpty()) {
+                    val fullUrl = if (partialUrl.startsWith("http")) partialUrl else "$supabaseUrl$partialUrl"
+                    Log.d("SupabaseStorage", "[STORAGE] Generated signed URL for $storagePath: $fullUrl")
+                    return@withContext fullUrl
+                }
+            } else {
+                val errorStream = conn.errorStream
+                val errorMsg = errorStream?.bufferedReader()?.use { it.readText() } ?: "No error stream"
+                Log.e("SupabaseStorage", "[STORAGE] getSignedMessageMediaUrl failed code ${conn.responseCode}: $errorMsg")
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseStorage", "[STORAGE] getSignedMessageMediaUrl exception: ${e.message}", e)
+        }
+        return@withContext null
+    }
+
     suspend fun updateMessageFields(messageId: String, fields: JSONObject): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || messageId.isEmpty()) return@withContext true
         try {
@@ -546,6 +604,67 @@ class SupabaseService(
     private var subscriptionJob: Job? = null
     private val realtimeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    @Serializable
+    data class PresencePayload(val userId: String)
+
+    private var activePresenceChannel: RealtimeChannel? = null
+    private var presenceJob: Job? = null
+
+    fun subscribeToPresenceRealtime(
+        coupleId: String,
+        myUserId: String,
+        onPresenceUpdate: (List<String>) -> Unit
+    ) {
+        if (!isConfigured() || coupleId.isEmpty()) return
+
+        presenceJob?.cancel()
+        presenceJob = realtimeScope.launch {
+            try {
+                val oldChannel = activePresenceChannel
+                activePresenceChannel = null
+                if (oldChannel != null) {
+                    try {
+                        supabase.realtime.removeChannel(oldChannel)
+                    } catch (ignored: Exception) {}
+                }
+
+                val channelId = "presence:couple:$coupleId"
+                Log.d("SupabasePresence", "[REALTIME] Connecting to presence channel: $channelId")
+                val channel = supabase.channel(channelId)
+                activePresenceChannel = channel
+
+                // Listen to presence updates
+                launch {
+                    channel.presenceDataFlow<PresencePayload>().collect { list ->
+                        val onlineUserIds = list.map { it.userId }.distinct()
+                        Log.d("SupabasePresence", "[REALTIME] Active online user IDs in presence channel: $onlineUserIds")
+                        onPresenceUpdate(onlineUserIds)
+                    }
+                }
+
+                channel.subscribe(blockUntilSubscribed = false)
+                
+                // Track our presence on join (with retry)
+                launch {
+                    var retries = 5
+                    while (retries > 0) {
+                        try {
+                            channel.track(buildJsonObject { put("userId", myUserId) })
+                            Log.d("SupabasePresence", "[REALTIME] Successfully tracking presence for user $myUserId")
+                            break
+                        } catch (e: Exception) {
+                            Log.e("SupabasePresence", "[REALTIME] Failed to track presence (retries left: ${retries - 1}): ${e.message}")
+                            delay(1000)
+                            retries--
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("SupabasePresence", "[REALTIME] Presence subscription failed: ${e.message}")
+            }
+        }
+    }
+
     fun subscribeToMessagesRealtime(
         coupleId: String,
         myUserId: String,
@@ -578,7 +697,7 @@ class SupabaseService(
                 }
 
                 Log.d("SupabaseRealtime", "[REALTIME] Connecting to messages channel for couple: $coupleId")
-                val channelId = "messages_couple_${coupleId}_${System.currentTimeMillis()}"
+                val channelId = "messages:couple:$coupleId"
                 val channel = supabase.channel(channelId)
                 activeRealtimeChannel = channel
                 activeSubscribedCoupleId = coupleId
@@ -950,6 +1069,9 @@ class SupabaseService(
             writer.close()
 
             if (conn.responseCode in 200..299) {
+                if (conn.responseCode == 204) {
+                    return ""
+                }
                 val reader = BufferedReader(InputStreamReader(conn.inputStream))
                 val sb = java.lang.StringBuilder()
                 var line: String?
@@ -976,6 +1098,40 @@ class SupabaseService(
         } catch (e: Exception) {
             Log.e("SupabaseService", "executePost failed: ${e.message}")
             null
+        }
+    }
+
+    suspend fun executeRpc(rpcName: String, params: JSONObject): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext false
+        try {
+            val url = URL("$supabaseUrl/rest/v1/rpc/$rpcName")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("apikey", supabaseKey)
+            val token = getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+
+            val writer = OutputStreamWriter(conn.outputStream)
+            writer.write(params.toString())
+            writer.flush()
+            writer.close()
+
+            val code = conn.responseCode
+            if (code in 200..299) {
+                Log.d("SupabaseService", "[RPC SUCCESS] $rpcName with $params (status $code)")
+                return@withContext true
+            } else {
+                val errorMsg = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "No error stream"
+                Log.e("SupabaseService", "[RPC FAILED] $rpcName code $code: $errorMsg (params: $params)")
+                return@withContext false
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseService", "[RPC EXCEPTION] $rpcName: ${e.message}", e)
+            return@withContext false
         }
     }
 
@@ -1043,31 +1199,16 @@ class SupabaseService(
     }
 
     suspend fun markMessagesDelivered(coupleId: String, myUserId: String = ""): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main") return@withContext false
+        if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main" || !isValidUuid(coupleId)) return@withContext false
         try {
-            val uid = myUserId.ifEmpty { getCurrentSessionUid() ?: "" }
-            val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
-                timeZone = java.util.TimeZone.getTimeZone("UTC")
-            }.format(java.util.Date())
-            val patchBody = JSONObject().apply {
-                put("status", "delivered")
-                put("delivered_at", nowIso)
-            }
-            val path = if (uid.isNotEmpty()) {
-                "/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$uid&status=eq.sent"
-            } else {
-                "/rest/v1/messages?couple_id=eq.$coupleId&status=eq.sent"
-            }
-            val patchRes = executePatch(path, patchBody.toString())
             val rpcBody = JSONObject().apply {
                 put("target_couple_id", coupleId)
             }
-            val rpcRes = executePost("/rest/v1/rpc/mark_messages_delivered", rpcBody.toString())
-            val success = patchRes != null || rpcRes != null
+            val success = executeRpc("mark_messages_delivered", rpcBody)
             if (success) {
-                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered SUCCESS for coupleId=$coupleId, sender!==$uid")
+                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered RPC SUCCESS for coupleId=$coupleId")
             } else {
-                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered returned no matching rows or null")
+                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered RPC FAILED for coupleId=$coupleId")
             }
             success
         } catch (e: Exception) {
@@ -1077,31 +1218,16 @@ class SupabaseService(
     }
 
     suspend fun markMessagesRead(coupleId: String, myUserId: String = ""): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main") return@withContext false
+        if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main" || !isValidUuid(coupleId)) return@withContext false
         try {
-            val uid = myUserId.ifEmpty { getCurrentSessionUid() ?: "" }
-            val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
-                timeZone = java.util.TimeZone.getTimeZone("UTC")
-            }.format(java.util.Date())
-            val patchBody = JSONObject().apply {
-                put("status", "read")
-                put("read_at", nowIso)
-            }
-            val path = if (uid.isNotEmpty()) {
-                "/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$uid&status=neq.read"
-            } else {
-                "/rest/v1/messages?couple_id=eq.$coupleId&status=neq.read"
-            }
-            val patchRes = executePatch(path, patchBody.toString())
             val rpcBody = JSONObject().apply {
                 put("target_couple_id", coupleId)
             }
-            val rpcRes = executePost("/rest/v1/rpc/mark_messages_read", rpcBody.toString())
-            val success = patchRes != null || rpcRes != null
+            val success = executeRpc("mark_messages_read", rpcBody)
             if (success) {
-                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead SUCCESS for coupleId=$coupleId, sender!==$uid")
+                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead RPC SUCCESS for coupleId=$coupleId")
             } else {
-                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead returned no matching rows or null")
+                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead RPC FAILED for coupleId=$coupleId")
             }
             success
         } catch (e: Exception) {
@@ -1113,32 +1239,13 @@ class SupabaseService(
     suspend fun touchUserActivity(): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext false
         try {
-            val myUserId = getCurrentSessionUid() ?: return@withContext false
-            val body = JSONObject().apply {
-                put("user_id", myUserId)
+            val success = executeRpc("touch_user_activity", JSONObject())
+            if (success) {
+                Log.d("SupabaseService", "[MIKAYALA_ACTIVITY] touchUserActivity RPC SUCCESS")
             }
-            val res = executePost("/rest/v1/rpc/touch_user_activity", body.toString())
-            if (res != null) {
-                Log.d("SupabaseService", "[MIKAYALA_PRESENCE] touch_user_activity RPC SUCCESS for $myUserId")
-                true
-            } else {
-                val nowIso = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
-                    timeZone = java.util.TimeZone.getTimeZone("UTC")
-                }.format(java.util.Date())
-                val patchBody = JSONObject().apply {
-                    put("user_id", myUserId)
-                    put("last_seen_at", nowIso)
-                    put("updated_at", nowIso)
-                }
-                val patchRes = executePatch("/rest/v1/user_activity?user_id=eq.$myUserId", patchBody.toString())
-                if (patchRes == null) {
-                    executePost("/rest/v1/user_activity", patchBody.toString())
-                }
-                Log.d("SupabaseService", "[MIKAYALA_PRESENCE] user_activity updated via direct REST fallback for $myUserId")
-                true
-            }
+            success
         } catch (e: Exception) {
-            Log.e("SupabaseService", "[MIKAYALA_PRESENCE] touch_user_activity error: ${e.message}")
+            Log.e("SupabaseService", "[MIKAYALA_ACTIVITY] touchUserActivity error: ${e.message}")
             false
         }
     }

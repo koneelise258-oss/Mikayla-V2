@@ -29,6 +29,7 @@ class MikayalaRepository(private val context: Context) {
 
     private val _messages = MutableStateFlow<List<MessageEntity>>(emptyList())
     val allMessages: StateFlow<List<MessageEntity>> = _messages.asStateFlow()
+    private val mediaUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private val _partnerIsTyping = MutableStateFlow(false)
     val partnerIsTyping: StateFlow<Boolean> = _partnerIsTyping.asStateFlow()
@@ -37,6 +38,9 @@ class MikayalaRepository(private val context: Context) {
     private val _partnerIsRecordingAudio = MutableStateFlow(false)
     val partnerIsRecordingAudio: StateFlow<Boolean> = _partnerIsRecordingAudio.asStateFlow()
     val isPartnerRecordingAudio: StateFlow<Boolean> get() = partnerIsRecordingAudio
+
+    private val _isPartnerOnline = MutableStateFlow(false)
+    val isPartnerOnline: StateFlow<Boolean> = _isPartnerOnline.asStateFlow()
 
     private var typingResetJob: Job? = null
     private var recordingResetJob: Job? = null
@@ -471,6 +475,16 @@ class MikayalaRepository(private val context: Context) {
                 }
             }
         )
+
+        supabaseService.subscribeToPresenceRealtime(
+            coupleId = couple.id,
+            myUserId = myUserId,
+            onPresenceUpdate = { list ->
+                val otherUserId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
+                val isPartnerOnline = if (otherUserId.isNotBlank()) list.contains(otherUserId) else list.any { it != myUserId }
+                _isPartnerOnline.value = isPartnerOnline
+            }
+        )
     }
 
     fun sendTypingBroadcast(isTyping: Boolean) {
@@ -489,7 +503,7 @@ class MikayalaRepository(private val context: Context) {
 
         Log.d("MikayalaRepository", "[MIKAYALA_REALTIME] INSERT RECEIVED id=${newEntity.id}, sender=${newEntity.senderId}, type=${newEntity.type}")
 
-        if (newEntity.senderId != myUserId && newEntity.status == "sent") {
+        if (newEntity.senderId != myUserId && (newEntity.status == "sent" || newEntity.deliveredAt == null)) {
             repositoryScope.launch {
                 Log.d("MikayalaRepository", "[MIKAYALA_MESSAGING] Realtime INSERT from partner -> trigger markMessagesDelivered")
                 markMessagesDelivered(_coupleSpace.value.id)
@@ -511,7 +525,12 @@ class MikayalaRepository(private val context: Context) {
         Log.d("MikayalaRepository", "[MIKAYALA_REALTIME] UPDATE RECEIVED id=${updatedEntity.id}, status=${updatedEntity.status}")
         _messages.value = _messages.value.map { local ->
             if (local.id == updatedEntity.id) {
-                updatedEntity
+                // Keep local valid mediaUrl if remote mediaUrl was not resolved yet
+                if (updatedEntity.mediaUrl.isNullOrEmpty() && !local.mediaUrl.isNullOrEmpty()) {
+                    updatedEntity.copy(mediaUrl = local.mediaUrl)
+                } else {
+                    updatedEntity
+                }
             } else {
                 local
             }
@@ -537,8 +556,24 @@ class MikayalaRepository(private val context: Context) {
 
             val storagePath = obj.optString("storage_path", "").ifEmpty { null }
             var mediaUrl = obj.optString("media_url", "").ifEmpty { null }
-            if (mediaUrl.isNullOrEmpty() && !storagePath.isNullOrEmpty()) {
-                mediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+
+            if (!storagePath.isNullOrEmpty()) {
+                val cached = mediaUrlCache[storagePath]
+                if (cached != null) {
+                    mediaUrl = cached
+                } else if (mediaUrl.isNullOrEmpty() || mediaUrl.contains("/storage/v1/object/public/messages-media/")) {
+                    repositoryScope.launch {
+                        val signed = supabaseService.getSignedMessageMediaUrl(storagePath)
+                        if (signed != null) {
+                            mediaUrlCache[storagePath] = signed
+                            _messages.value = _messages.value.map {
+                                if (it.id == id) it.copy(mediaUrl = signed) else it
+                            }
+                        }
+                    }
+                } else if (mediaUrl.startsWith("http")) {
+                    mediaUrlCache[storagePath] = mediaUrl
+                }
             }
 
             val duration = if (obj.has("audio_duration")) obj.optInt("audio_duration", 0) else obj.optInt("duration", 0)
@@ -552,14 +587,16 @@ class MikayalaRepository(private val context: Context) {
                 obj.optLong("edited_at", 0L).takeIf { it > 0L } ?: parseTimestamp(obj.optString("edited_at"))
             } else null
 
-            val deliveredAt = obj.optString("delivered_at", "null")
-            val readAt = obj.optString("read_at", "null")
+            val deliveredAtRaw = obj.optString("delivered_at", "null")
+            val readAtRaw = obj.optString("read_at", "null")
+            val parsedDeliveredAt = parseTimestamp(if (deliveredAtRaw != "null" && deliveredAtRaw.isNotEmpty()) deliveredAtRaw else null)
+            val parsedReadAt = parseTimestamp(if (readAtRaw != "null" && readAtRaw.isNotEmpty()) readAtRaw else null)
+
             val status = when {
-                readAt != "null" && readAt.isNotEmpty() -> "read"
-                deliveredAt != "null" && deliveredAt.isNotEmpty() -> "delivered"
+                parsedReadAt != null || (readAtRaw != "null" && readAtRaw.isNotEmpty()) -> "read"
+                parsedDeliveredAt != null || (deliveredAtRaw != "null" && deliveredAtRaw.isNotEmpty()) -> "delivered"
                 else -> obj.optString("status", "sent")
             }
-            val parsedReadAt = parseTimestamp(if (readAt != "null") readAt else null)
 
             val isViewOnce = obj.optBoolean("is_ephemeral", obj.optBoolean("is_view_once", false))
             val isViewed = obj.optBoolean("is_viewed", false)
@@ -583,11 +620,13 @@ class MikayalaRepository(private val context: Context) {
                 content = if (isDeletedForEveryone) "Ce message a été supprimé" else content,
                 type = type,
                 mediaUrl = mediaUrl,
+                storagePath = storagePath,
                 thumbnailUrl = null,
                 duration = duration,
                 createdAt = createdAt,
                 editedAt = editedAt,
                 status = status,
+                deliveredAt = parsedDeliveredAt,
                 readAt = parsedReadAt,
                 isViewOnce = isViewOnce,
                 isViewed = isViewed,
@@ -674,8 +713,8 @@ class MikayalaRepository(private val context: Context) {
         repositoryScope.launch {
             try {
                 val file = File(filePath)
-                if (!file.exists()) {
-                    Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] Voice note file missing: $filePath")
+                if (!file.exists() || file.length() == 0L) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] Voice note file missing or empty: $filePath")
                     return@launch
                 }
                 val bytes = file.readBytes()
@@ -690,6 +729,7 @@ class MikayalaRepository(private val context: Context) {
                     content = "Message vocal 🎙️",
                     type = "audio",
                     mediaUrl = null,
+                    storagePath = storagePath,
                     duration = durationSeconds,
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
@@ -705,14 +745,15 @@ class MikayalaRepository(private val context: Context) {
                 }
 
                 Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD SUCCESS storagePath=$storagePath")
-                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                val updatedPending = pendingMsg.copy(mediaUrl = publicMediaUrl)
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath) ?: "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                mediaUrlCache[storagePath] = signedUrl
+                val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
 
                 val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
                 if (success) {
                     Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] INSERT SUCCESS for voice note ID $messageId")
                     _messages.value = _messages.value.map {
-                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = publicMediaUrl) else it
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
                 } else {
                     Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] INSERT FAILED for voice note ID $messageId")
@@ -754,6 +795,7 @@ class MikayalaRepository(private val context: Context) {
                     content = contentText,
                     type = "image",
                     mediaUrl = null,
+                    storagePath = storagePath,
                     isViewOnce = isViewOnce,
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
@@ -769,14 +811,15 @@ class MikayalaRepository(private val context: Context) {
                 }
 
                 Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD SUCCESS storagePath=$storagePath")
-                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                val updatedPending = pendingMsg.copy(mediaUrl = publicMediaUrl)
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath) ?: "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                mediaUrlCache[storagePath] = signedUrl
+                val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
 
                 val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
                 if (success) {
                     Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT SUCCESS for image ID $messageId")
                     _messages.value = _messages.value.map {
-                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = publicMediaUrl) else it
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
                 } else {
                     Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT FAILED for image ID $messageId")
@@ -816,6 +859,7 @@ class MikayalaRepository(private val context: Context) {
                     content = contentText,
                     type = "image",
                     mediaUrl = null,
+                    storagePath = storagePath,
                     isViewOnce = isViewOnce,
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
@@ -831,14 +875,15 @@ class MikayalaRepository(private val context: Context) {
                 }
 
                 Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD SUCCESS storagePath=$storagePath")
-                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                val updatedPending = pendingMsg.copy(mediaUrl = publicMediaUrl)
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath) ?: "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                mediaUrlCache[storagePath] = signedUrl
+                val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
 
                 val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
                 if (success) {
                     Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT SUCCESS for camera photo ID $messageId")
                     _messages.value = _messages.value.map {
-                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = publicMediaUrl) else it
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
                 } else {
                     Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT FAILED for camera photo ID $messageId")
@@ -881,6 +926,7 @@ class MikayalaRepository(private val context: Context) {
                     content = "Vidéo partagée 🎬",
                     type = "video",
                     mediaUrl = null,
+                    storagePath = storagePath,
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
                 )
@@ -895,14 +941,15 @@ class MikayalaRepository(private val context: Context) {
                 }
 
                 Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD SUCCESS storagePath=$storagePath")
-                val publicMediaUrl = "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                val updatedPending = pendingMsg.copy(mediaUrl = publicMediaUrl)
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath) ?: "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
+                mediaUrlCache[storagePath] = signedUrl
+                val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
 
                 val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
                 if (success) {
                     Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] INSERT SUCCESS for video ID $messageId")
                     _messages.value = _messages.value.map {
-                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = publicMediaUrl) else it
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
                 } else {
                     Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] INSERT FAILED for video ID $messageId")
@@ -1717,25 +1764,22 @@ class MikayalaRepository(private val context: Context) {
 
     private fun formatLastSeen(isoStr: String): String {
         return try {
-            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-            sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-            val cleanStr = isoStr.replace("Z", "").replace("+00:00", "")
-            val parsedDate = sdf.parse(cleanStr)
-            if (parsedDate != null) {
-                val diffMs = System.currentTimeMillis() - parsedDate.time
+            val ts = parseTimestamp(isoStr)
+            if (ts != null) {
+                val diffMs = System.currentTimeMillis() - ts
                 val diffMins = diffMs / 60000
                 when {
-                    diffMins < 2 -> "En ligne"
+                    diffMins < 2 -> "À l'instant"
                     diffMins < 60 -> "Vu il y a ${diffMins} min"
                     diffMins < 1440 -> "Vu il y a ${diffMins / 60} h"
                     else -> {
                         val outSdf = java.text.SimpleDateFormat("dd/MM à HH:mm", java.util.Locale.FRANCE)
-                        "Vu le ${outSdf.format(parsedDate)}"
+                        "Vu le ${outSdf.format(java.util.Date(ts))}"
                     }
                 }
-            } else "En ligne"
+            } else "Hors ligne"
         } catch (e: Exception) {
-            "En ligne"
+            "Hors ligne"
         }
     }
 
@@ -1925,9 +1969,22 @@ class MikayalaRepository(private val context: Context) {
         if (ts == null || ts == "null" || ts.isEmpty()) return null
         return try {
             ts.toLongOrNull() ?: run {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    try {
+                        java.time.OffsetDateTime.parse(ts).toInstant().toEpochMilli()
+                    } catch (e: Exception) {
+                        try {
+                            java.time.Instant.parse(ts).toEpochMilli()
+                        } catch (e2: Exception) {
+                            null
+                        }
+                    }
+                } else null
+            } ?: run {
+                val clean = ts.replace("Z", "+0000").split(".")[0]
                 val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
                 sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-                sdf.parse(ts)?.time
+                sdf.parse(clean)?.time
             }
         } catch (e: Exception) {
             null

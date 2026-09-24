@@ -137,10 +137,12 @@ data class MessageEntity(
     val content: String,
     val type: String = "text", // "text", "image", "audio", "video", "scratch_card", "quiz"
     val mediaUrl: String? = null,
+    val storagePath: String? = null,
     val thumbnailUrl: String? = null,
     val duration: Int = 0, // In seconds for voice notes
     val createdAt: Long = System.currentTimeMillis(),
     val status: String = "sent", // "pending", "sent", "delivered", "read"
+    val deliveredAt: Long? = null,
     val readAt: Long? = null,
     val isBurned: Boolean = false,
     val isViewOnce: Boolean = false,
