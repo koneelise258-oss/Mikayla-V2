@@ -8,6 +8,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import com.example.mikayala.ui.screens.autoCapitalizeMessageInput
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -283,8 +286,11 @@ fun P2PDirectStudioOverlay(
                     ) {
                         TextField(
                             value = directMessageText,
-                            onValueChange = { directMessageText = it },
+                            onValueChange = { directMessageText = autoCapitalizeMessageInput(it, directMessageText) },
                             placeholder = { Text("Message direct P2P sans Internet...", color = TextMuted, fontSize = 13.sp) },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences
+                            ),
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedContainerColor = Color.Transparent,

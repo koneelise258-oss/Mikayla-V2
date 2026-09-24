@@ -16,6 +16,8 @@ import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -489,8 +491,13 @@ fun ChatScreen(
                                 // Text input field
                                 TextField(
                                     value = textInput,
-                                    onValueChange = { textInput = it },
+                                    onValueChange = { input ->
+                                        textInput = autoCapitalizeMessageInput(input, textInput)
+                                    },
                                     placeholder = { Text("Message", color = TextMuted, fontSize = 15.sp) },
+                                    keyboardOptions = KeyboardOptions(
+                                        capitalization = KeyboardCapitalization.Sentences
+                                    ),
                                     colors = TextFieldDefaults.colors(
                                         focusedContainerColor = Color.Transparent,
                                         unfocusedContainerColor = Color.Transparent,
@@ -2078,4 +2085,33 @@ fun FullScreenVideoDialog(
         }
     }
 }
+
+/**
+ * Automatically capitalizes the first letter of a message or sentence.
+ */
+internal fun autoCapitalizeMessageInput(input: String, previousText: String): String {
+    if (input.isEmpty()) return input
+
+    // Ensure the very first non-whitespace character of the message is capitalized
+    val firstCharIdx = input.indexOfFirst { !it.isWhitespace() }
+    val base = if (firstCharIdx != -1 && input[firstCharIdx].isLowerCase()) {
+        val chars = input.toCharArray()
+        chars[firstCharIdx] = chars[firstCharIdx].titlecaseChar()
+        String(chars)
+    } else {
+        input
+    }
+
+    // If typing a new character right after a sentence boundary (. ! ? or newline) + whitespace, capitalize it
+    if (base.length == previousText.length + 1 && base.last().isLowerCase()) {
+        val prefix = base.dropLast(1)
+        val trimmedPrefix = prefix.trimEnd()
+        if (trimmedPrefix.isNotEmpty() && (trimmedPrefix.endsWith('.') || trimmedPrefix.endsWith('!') || trimmedPrefix.endsWith('?') || prefix.endsWith('\n'))) {
+            return prefix + base.last().titlecaseChar()
+        }
+    }
+
+    return base
+}
+
 

@@ -1966,8 +1966,13 @@ class MikayalaRepository(private val context: Context) {
         val myUserId = getCurrentUserId()
         if (myUserId.isEmpty()) return
 
-        // 0. Update active user presence
-        supabaseService.touchUserActivity()
+        // 0. Ensure session is active before updating activity presence
+        if (!supabaseService.hasActiveSession()) {
+            supabaseService.ensureAnonymousSession()
+        }
+        if (supabaseService.hasActiveSession()) {
+            supabaseService.touchUserActivity()
+        }
 
         // 1. Sync current user's profile
         val myProfileJson = supabaseService.getProfile(myUserId)

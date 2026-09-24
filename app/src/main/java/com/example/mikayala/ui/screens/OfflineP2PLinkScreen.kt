@@ -7,6 +7,8 @@ import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -800,8 +802,11 @@ fun OfflineP2PLinkScreen(
                         ) {
                             TextField(
                                 value = directMessageText,
-                                onValueChange = { directMessageText = it },
+                                onValueChange = { directMessageText = autoCapitalizeMessageInput(it, directMessageText) },
                                 placeholder = { Text("Message direct hors-ligne à Mikayala...", color = TextMuted, fontSize = 13.sp) },
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.Sentences
+                                ),
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,

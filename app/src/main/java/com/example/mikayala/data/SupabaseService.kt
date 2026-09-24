@@ -1237,6 +1237,11 @@ class SupabaseService(
 
     suspend fun touchUserActivity(): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext false
+        val currentSession = supabase.auth.currentSessionOrNull()
+        if (currentSession == null || currentSession.user?.id.isNullOrEmpty()) {
+            // User is not authenticated in Supabase Auth yet; skip RPC to avoid 400 'Non authentifié'
+            return@withContext false
+        }
         try {
             val success = executeRpc("touch_user_activity", JSONObject())
             if (success) {
