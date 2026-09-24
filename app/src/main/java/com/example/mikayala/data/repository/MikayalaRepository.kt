@@ -3,6 +3,7 @@ package com.example.mikayala.data.repository
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import com.example.mikayala.data.SupabaseService
 import com.example.mikayala.data.model.*
@@ -719,7 +720,7 @@ class MikayalaRepository(private val context: Context) {
                 }
                 val bytes = file.readBytes()
                 val messageId = UUID.randomUUID().toString()
-                val storagePath = "$coupleId/audio/$messageId.m4a"
+                val storagePath = "$coupleId/audio/$messageId.mp4"
 
                 val pendingMsg = MessageEntity(
                     id = messageId,
@@ -737,7 +738,7 @@ class MikayalaRepository(private val context: Context) {
                 _messages.value = _messages.value + pendingMsg
                 Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD START storagePath=$storagePath")
 
-                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "audio/m4a")
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "audio/mp4")
                 if (uploadedPath == null) {
                     Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD FAILED for $storagePath")
                     _messages.value = _messages.value.filterNot { it.id == messageId }
@@ -745,8 +746,10 @@ class MikayalaRepository(private val context: Context) {
                 }
 
                 Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD SUCCESS storagePath=$storagePath")
-                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath) ?: "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                mediaUrlCache[storagePath] = signedUrl
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath)
+                if (signedUrl != null) {
+                    mediaUrlCache[storagePath] = signedUrl
+                }
                 val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
 
                 val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
@@ -766,6 +769,146 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
+    fun sendEditedImageMedia(webpBytes: ByteArray, caption: String = "", isViewOnce: Boolean = false) {
+        val couple = _coupleSpace.value
+        val myUserId = getCurrentUserId()
+        if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank()) return
+        val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
+        val coupleId = couple.id
+
+        Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] Sending edited WebP photo: ${webpBytes.size} bytes, caption='$caption', viewOnce=$isViewOnce")
+
+        repositoryScope.launch {
+            try {
+                val messageId = UUID.randomUUID().toString()
+                val storagePath = "$coupleId/photos/$messageId.webp"
+
+                val contentText = when {
+                    caption.isNotBlank() -> caption
+                    isViewOnce -> "Photo éphémère 📸"
+                    else -> "Photo partagée 🖼️"
+                }
+
+                val pendingMsg = MessageEntity(
+                    id = messageId,
+                    coupleId = coupleId,
+                    senderId = myUserId,
+                    receiverId = partnerId,
+                    content = contentText,
+                    type = "image",
+                    mediaUrl = null,
+                    storagePath = storagePath,
+                    isViewOnce = isViewOnce,
+                    createdAt = System.currentTimeMillis(),
+                    status = "pending"
+                )
+                _messages.value = _messages.value + pendingMsg
+                Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD START storagePath=$storagePath")
+
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, webpBytes, "image/webp")
+                if (uploadedPath == null) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD FAILED for edited photo $storagePath")
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                    return@launch
+                }
+
+                Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD SUCCESS storagePath=$storagePath")
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath)
+                if (signedUrl != null) {
+                    mediaUrlCache[storagePath] = signedUrl
+                }
+                val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
+
+                val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
+                if (success) {
+                    Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT SUCCESS for edited photo ID $messageId")
+                    _messages.value = _messages.value.map {
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
+                    }
+                } else {
+                    Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] INSERT FAILED for edited photo ID $messageId")
+                    supabaseService.deleteMessageMedia(storagePath)
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                }
+            } catch (e: Exception) {
+                Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] Failed to send edited image media: ${e.message}", e)
+            }
+        }
+    }
+
+    fun sendEditedVideoMedia(videoFile: File, caption: String = "") {
+        val couple = _coupleSpace.value
+        val myUserId = getCurrentUserId()
+        if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank()) return
+        val partnerId = if (couple.partner1Id == myUserId) couple.partner2Id else couple.partner1Id
+        val coupleId = couple.id
+
+        Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] Sending edited video file: ${videoFile.absolutePath}, size=${videoFile.length()} bytes")
+
+        repositoryScope.launch {
+            try {
+                if (!videoFile.exists() || videoFile.length() <= 0L) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] Video file is empty or does not exist")
+                    return@launch
+                }
+
+                val bytes = withContext(Dispatchers.IO) {
+                    videoFile.readBytes()
+                }
+
+                val messageId = UUID.randomUUID().toString()
+                val storagePath = "$coupleId/video/$messageId.mp4"
+
+                val contentText = if (caption.isNotBlank()) caption else "Vidéo partagée 🎬"
+
+                val pendingMsg = MessageEntity(
+                    id = messageId,
+                    coupleId = coupleId,
+                    senderId = myUserId,
+                    receiverId = partnerId,
+                    content = contentText,
+                    type = "video",
+                    mediaUrl = null,
+                    storagePath = storagePath,
+                    createdAt = System.currentTimeMillis(),
+                    status = "pending"
+                )
+                _messages.value = _messages.value + pendingMsg
+                Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD START storagePath=$storagePath")
+
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "video/mp4")
+                if (uploadedPath == null) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD FAILED for edited video $storagePath")
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                    return@launch
+                }
+
+                Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD SUCCESS storagePath=$storagePath")
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath)
+                if (signedUrl != null) {
+                    mediaUrlCache[storagePath] = signedUrl
+                }
+                val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
+
+                val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
+                if (success) {
+                    Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] INSERT SUCCESS for edited video ID $messageId")
+                    _messages.value = _messages.value.map {
+                        if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
+                    }
+                    // Clean up temp cache file after successful upload & db insert
+                    try { videoFile.delete() } catch (_: Exception) {}
+                } else {
+                    Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] INSERT FAILED for edited video ID $messageId")
+                    supabaseService.deleteMessageMedia(storagePath)
+                    _messages.value = _messages.value.filterNot { it.id == messageId }
+                }
+            } catch (e: Exception) {
+                Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] Failed to send edited video media: ${e.message}", e)
+            }
+        }
+    }
+
     fun sendImageMedia(uri: Uri, isViewOnce: Boolean = false) {
         val couple = _coupleSpace.value
         val myUserId = getCurrentUserId()
@@ -777,14 +920,34 @@ class MikayalaRepository(private val context: Context) {
 
         repositoryScope.launch {
             try {
+                // Read input image and convert to WebP
                 val inputStream = context.contentResolver.openInputStream(uri)
-                val bytes = inputStream?.readBytes()
+                val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
                 inputStream?.close()
 
-                if (bytes == null || bytes.isEmpty()) return@launch
+                if (originalBitmap == null) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] Failed to decode image from uri: $uri")
+                    return@launch
+                }
+
+                val stream = ByteArrayOutputStream()
+                val compressFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Bitmap.CompressFormat.WEBP_LOSSY
+                } else {
+                    @Suppress("DEPRECATION")
+                    Bitmap.CompressFormat.WEBP
+                }
+                originalBitmap.compress(compressFormat, 85, stream)
+                val bytes = stream.toByteArray()
+                originalBitmap.recycle()
+
+                if (bytes.isEmpty()) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] WebP compression produced 0 bytes")
+                    return@launch
+                }
 
                 val messageId = UUID.randomUUID().toString()
-                val storagePath = "$coupleId/photos/$messageId.jpg"
+                val storagePath = "$coupleId/photos/$messageId.webp"
 
                 val contentText = if (isViewOnce) "Photo éphémère 📸" else "Photo partagée 🖼️"
                 val pendingMsg = MessageEntity(
@@ -803,7 +966,7 @@ class MikayalaRepository(private val context: Context) {
                 _messages.value = _messages.value + pendingMsg
                 Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD START storagePath=$storagePath")
 
-                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/jpeg")
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/webp")
                 if (uploadedPath == null) {
                     Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD FAILED for $storagePath")
                     _messages.value = _messages.value.filterNot { it.id == messageId }
@@ -811,8 +974,10 @@ class MikayalaRepository(private val context: Context) {
                 }
 
                 Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD SUCCESS storagePath=$storagePath")
-                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath) ?: "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                mediaUrlCache[storagePath] = signedUrl
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath)
+                if (signedUrl != null) {
+                    mediaUrlCache[storagePath] = signedUrl
+                }
                 val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
 
                 val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
@@ -844,11 +1009,17 @@ class MikayalaRepository(private val context: Context) {
         repositoryScope.launch {
             try {
                 val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+                val compressFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Bitmap.CompressFormat.WEBP_LOSSY
+                } else {
+                    @Suppress("DEPRECATION")
+                    Bitmap.CompressFormat.WEBP
+                }
+                bitmap.compress(compressFormat, 85, stream)
                 val bytes = stream.toByteArray()
 
                 val messageId = UUID.randomUUID().toString()
-                val storagePath = "$coupleId/photos/$messageId.jpg"
+                val storagePath = "$coupleId/photos/$messageId.webp"
 
                 val contentText = if (isViewOnce) "Photo instantanée éphémère 📸" else "Photo instantanée 📸"
                 val pendingMsg = MessageEntity(
@@ -867,7 +1038,7 @@ class MikayalaRepository(private val context: Context) {
                 _messages.value = _messages.value + pendingMsg
                 Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD START storagePath=$storagePath")
 
-                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/jpeg")
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/webp")
                 if (uploadedPath == null) {
                     Log.e("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD FAILED for camera photo $storagePath")
                     _messages.value = _messages.value.filterNot { it.id == messageId }
@@ -875,8 +1046,10 @@ class MikayalaRepository(private val context: Context) {
                 }
 
                 Log.d("MikayalaRepository", "[MIKAYALA_IMAGE] UPLOAD SUCCESS storagePath=$storagePath")
-                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath) ?: "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                mediaUrlCache[storagePath] = signedUrl
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath)
+                if (signedUrl != null) {
+                    mediaUrlCache[storagePath] = signedUrl
+                }
                 val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
 
                 val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
@@ -907,6 +1080,12 @@ class MikayalaRepository(private val context: Context) {
 
         repositoryScope.launch {
             try {
+                val mimeType = context.contentResolver.getType(uri) ?: "video/mp4"
+                if (mimeType.contains("mkv") || mimeType.contains("3gp")) {
+                    Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] Unsupported format: $mimeType. Only MP4 is accepted.")
+                    return@launch
+                }
+
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val bytes = inputStream?.readBytes()
                 inputStream?.close()
@@ -914,9 +1093,7 @@ class MikayalaRepository(private val context: Context) {
                 if (bytes == null || bytes.isEmpty()) return@launch
 
                 val messageId = UUID.randomUUID().toString()
-                val mimeType = context.contentResolver.getType(uri) ?: "video/mp4"
-                val extension = if (mimeType.contains("mkv")) "mkv" else if (mimeType.contains("3gp")) "3gp" else "mp4"
-                val storagePath = "$coupleId/video/$messageId.$extension"
+                val storagePath = "$coupleId/video/$messageId.mp4"
 
                 val pendingMsg = MessageEntity(
                     id = messageId,
@@ -933,7 +1110,7 @@ class MikayalaRepository(private val context: Context) {
                 _messages.value = _messages.value + pendingMsg
                 Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD START storagePath=$storagePath")
 
-                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, mimeType)
+                val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "video/mp4")
                 if (uploadedPath == null) {
                     Log.e("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD FAILED for $storagePath")
                     _messages.value = _messages.value.filterNot { it.id == messageId }
@@ -941,8 +1118,10 @@ class MikayalaRepository(private val context: Context) {
                 }
 
                 Log.d("MikayalaRepository", "[MIKAYALA_VIDEO] UPLOAD SUCCESS storagePath=$storagePath")
-                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath) ?: "${supabaseService.supabaseUrl}/storage/v1/object/public/messages-media/$storagePath"
-                mediaUrlCache[storagePath] = signedUrl
+                val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath)
+                if (signedUrl != null) {
+                    mediaUrlCache[storagePath] = signedUrl
+                }
                 val updatedPending = pendingMsg.copy(mediaUrl = signedUrl, storagePath = storagePath)
 
                 val success = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)

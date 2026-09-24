@@ -642,23 +642,22 @@ class SupabaseService(
                     }
                 }
 
-                channel.subscribe(blockUntilSubscribed = false)
-                
-                // Track our presence on join (with retry)
+                // Subscribe and wait until SUBSCRIBED before calling track()
                 launch {
-                    var retries = 5
-                    while (retries > 0) {
-                        try {
-                            channel.track(buildJsonObject { put("userId", myUserId) })
-                            Log.d("SupabasePresence", "[REALTIME] Successfully tracking presence for user $myUserId")
-                            break
-                        } catch (e: Exception) {
-                            Log.e("SupabasePresence", "[REALTIME] Failed to track presence (retries left: ${retries - 1}): ${e.message}")
-                            delay(1000)
-                            retries--
+                    channel.status.collectLatest { status ->
+                        Log.d("SupabasePresence", "[REALTIME STATUS] Presence channel status: ${status.name}")
+                        if (status.name == "SUBSCRIBED") {
+                            try {
+                                channel.track(buildJsonObject { put("userId", myUserId) })
+                                Log.d("SupabasePresence", "[REALTIME] Successfully tracking presence for user $myUserId after SUBSCRIBED")
+                            } catch (e: Exception) {
+                                Log.e("SupabasePresence", "[REALTIME] Failed to track presence after SUBSCRIBED: ${e.message}")
+                            }
                         }
                     }
                 }
+
+                channel.subscribe(blockUntilSubscribed = false)
             } catch (e: Exception) {
                 Log.e("SupabasePresence", "[REALTIME] Presence subscription failed: ${e.message}")
             }

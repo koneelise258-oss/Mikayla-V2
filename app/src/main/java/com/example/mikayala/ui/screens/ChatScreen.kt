@@ -1,7 +1,11 @@
 package com.example.mikayala.ui.screens
 
+import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
+import com.example.mikayala.ui.media.MediaEditorTarget
+import com.example.mikayala.ui.media.photo.PhotoEditorScreen
+import com.example.mikayala.ui.media.video.VideoEditorScreen
 import kotlinx.coroutines.isActive
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -73,7 +77,9 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val voiceRecorder = remember { VoiceRecorderManager(context) }
 
-    // 📸 REAL PHOTO, VIDEO & CAMERA LAUNCHERS
+    // 📸 REAL PHOTO, VIDEO & CAMERA LAUNCHERS (Routed to Media Editor)
+    var activeMediaEditorTarget by remember { mutableStateOf<MediaEditorTarget?>(null) }
+
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -81,13 +87,9 @@ fun ChatScreen(
             Log.d("ChatScreen", "[MIKAYALA_IMAGE] Gallery picker selected URI=$uri")
             val mimeType = context.contentResolver.getType(uri) ?: ""
             if (mimeType.startsWith("video")) {
-                Log.d("ChatScreen", "[MIKAYALA_VIDEO] Selected video URI=$uri")
-                repository.sendVideoMedia(uri)
-                Toast.makeText(context, "Vidéo en cours d'envoi... 🎬", Toast.LENGTH_SHORT).show()
+                activeMediaEditorTarget = MediaEditorTarget.Video(uri)
             } else {
-                Log.d("ChatScreen", "[MIKAYALA_IMAGE] Selected image URI=$uri")
-                repository.sendImageMedia(uri)
-                Toast.makeText(context, "Photo en cours d'envoi... 🖼️", Toast.LENGTH_SHORT).show()
+                activeMediaEditorTarget = MediaEditorTarget.PhotoUri(uri)
             }
         }
     }
@@ -97,8 +99,7 @@ fun ChatScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             Log.d("ChatScreen", "[MIKAYALA_VIDEO] Video launcher selected URI=$uri")
-            repository.sendVideoMedia(uri)
-            Toast.makeText(context, "Vidéo en cours d'envoi... 🎬", Toast.LENGTH_SHORT).show()
+            activeMediaEditorTarget = MediaEditorTarget.Video(uri)
         }
     }
 
@@ -107,8 +108,7 @@ fun ChatScreen(
     ) { bitmap ->
         if (bitmap != null) {
             Log.d("ChatScreen", "[MIKAYALA_IMAGE] Camera captured photo bitmap ${bitmap.width}x${bitmap.height}")
-            repository.sendCameraPhoto(bitmap)
-            Toast.makeText(context, "Photo caméra en cours d'envoi... 📸", Toast.LENGTH_SHORT).show()
+            activeMediaEditorTarget = MediaEditorTarget.PhotoBitmap(bitmap)
         }
     }
 
@@ -185,6 +185,22 @@ fun ChatScreen(
             repository.syncProfiles()
             delay(30000)
         }
+    }
+
+    // Broadcast typing status with debounce
+    LaunchedEffect(textInput) {
+        val isTyping = textInput.isNotBlank()
+        repository.sendTypingBroadcast(isTyping)
+        if (isTyping) {
+            delay(3500)
+            repository.sendTypingBroadcast(false)
+        }
+    }
+
+    // Broadcast recording status
+    LaunchedEffect(recordingState) {
+        val isRecording = (recordingState == RecordingState.RECORDING || recordingState == RecordingState.LOCKED)
+        repository.sendRecordingBroadcast(isRecording)
     }
 
     // Audio recording timer loop
@@ -917,6 +933,50 @@ fun ChatScreen(
                 onDeleteForEveryone = { repository.deleteMessage(message.id, true) },
                 onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) }
             )
+        }
+
+        // 🎨 NATIVE FULL-SCREEN MULTIMEDIA EDITORS (Before Sending)
+        activeMediaEditorTarget?.let { target ->
+            Dialog(
+                onDismissRequest = { activeMediaEditorTarget = null },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                when (target) {
+                    is MediaEditorTarget.PhotoUri -> {
+                        PhotoEditorScreen(
+                            imageUri = target.uri,
+                            onDismiss = { activeMediaEditorTarget = null },
+                            onComplete = { webpBytes, caption, isViewOnce ->
+                                activeMediaEditorTarget = null
+                                repository.sendEditedImageMedia(webpBytes, caption, isViewOnce)
+                                Toast.makeText(context, "Photo éditée en cours d'envoi... 🖼️", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                    is MediaEditorTarget.PhotoBitmap -> {
+                        PhotoEditorScreen(
+                            bitmap = target.bitmap,
+                            onDismiss = { activeMediaEditorTarget = null },
+                            onComplete = { webpBytes, caption, isViewOnce ->
+                                activeMediaEditorTarget = null
+                                repository.sendEditedImageMedia(webpBytes, caption, isViewOnce)
+                                Toast.makeText(context, "Photo caméra éditée en cours d'envoi... 📸", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                    is MediaEditorTarget.Video -> {
+                        VideoEditorScreen(
+                            videoUri = target.uri,
+                            onDismiss = { activeMediaEditorTarget = null },
+                            onComplete = { exportedFile, caption ->
+                                activeMediaEditorTarget = null
+                                repository.sendEditedVideoMedia(exportedFile, caption)
+                                Toast.makeText(context, "Vidéo éditée en cours d'envoi... 🎬", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -46,7 +46,8 @@ fun MessageStatusIndicator(
                 DoubleCheck(color = StatusBlue)
             }
             else -> {
-                DoubleCheck(color = StatusBlue)
+                // Unknown server status: fallback to sent (SingleCheck), never assume read
+                SingleCheck(color = StatusSent)
             }
         }
     }
