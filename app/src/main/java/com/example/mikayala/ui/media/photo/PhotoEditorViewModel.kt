@@ -309,4 +309,10 @@ class PhotoEditorViewModel : ViewModel() {
     fun toggleViewOnce() {
         _state.update { it.copy(isViewOnce = !it.isViewOnce) }
     }
+
+    fun updateViewDimensions(width: Float, height: Float) {
+        if (width > 0f && height > 0f && (_state.value.viewWidth != width || _state.value.viewHeight != height)) {
+            _state.update { it.copy(viewWidth = width, viewHeight = height) }
+        }
+    }
 }

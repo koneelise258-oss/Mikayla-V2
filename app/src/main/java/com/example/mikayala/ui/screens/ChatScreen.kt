@@ -363,8 +363,9 @@ fun ChatScreen(
                                     .background(OnlinePresenceGreen)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
+                            val partnerDisplayName = userSettings.partnerNickname.ifBlank { "Votre partenaire" }
                             Text(
-                                text = if (isPartnerRecording) "Mikayala enregistre un audio... 🎙️" else "Mikayala est en train d'écrire... ✨",
+                                text = if (isPartnerRecording) "$partnerDisplayName enregistre un audio... 🎙️" else "$partnerDisplayName est en train d'écrire... ✨",
                                 fontSize = 12.sp,
                                 color = AccentViolet
                             )
@@ -632,6 +633,10 @@ fun ChatScreen(
 
                 // Outside Right Button with Floating Lock Indicator & 3 Gesture Modes
                 Box(contentAlignment = Alignment.BottomCenter) {
+                    val density = androidx.compose.ui.platform.LocalDensity.current
+                    val lockThresholdPx = remember(density) { with(density) { 80.dp.toPx() } }
+                    val isLockThresholdMet = dragOffsetY < -lockThresholdPx
+
                     // Floating Lock Prompt Indicator when holding/sliding
                     androidx.compose.animation.AnimatedVisibility(
                         visible = recordingState == RecordingState.RECORDING,
@@ -643,7 +648,7 @@ fun ChatScreen(
                             color = CardDarkElevated,
                             border = BorderStroke(
                                 1.dp,
-                                if (dragOffsetY < -60f) AccentRose else VibrantCyan
+                                if (isLockThresholdMet) AccentRose else VibrantCyan
                             ),
                             shadowElevation = 8.dp,
                             modifier = Modifier
@@ -657,15 +662,15 @@ fun ChatScreen(
                                 Icon(
                                     imageVector = Icons.Rounded.Lock,
                                     contentDescription = null,
-                                    tint = if (dragOffsetY < -60f) AccentRose else VibrantCyan,
+                                    tint = if (isLockThresholdMet) AccentRose else VibrantCyan,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = if (dragOffsetY < -60f) "Relâchez pour verrouiller" else "Glissez pour verrouiller",
+                                    text = if (isLockThresholdMet) "Relâchez pour verrouiller" else "Glissez vers le haut pour verrouiller",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (dragOffsetY < -60f) AccentRose else TextPrimary
+                                    color = if (isLockThresholdMet) AccentRose else TextPrimary
                                 )
                             }
                         }
@@ -710,8 +715,8 @@ fun ChatScreen(
                                             dragOffsetY = dragY
                                             if (dragY < maxDragUp) maxDragUp = dragY
 
-                                            // Drag up to lock (-60px upward)
-                                            if (dragY < -60f && recordingState == RecordingState.RECORDING) {
+                                            // Deliberate swipe up threshold (~80dp)
+                                            if (dragY < -lockThresholdPx && recordingState == RecordingState.RECORDING) {
                                                 recordingState = RecordingState.LOCKED
                                                 isLockedViaDrag = true
                                             }
@@ -1001,7 +1006,11 @@ private fun MessageBubble(
     onViewOnceClicked: () -> Unit
 ) {
     val context = LocalContext.current
-    val isSender = (currentUserId.isNotEmpty() && message.senderId == currentUserId) || message.senderId == "me"
+    val isSender = currentUserId.isNotEmpty() && message.senderId == currentUserId
+
+    LaunchedEffect(message.id, message.status, isSender) {
+        Log.d("ChatScreen", "[MIKAYALA_MESSAGE] messageId=${message.id} senderId=${message.senderId} currentAuthUid=$currentUserId isSender=$isSender status=${message.status} deliveredAt=${message.deliveredAt} readAt=${message.readAt}")
+    }
 
     var dragOffsetX by remember { mutableFloatStateOf(0f) }
     var replyTriggered by remember { mutableStateOf(false) }

@@ -61,6 +61,8 @@ fun MainDashboardScreen(
     val coupleSpace by repository.activeCoupleSpace.collectAsState()
     val userSettings by repository.userSettings.collectAsState()
     val isPartnerOnline by repository.isPartnerOnline.collectAsState()
+    val isPartnerTyping by repository.isPartnerTyping.collectAsState()
+    val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
 
     // Background Realtime Sync for Supabase (Messages, Shared Vault, Call Signals)
     LaunchedEffect(coupleSpace.pairingCode, coupleSpace.isPaired) {
@@ -172,17 +174,36 @@ fun MainDashboardScreen(
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         val isOnline = isPartnerOnline && userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
+                                        val statusText = when {
+                                            isPartnerRecording -> "Enregistre un audio... 🎙️"
+                                            isPartnerTyping -> "En train d'écrire... ✨"
+                                            isOnline -> "En ligne"
+                                            else -> "Hors ligne"
+                                        }
+                                        val dotColor = when {
+                                            isPartnerRecording -> AccentRose
+                                            isPartnerTyping -> VibrantCyan
+                                            isOnline -> OnlinePresenceGreen
+                                            else -> TextMuted
+                                        }
+                                        val textColor = when {
+                                            isPartnerRecording -> AccentRose
+                                            isPartnerTyping -> VibrantCyan
+                                            isOnline -> TextSecondary
+                                            else -> TextMuted
+                                        }
+
                                         Box(
                                             modifier = Modifier
                                                 .size(6.dp)
                                                 .clip(CircleShape)
-                                                .background(if (isOnline) OnlinePresenceGreen else TextMuted)
+                                                .background(dotColor)
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            text = if (isOnline) "En ligne" else "Hors ligne",
+                                            text = statusText,
                                             fontSize = 11.sp,
-                                            color = TextSecondary,
+                                            color = textColor,
                                             maxLines = 1
                                         )
                                     }

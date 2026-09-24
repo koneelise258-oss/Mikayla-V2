@@ -88,9 +88,19 @@ object PhotoRenderer {
             canvas.drawBitmap(transformedBitmap, 0f, 0f, imagePaint)
             transformedBitmap.recycle()
 
+            val scaleX = if (state.viewWidth > 0f) renderedBitmap.width.toFloat() / state.viewWidth else 1f
+            val scaleY = if (state.viewHeight > 0f) renderedBitmap.height.toFloat() / state.viewHeight else 1f
+            val avgScale = (scaleX + scaleY) / 2f
+
             // 4. Apply Localized Blur Areas
             if (state.blurAreas.isNotEmpty()) {
-                applyBlurAreas(renderedBitmap, state.blurAreas)
+                val scaledBlurAreas = state.blurAreas.map { blur ->
+                    blur.copy(
+                        center = androidx.compose.ui.geometry.Offset(blur.center.x * scaleX, blur.center.y * scaleY),
+                        radius = blur.radius * avgScale
+                    )
+                }
+                applyBlurAreas(renderedBitmap, scaledBlurAreas)
             }
 
             // 5. Draw Vector / Finger Drawing Paths
@@ -109,13 +119,13 @@ object PhotoRenderer {
                     pathPaint.xfermode = null
                     pathPaint.color = pathItem.color.toArgb()
                 }
-                pathPaint.strokeWidth = pathItem.strokeWidth
+                pathPaint.strokeWidth = pathItem.strokeWidth * avgScale
 
                 val path = Path()
-                path.moveTo(pathItem.points[0].x, pathItem.points[0].y)
+                path.moveTo(pathItem.points[0].x * scaleX, pathItem.points[0].y * scaleY)
                 for (i in 1 until pathItem.points.size) {
                     val p = pathItem.points[i]
-                    path.lineTo(p.x, p.y)
+                    path.lineTo(p.x * scaleX, p.y * scaleY)
                 }
                 canvas.drawPath(path, pathPaint)
             }
@@ -123,13 +133,13 @@ object PhotoRenderer {
             // 6. Draw Text Overlays
             val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 typeface = Typeface.DEFAULT_BOLD
-                setShadowLayer(6f, 2f, 2f, android.graphics.Color.BLACK)
+                setShadowLayer(6f * avgScale, 2f * scaleX, 2f * scaleY, android.graphics.Color.BLACK)
             }
 
             for (item in state.textOverlays) {
                 textPaint.color = item.color.toArgb()
-                textPaint.textSize = item.fontSizeSp * 2.5f * item.scale
-                canvas.drawText(item.text, item.position.x, item.position.y, textPaint)
+                textPaint.textSize = item.fontSizeSp * 2.5f * item.scale * avgScale
+                canvas.drawText(item.text, item.position.x * scaleX, item.position.y * scaleY, textPaint)
             }
 
             // 7. Draw Stickers (Emojis & Decorative symbols)
@@ -139,8 +149,8 @@ object PhotoRenderer {
             }
 
             for (sticker in state.stickerOverlays) {
-                emojiPaint.textSize = 64f * sticker.scale
-                canvas.drawText(sticker.emoji, sticker.position.x, sticker.position.y, emojiPaint)
+                emojiPaint.textSize = 64f * sticker.scale * avgScale
+                canvas.drawText(sticker.emoji, sticker.position.x * scaleX, sticker.position.y * scaleY, emojiPaint)
             }
 
             // 8. Compress directly to WebP bytes
@@ -164,7 +174,7 @@ object PhotoRenderer {
         }
     }
 
-    private fun createAdjustedColorMatrix(
+    internal fun createAdjustedColorMatrix(
         adj: PhotoAdjustment,
         filter: PhotoFilterType
     ): ColorMatrix {

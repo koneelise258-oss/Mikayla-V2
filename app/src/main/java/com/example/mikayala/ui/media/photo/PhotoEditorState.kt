@@ -100,6 +100,8 @@ data class PhotoEditorState(
     val isEraserActive: Boolean = false,
     val currentBlurRadius: Float = 40f,
     val currentBlurIntensity: Float = 15f,
+    val viewWidth: Float = 0f,
+    val viewHeight: Float = 0f,
     
     // History (Undo / Redo stacks)
     val undoStack: List<PhotoEditorSnapshot> = emptyList(),

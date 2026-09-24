@@ -830,7 +830,44 @@ class SupabaseService(
         }
     }
 
+    fun untrackPresence() {
+        val channel = activePresenceChannel ?: return
+        realtimeScope.launch {
+            try {
+                channel.untrack()
+                Log.d("SupabasePresence", "[REALTIME] Presence untrack() called successfully")
+            } catch (e: Exception) {
+                Log.w("SupabasePresence", "[REALTIME] untrack() error: ${e.message}")
+            }
+        }
+    }
+
+    fun unsubscribePresence() {
+        try {
+            presenceJob?.cancel()
+            presenceJob = null
+            val channel = activePresenceChannel
+            activePresenceChannel = null
+            if (channel != null) {
+                realtimeScope.launch {
+                    try {
+                        channel.untrack()
+                    } catch (ignored: Exception) {}
+                    try {
+                        supabase.realtime.removeChannel(channel)
+                        Log.d("SupabasePresence", "[REALTIME] Presence channel removed cleanly")
+                    } catch (e: Exception) {
+                        Log.w("SupabasePresence", "Error in removeChannel for presence: ${e.message}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SupabasePresence", "Error in unsubscribePresence: ${e.message}")
+        }
+    }
+
     fun unsubscribeRealtime() {
+        unsubscribePresence()
         try {
             subscriptionJob?.cancel()
             subscriptionJob = null
