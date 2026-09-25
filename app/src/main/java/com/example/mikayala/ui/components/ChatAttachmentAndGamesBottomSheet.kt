@@ -51,7 +51,8 @@ fun ChatAttachmentAndGamesBottomSheet(
     onSendQuiz: () -> Unit,
     onSendTicTacToe: () -> Unit,
     onSendDilemma: () -> Unit,
-    onSendLoveCoupon: () -> Unit
+    onSendLoveCoupon: () -> Unit,
+    onSendWheel: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Médias & Pièces jointes, 1: Jeux de Chat interactifs
 
@@ -281,6 +282,14 @@ fun ChatAttachmentAndGamesBottomSheet(
                             gradientColors = listOf(Color(0xFFFF4081), Color(0xFFF50057)),
                             badge = "Cadeau 💖",
                             onClick = onSendLoveCoupon
+                        ),
+                        AttachmentGridItem(
+                            id = "wheel",
+                            title = "Roue de la Fortune",
+                            icon = Icons.Rounded.Casino,
+                            gradientColors = listOf(Color(0xFFFF007F), Color(0xFF7928CA)),
+                            badge = "Tourner 🎡",
+                            onClick = onSendWheel
                         )
                     )
 

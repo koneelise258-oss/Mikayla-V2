@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -45,12 +46,27 @@ fun PartnerProfileBottomSheet(
     val context = LocalContext.current
     val userSettings by repository.userSettings.collectAsState()
     val coupleSpace by repository.activeCoupleSpace.collectAsState()
-    val messages by repository.allMessages.collectAsState()
+    val rawMessages by repository.allMessages.collectAsState()
+    val myUserId = remember { repository.getCurrentUserId() }
+    val messages = remember(rawMessages, myUserId) {
+        rawMessages.filter { !it.deletedFor.contains(myUserId) }
+    }
 
     var isMuted by remember { mutableStateOf(false) }
     var selectedMediaTab by remember { mutableIntStateOf(0) } // 0: Photos/Médias, 1: Liens, 2: Favoris ⭐
 
     val isOnline = userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
+
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse_profile_dot")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot_alpha"
+    )
 
     val mediaMessages = remember(messages) {
         messages.filter { it.type == "image" || it.type == "video" || it.type == "audio" }
@@ -120,7 +136,7 @@ fun PartnerProfileBottomSheet(
                             modifier = Modifier
                                 .size(20.dp)
                                 .clip(CircleShape)
-                                .background(if (isOnline) OnlinePresenceGreen else Color.Gray)
+                                .background(if (isOnline) OnlinePresenceGreen.copy(alpha = pulseAlpha) else Color.Gray)
                                 .border(2.dp, MatteCardDark, CircleShape)
                         )
                     }
@@ -145,7 +161,7 @@ fun PartnerProfileBottomSheet(
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(OnlinePresenceGreen)
+                                    .background(OnlinePresenceGreen.copy(alpha = pulseAlpha))
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
@@ -155,22 +171,31 @@ fun PartnerProfileBottomSheet(
                                 color = OnlinePresenceGreen
                             )
                         } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Gray)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Vu(e) aujourd'hui à 14:32",
+                                text = if (userSettings.partnerStatus.isNotBlank() && userSettings.partnerStatus != "Hors ligne") userSettings.partnerStatus else "Hors ligne",
                                 fontSize = 13.sp,
                                 color = TextSecondary
                             )
                         }
                     }
 
-                    // Custom Status Quote
-                    Text(
-                        text = "« " + userSettings.partnerStatus + " »",
-                        fontSize = 13.sp,
-                        color = AccentRose,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
+                    // Custom Bio / Quote
+                    if (userSettings.partnerBio.isNotBlank() && userSettings.partnerBio != userSettings.partnerStatus) {
+                        Text(
+                            text = "« " + userSettings.partnerBio + " »",
+                            fontSize = 13.sp,
+                            color = AccentRose,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 

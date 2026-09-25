@@ -4,6 +4,9 @@ import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.example.mikayala.util.NotificationHelper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
@@ -58,6 +61,74 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         context = applicationContext,
                         partnerName = partnerName,
                         gameTitle = gameTitle
+                    )
+                }
+                "game_turn" -> {
+                    val partnerName = data["partnerName"] ?: "Mon Amour"
+                    val gameTitle = data["gameTitle"] ?: "Jeu de couple"
+                    NotificationHelper.showGameTurnNotification(
+                        context = applicationContext,
+                        partnerName = partnerName,
+                        gameTitle = gameTitle
+                    )
+                }
+                "chat_message" -> {
+                    val senderName = data["senderName"] ?: "Mon Amour"
+                    val messageText = data["messageText"] ?: "Nouveau message"
+                    val messageId = data["messageId"] ?: "msg_${System.currentTimeMillis()}"
+                    val coupleId = data["coupleId"] ?: data["couple_id"] ?: ""
+                    NotificationHelper.showNewMessageNotification(
+                        context = applicationContext,
+                        senderName = senderName,
+                        messageText = messageText,
+                        messageId = messageId
+                    )
+                    if (coupleId.isNotEmpty()) {
+                        CoroutineScope(Dispatchers.IO).launch {
+                            try {
+                                com.example.mikayala.data.SupabaseService().markMessagesDelivered(coupleId)
+                            } catch (e: Exception) {
+                                Log.w("FCM_MSG", "Failed to mark messages delivered from FCM: ${e.message}")
+                            }
+                        }
+                    }
+                }
+                "vault_add" -> {
+                    val partnerName = data["partnerName"] ?: "Mon Amour"
+                    val itemTitle = data["itemTitle"] ?: "Souvenir secret"
+                    NotificationHelper.showVaultItemAddedNotification(
+                        context = applicationContext,
+                        partnerName = partnerName,
+                        itemTitle = itemTitle
+                    )
+                }
+                "mood_update" -> {
+                    val partnerName = data["partnerName"] ?: "Mon Amour"
+                    val moodEmoji = data["moodEmoji"] ?: "💖"
+                    val moodLabel = data["moodLabel"] ?: "Amoureux"
+                    NotificationHelper.showMoodUpdateNotification(
+                        context = applicationContext,
+                        partnerName = partnerName,
+                        moodEmoji = moodEmoji,
+                        moodLabel = moodLabel
+                    )
+                }
+                "poll_created" -> {
+                    val partnerName = data["partnerName"] ?: "Mon Amour"
+                    val pollQuestion = data["pollQuestion"] ?: "Sondage de couple"
+                    NotificationHelper.showPollCreatedNotification(
+                        context = applicationContext,
+                        partnerName = partnerName,
+                        pollQuestion = pollQuestion
+                    )
+                }
+                "love_bomb" -> {
+                    val partnerName = data["partnerName"] ?: "Mon Amour"
+                    val kissCount = data["kissCount"]?.toIntOrNull() ?: 100
+                    NotificationHelper.showLoveBombNotification(
+                        context = applicationContext,
+                        partnerName = partnerName,
+                        kissCount = kissCount
                     )
                 }
             }

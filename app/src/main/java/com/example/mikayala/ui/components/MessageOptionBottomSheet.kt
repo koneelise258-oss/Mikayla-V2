@@ -32,6 +32,7 @@ import java.util.*
 @Composable
 fun MessageOptionBottomSheet(
     message: MessageEntity,
+    isFromMe: Boolean = false,
     onDismiss: () -> Unit,
     onReply: () -> Unit,
     onEdit: () -> Unit,
@@ -56,7 +57,7 @@ fun MessageOptionBottomSheet(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Expéditeur : ${if (message.senderId == "me") "Moi (Partenaire 1)" else "Mikayala (Partenaire 2)"}", color = TextSecondary, fontSize = 13.sp)
+                    Text("Expéditeur : ${if (isFromMe) "Moi (Partenaire 1)" else "Mikayala (Partenaire 2)"}", color = TextSecondary, fontSize = 13.sp)
                     Text("Date d'envoi : ${dateFormat.format(Date(message.createdAt))}", color = TextSecondary, fontSize = 13.sp)
                     Text("Statut : ${message.status.uppercase()}", color = AccentRose, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     message.readAt?.let {
@@ -161,7 +162,7 @@ fun MessageOptionBottomSheet(
             }
 
             // Option: Modifier (si expéditeur)
-            if (message.senderId == "me" && message.type == "text") {
+            if (isFromMe && message.type == "text") {
                 OptionItem(
                     icon = Icons.Rounded.Edit,
                     title = "Modifier le message ✏️",
@@ -256,7 +257,7 @@ fun MessageOptionBottomSheet(
             )
 
             // Option: Supprimer pour tout le monde (expéditeur)
-            if (message.senderId == "me") {
+            if (isFromMe) {
                 OptionItem(
                     icon = Icons.Rounded.DeleteForever,
                     title = "Supprimer pour tout le monde 💣",

@@ -25,10 +25,10 @@ fun MessageStatusIndicator(
         contentAlignment = Alignment.Center
     ) {
         when (status) {
-            "pending" -> {
+            "pending", "sending", "queued_offline" -> {
                 Icon(
                     imageVector = Icons.Rounded.AccessTime,
-                    contentDescription = "En cours d'envoi",
+                    contentDescription = "En attente / Envoi",
                     tint = TextMuted,
                     modifier = Modifier.size(11.dp)
                 )

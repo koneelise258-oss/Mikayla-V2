@@ -7,8 +7,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.RemoteInput
 import com.example.mikayala.MainActivity
 import com.example.mikayala.R
+import com.example.mikayala.services.DirectReplyReceiver
 
 object NotificationHelper {
 
@@ -174,5 +176,239 @@ object NotificationHelper {
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIF_ID_GAME, builder.build())
+    }
+
+    // --- 6. NOTIFICATION DE NOUVEAU MESSAGE AVEC RÉPONSE DIRECTE (Style WhatsApp) ---
+    fun showNewMessageNotification(context: Context, senderName: String, messageText: String, messageId: String = "msg_${System.currentTimeMillis()}") {
+        val notifId = messageId.hashCode()
+
+        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("OPEN_CHAT", true)
+        }
+        val openAppPendingIntent = PendingIntent.getActivity(
+            context,
+            notifId,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val remoteInput = RemoteInput.Builder(DirectReplyReceiver.KEY_TEXT_REPLY)
+            .setLabel("Répondre à $senderName...")
+            .build()
+
+        val replyIntent = Intent(context, DirectReplyReceiver::class.java).apply {
+            putExtra(DirectReplyReceiver.NOTIFICATION_ID_KEY, notifId)
+        }
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notifId,
+            replyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+
+        val replyAction = NotificationCompat.Action.Builder(
+            R.mipmap.ic_launcher,
+            "Répondre 💬",
+            replyPendingIntent
+        ).addRemoteInput(remoteInput).build()
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(senderName)
+            .setContentText(messageText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(messageText))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(openAppPendingIntent)
+            .addAction(replyAction)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(notifId, builder.build())
+    }
+
+    // --- 7. NOTIFICATION DE RAPPEL DE CALENDRIER ---
+    fun showCalendarEventNotification(context: Context, eventTitle: String, eventDate: String, location: String = "") {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val text = if (location.isNotBlank()) "À $eventDate • Lieu: $location" else "À $eventDate"
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("📅 Rappel d'Événement : $eventTitle")
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(eventTitle.hashCode(), builder.build())
+    }
+
+    // --- 8. NOTIFICATION DE TOUR DE JEU ("C'est à ton tour de jouer !") ---
+    fun showGameTurnNotification(context: Context, partnerName: String, gameTitle: String) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("OPEN_GAMES", true)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("🎮 C'est à ton tour de jouer !")
+            .setContentText("$partnerName a validé son coup dans « $gameTitle ». À toi de jouer ! 🔥")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(3001, builder.build())
+    }
+
+    // --- 9. NOTIFICATION PROXIMITÉ HORS-LIGNE (SOCKET / P2P) AVEC QUICK REPLY ---
+    fun showProximityMessageNotification(
+        context: Context,
+        senderName: String,
+        content: String,
+        isFile: Boolean = false
+    ) {
+        val notifId = ("p2p_" + System.currentTimeMillis()).hashCode()
+
+        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("OPEN_CHAT", true)
+            putExtra("P2P_MODE", true)
+        }
+        val openAppPendingIntent = PendingIntent.getActivity(
+            context,
+            notifId,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val remoteInput = RemoteInput.Builder(DirectReplyReceiver.KEY_TEXT_REPLY)
+            .setLabel("Répondre en mode Proximité...")
+            .build()
+
+        val replyIntent = Intent(context, DirectReplyReceiver::class.java).apply {
+            putExtra(DirectReplyReceiver.NOTIFICATION_ID_KEY, notifId)
+            putExtra("IS_P2P", true)
+        }
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notifId,
+            replyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+
+        val replyAction = NotificationCompat.Action.Builder(
+            R.mipmap.ic_launcher,
+            "Répondre 💬",
+            replyPendingIntent
+        ).addRemoteInput(remoteInput).build()
+
+        val displayText = if (isFile) "📁 Fichier reçu en mode Proximité : $content" else "⚡ [Mode Proximité] $content"
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("📡 Proximité • $senderName")
+            .setContentText(displayText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(displayText))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(openAppPendingIntent)
+            .addAction(replyAction)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(notifId, builder.build())
+    }
+
+    // --- 10. NOTIFICATION COFFRE-FORT SECRET ---
+    fun showVaultItemAddedNotification(context: Context, partnerName: String, itemTitle: String) {
+        val intent = Intent(context, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("🔒 Coffre-Fort Intime • $partnerName")
+            .setContentText("$partnerName a ajouté un nouveau souvenir secret (« $itemTitle ») ! ✨")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(3002, builder.build())
+    }
+
+    // --- 11. NOTIFICATION HUMEUR DU JOUR ---
+    fun showMoodUpdateNotification(context: Context, partnerName: String, moodEmoji: String, moodLabel: String) {
+        val intent = Intent(context, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("🎭 Humeur du Jour • $partnerName")
+            .setContentText("$partnerName se sent $moodEmoji $moodLabel aujourd'hui. Envoie-lui un mot doux ! 💕")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(3003, builder.build())
+    }
+
+    // --- 12. NOTIFICATION SONDAGE DE COUPLE ---
+    fun showPollCreatedNotification(context: Context, partnerName: String, pollQuestion: String) {
+        val intent = Intent(context, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("📊 Sondage de Couple • $partnerName")
+            .setContentText("$partnerName demande : « $pollQuestion » ! Donne ton avis 🗳️")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(3004, builder.build())
+    }
+
+    // --- 13. NOTIFICATION BISOU VOLANT / LOVE BOMB ---
+    fun showLoveBombNotification(context: Context, partnerName: String, kissCount: Int = 100) {
+        val intent = Intent(context, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("💋 Bisou Volant Envoyé ! 💖")
+            .setContentText("$partnerName vient de t'envoyer $kissCount bisous virtuels ! Pluie d'amour 🌧️💕")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(3005, builder.build())
     }
 }

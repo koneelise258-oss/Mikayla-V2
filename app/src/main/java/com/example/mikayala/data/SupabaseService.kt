@@ -547,7 +547,12 @@ class SupabaseService(
                 val obj = JSONObject(sb.toString())
                 val partialUrl = obj.optString("signedURL", obj.optString("signedUrl", ""))
                 if (partialUrl.isNotEmpty()) {
-                    val fullUrl = if (partialUrl.startsWith("http")) partialUrl else "$supabaseUrl$partialUrl"
+                    val fullUrl = when {
+                        partialUrl.startsWith("http://") || partialUrl.startsWith("https://") -> partialUrl
+                        partialUrl.startsWith("/storage/v1") -> "$supabaseUrl$partialUrl"
+                        partialUrl.startsWith("/") -> "$supabaseUrl/storage/v1$partialUrl"
+                        else -> "$supabaseUrl/storage/v1/$partialUrl"
+                    }
                     Log.d("SupabaseStorage", "[STORAGE] Generated signed URL for $storagePath: $fullUrl")
                     return@withContext fullUrl
                 }
@@ -1060,7 +1065,12 @@ class SupabaseService(
 
     private fun executeGet(path: String): String? {
         return try {
-            val url = URL("$supabaseUrl$path")
+            val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
+                path
+            } else {
+                "$supabaseUrl$path"
+            }
+            val url = URL(fullUrl)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.setRequestProperty("apikey", supabaseKey)
@@ -1087,7 +1097,12 @@ class SupabaseService(
 
     private fun executePost(path: String, jsonBody: String, accessToken: String? = null): String? {
         return try {
-            val url = URL("$supabaseUrl$path")
+            val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
+                path
+            } else {
+                "$supabaseUrl$path"
+            }
+            val url = URL(fullUrl)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("apikey", supabaseKey)
@@ -1173,7 +1188,12 @@ class SupabaseService(
 
     private fun executePatch(path: String, jsonBody: String): String? {
         return try {
-            val url = URL("$supabaseUrl$path")
+            val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
+                path
+            } else {
+                "$supabaseUrl$path"
+            }
+            val url = URL(fullUrl)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST" // HTTP connection workaround for PATCH or use X-HTTP-Method-Override
             conn.setRequestProperty("X-HTTP-Method-Override", "PATCH")
@@ -1208,7 +1228,12 @@ class SupabaseService(
 
     private fun executeDelete(path: String): Boolean {
         return try {
-            val url = URL("$supabaseUrl$path")
+            val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
+                path
+            } else {
+                "$supabaseUrl$path"
+            }
+            val url = URL(fullUrl)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "DELETE"
             conn.setRequestProperty("apikey", supabaseKey)
@@ -1240,11 +1265,16 @@ class SupabaseService(
             val rpcBody = JSONObject().apply {
                 put("target_couple_id", coupleId)
             }
-            val success = executeRpc("mark_messages_delivered", rpcBody)
+            var success = executeRpc("mark_messages_delivered", rpcBody)
+            if (!success) {
+                val url = "$supabaseUrl/rest/v1/messages?couple_id=eq.$coupleId&status=eq.sent"
+                val body = JSONObject().apply { put("status", "delivered") }.toString()
+                success = executePatch(url, body) != null
+            }
             if (success) {
-                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered RPC SUCCESS for coupleId=$coupleId")
+                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered SUCCESS for coupleId=$coupleId")
             } else {
-                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered RPC FAILED for coupleId=$coupleId")
+                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered FAILED for coupleId=$coupleId")
             }
             success
         } catch (e: Exception) {
@@ -1259,11 +1289,16 @@ class SupabaseService(
             val rpcBody = JSONObject().apply {
                 put("target_couple_id", coupleId)
             }
-            val success = executeRpc("mark_messages_read", rpcBody)
+            var success = executeRpc("mark_messages_read", rpcBody)
+            if (!success) {
+                val url = "$supabaseUrl/rest/v1/messages?couple_id=eq.$coupleId&status=eq.delivered"
+                val body = JSONObject().apply { put("status", "read") }.toString()
+                success = executePatch(url, body) != null
+            }
             if (success) {
-                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead RPC SUCCESS for coupleId=$coupleId")
+                Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead SUCCESS for coupleId=$coupleId")
             } else {
-                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead RPC FAILED for coupleId=$coupleId")
+                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead FAILED for coupleId=$coupleId")
             }
             success
         } catch (e: Exception) {
@@ -1298,7 +1333,7 @@ class SupabaseService(
             if (res != null && res != "[]") {
                 val array = JSONArray(res)
                 if (array.length() > 0) {
-                    val lastSeen = array.getJSONObject(0).optString("last_seen_at", null)
+                    val lastSeen = array.getJSONObject(0).optString("last_seen_at", "")
                     Log.d("SupabaseService", "[MIKAYALA_PRESENCE] Partner $partnerUserId last_seen_at: $lastSeen")
                     return@withContext lastSeen
                 }

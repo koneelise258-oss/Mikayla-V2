@@ -4,7 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -64,12 +64,26 @@ fun MainDashboardScreen(
     val isPartnerTyping by repository.isPartnerTyping.collectAsState()
     val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
 
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse_green_dot")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot_alpha"
+    )
+
     // Background Realtime Sync for Supabase (Messages, Shared Vault, Call Signals)
     LaunchedEffect(coupleSpace.pairingCode, coupleSpace.isPaired) {
         if (coupleSpace.pairingCode.isNotEmpty() && coupleSpace.isPaired) {
             while (true) {
                 try {
                     repository.syncWithSupabase()
+                    if (coupleSpace.id.isNotEmpty()) {
+                        repository.markMessagesDelivered(coupleSpace.id)
+                    }
                     val incomingCall = repository.checkForIncomingCall()
                     if (incomingCall != null && activeCallState == null) {
                         activeCallState = incomingCall
@@ -178,6 +192,7 @@ fun MainDashboardScreen(
                                             isPartnerRecording -> "Enregistre un audio... 🎙️"
                                             isPartnerTyping -> "En train d'écrire... ✨"
                                             isOnline -> "En ligne"
+                                            userSettings.partnerStatus.isNotBlank() && userSettings.partnerStatus != "Hors ligne" -> userSettings.partnerStatus
                                             else -> "Hors ligne"
                                         }
                                         val dotColor = when {
@@ -197,7 +212,13 @@ fun MainDashboardScreen(
                                             modifier = Modifier
                                                 .size(6.dp)
                                                 .clip(CircleShape)
-                                                .background(dotColor)
+                                                .background(
+                                                    if (isOnline && !isPartnerRecording && !isPartnerTyping) {
+                                                        OnlinePresenceGreen.copy(alpha = pulseAlpha)
+                                                    } else {
+                                                        dotColor
+                                                    }
+                                                )
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(

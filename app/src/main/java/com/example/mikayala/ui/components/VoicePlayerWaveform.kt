@@ -34,6 +34,7 @@ fun VoicePlayerWaveform(
     durationSeconds: Int,
     isSender: Boolean,
     audioUrl: String? = null,
+    onRetryFetch: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -48,7 +49,17 @@ fun VoicePlayerWaveform(
         if (isPlaying && !audioUrl.isNullOrEmpty()) {
             try {
                 val mp = MediaPlayer().apply {
-                    setDataSource(context, Uri.parse(audioUrl))
+                    val urlStr = audioUrl.trim()
+                    if (urlStr.startsWith("http://") || urlStr.startsWith("https://") || urlStr.startsWith("content://") || urlStr.startsWith("file://")) {
+                        setDataSource(context, Uri.parse(urlStr))
+                    } else {
+                        val file = java.io.File(urlStr)
+                        if (file.exists()) {
+                            setDataSource(file.absolutePath)
+                        } else {
+                            setDataSource(context, Uri.parse(urlStr))
+                        }
+                    }
                     prepareAsync()
                     setOnPreparedListener { player ->
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -66,6 +77,7 @@ fun VoicePlayerWaveform(
                     }
                     setOnErrorListener { _, _, _ ->
                         isPlaying = false
+                        onRetryFetch?.invoke()
                         true
                     }
                 }
@@ -73,6 +85,7 @@ fun VoicePlayerWaveform(
             } catch (e: Exception) {
                 Log.e("VoicePlayer", "Error initializing MediaPlayer for $audioUrl: ${e.message}")
                 isPlaying = false
+                onRetryFetch?.invoke()
             }
         }
 

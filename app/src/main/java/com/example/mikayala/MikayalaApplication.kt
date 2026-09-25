@@ -16,6 +16,22 @@ class MikayalaApplication : Application() {
             Log.e("MikayalaCrash", "Reason: ${throwable.message}")
             throwable.printStackTrace()
         }
+
+        // Initialize Firebase Messaging safely without causing hard unhandled exceptions
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        val token = task.result
+                        Log.d("FCM_TOKEN", "Jeton FCM récupéré avec succès : $token")
+                    } else {
+                        Log.w("FCM_TOKEN", "Échec de la récupération du jeton FCM (ignoré en mode hors-ligne/test) : ${task.exception?.message}")
+                    }
+                }
+        } catch (e: Throwable) {
+            Log.w("FCM_INIT", "FCM non disponible ou désactivé temporairement : ${e.message}")
+        }
+
         Log.d("MikayalaStartup", "Application.onCreate finished")
     }
 }

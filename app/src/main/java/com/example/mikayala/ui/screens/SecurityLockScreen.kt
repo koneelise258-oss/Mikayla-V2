@@ -43,15 +43,12 @@ fun SecurityLockScreen(
 
     fun triggerBiometricAuth() {
         if (!coupleSpace.isPaired) {
-            Toast.makeText(context, "Espace non jumelé", Toast.LENGTH_SHORT).show()
             return
         }
         if (!settings.hasLocalPassword || settings.pinCode.isEmpty()) {
-            Toast.makeText(context, "Veuillez d'abord configurer votre mot de passe", Toast.LENGTH_SHORT).show()
             return
         }
         if (!settings.biometricEnabled) {
-            Toast.makeText(context, "Biométrie désactivée dans les réglages", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -61,9 +58,18 @@ fun SecurityLockScreen(
                 onUnlockSuccess()
             },
             onError = { errMsg ->
-                Toast.makeText(context, errMsg, Toast.LENGTH_SHORT).show()
+                if (!errMsg.contains("code PIN", ignoreCase = true) && !errMsg.contains("annulée", ignoreCase = true)) {
+                    Toast.makeText(context, errMsg, Toast.LENGTH_SHORT).show()
+                }
             }
         )
+    }
+
+    // Auto-trigger biometric prompt on screen launch
+    LaunchedEffect(Unit) {
+        if (settings.biometricEnabled && coupleSpace.isPaired && settings.hasLocalPassword && settings.pinCode.isNotEmpty()) {
+            triggerBiometricAuth()
+        }
     }
 
     // Concentric ripple animation for biometric fingerprint scanner

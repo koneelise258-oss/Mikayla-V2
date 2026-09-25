@@ -6,10 +6,15 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
-    <!-- Caméra & Médias (Photos directes, Appels Visio) -->
+    <!-- Caméra & Médias (Photos directes, Appels Visio, Stockage Média com.example.mikayala) -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <!-- Sécurité Biométrique -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
@@ -19,6 +24,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- Mode Proximité Hors-Ligne (Wi-Fi Direct / Canal P2P Local / BLE) -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -48,6 +54,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Meta-data Firebase Messaging pour gestion contrôlée de l'auto-init -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="mikayala_general_notifs" />
+
         <!-- Service de réception des notifications push Firebase FCM -->
         <service
             android:name=".services.MyFirebaseMessagingService"
@@ -56,6 +70,16 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Receiver pour la Réponse Directe depuis la notification (Style WhatsApp) -->
+        <receiver
+            android:name=".services.DirectReplyReceiver"
+            android:exported="false" />
+
+        <!-- Receiver pour les rappels locaux planifiés de cycle et calendrier -->
+        <receiver
+            android:name=".services.CycleAndCalendarReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

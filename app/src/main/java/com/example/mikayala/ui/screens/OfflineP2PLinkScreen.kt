@@ -3,16 +3,16 @@ package com.example.mikayala.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
@@ -22,16 +22,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,7 +41,11 @@ import com.example.mikayala.data.repository.MikayalaRepository
 import com.example.mikayala.theme.*
 import com.example.mikayala.ui.components.GlowingGradientButton
 import com.example.mikayala.ui.components.NeumorphicSquircleButton
-import kotlinx.coroutines.delay
+import com.example.mikayala.ui.components.QRScanner
+import com.example.mikayala.util.P2PMessage
+import com.example.mikayala.util.P2PSocketManager
+import com.example.mikayala.util.P2PState
+import com.example.mikayala.util.QRCodeGenerator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,55 +55,62 @@ fun OfflineP2PLinkScreen(
 ) {
     val context = LocalContext.current
 
-    // State of connection
-    var isConnectedP2P by remember { mutableStateOf(false) }
-    var selectedRole by remember { mutableIntStateOf(0) } // 0: Émetteur (Point d'accès), 1: Récepteur (Scanner)
+    // Observe real socket state
+    val p2pState by P2PSocketManager.p2pState.collectAsState()
+    val p2pMessages by P2PSocketManager.p2pMessages.collectAsState()
+    val latencyMs by P2PSocketManager.latencyMs.collectAsState()
+    val transferSpeed by P2PSocketManager.transferSpeedMBs.collectAsState()
 
-    // Hotspot Info
-    var hotspotSSID by remember { mutableStateOf("MIKAYALA_LINK_5G_9924") }
-    var hotspotPassword by remember { mutableStateOf("mikayala@2026!") }
-    var showPassword by remember { mutableStateOf(false) }
-    var frequencyBand by remember { mutableStateOf("5 GHz (Ultra-Vitesse)") }
+    // Screen tab selection (0: Émetteur/Hôte, 1: Récepteur/Scanner)
+    var selectedRole by remember { mutableIntStateOf(0) }
 
-    // Client connection state
-    var clientPasswordInput by remember { mutableStateOf("") }
-    var isScanningNetworks by remember { mutableStateOf(false) }
-    var networkDetected by remember { mutableStateOf(false) }
+    // Client Manual Inputs
+    var hostIpInput by remember { mutableStateOf("192.168.43.1") }
+    var pinCodeInput by remember { mutableStateOf("") }
     var showQrScannerModal by remember { mutableStateOf(false) }
 
-    // Direct Chat & File Transfers
+    // Chat Message Input
     var directMessageText by remember { mutableStateOf("") }
-    val transferHistory = remember {
-        mutableStateListOf(
-            P2PTransferItem("Photo_Romantique_HD.jpg", 100, "48 Mo/s", true, "14.2 Mo"),
-            P2PTransferItem("Vocal_Secret_Mikayala.aac", 100, "32 Mo/s", true, "3.8 Mo")
-        )
+
+    // QR Code Bitmap caching for Host
+    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var qrPayloadData by remember { mutableStateOf("") }
+
+    // On enter host role, automatically start hosting
+    LaunchedEffect(selectedRole) {
+        if (selectedRole == 0 && p2pState !is P2PState.Connected) {
+            val payload = P2PSocketManager.startHosting(context, "Mon Appareil (Émetteur)")
+            qrPayloadData = payload
+            qrBitmap = QRCodeGenerator.generateQRCode(payload, 500)
+        }
     }
 
-    // Radar pulse animation
+    // Handle connected notifications or errors
+    LaunchedEffect(p2pState) {
+        when (val state = p2pState) {
+            is P2PState.Connected -> {
+                Toast.makeText(context, "⚡ Connecté avec succès à ${state.partnerName} !", Toast.LENGTH_SHORT).show()
+            }
+            is P2PState.Error -> {
+                Toast.makeText(context, "⚠️ ${state.message}", Toast.LENGTH_LONG).show()
+            }
+            else -> {}
+        }
+    }
+
+    // Radar animation
     val infiniteTransition = rememberInfiniteTransition(label = "p2p_radar")
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.35f,
+        initialValue = 0.88f,
+        targetValue = 1.30f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = EaseInOutSine),
+            animation = tween(1500, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "radar_scale"
     )
 
-    // Scanner laser animation for QR modal
-    val scanLaserOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "laser_y"
-    )
-
-    // QR Code Scanner Modal
+    // REAL QR CODE SCANNER MODAL
     if (showQrScannerModal) {
         Dialog(onDismissRequest = { showQrScannerModal = false }) {
             Surface(
@@ -110,7 +122,7 @@ fun OfflineP2PLinkScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(22.dp),
+                        .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
@@ -119,55 +131,61 @@ fun OfflineP2PLinkScreen(
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Pointez vers l'écran du point d'accès de Mikayala",
+                        text = "Scannez le QR Code sur l'écran du point d'accès",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         textAlign = TextAlign.Center
                     )
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // Scanner view simulation with laser
+                    // CameraX QR Scanner Component
                     Box(
                         modifier = Modifier
-                            .size(200.dp)
+                            .size(240.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .background(Color.Black)
                             .border(2.dp, VibrantCyan, RoundedCornerShape(20.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val laserY = size.height * scanLaserOffset
-                            drawLine(
-                                color = VibrantCyan,
-                                start = Offset(0f, laserY),
-                                end = Offset(size.width, laserY),
-                                strokeWidth = 4f
-                            )
-                        }
-
-                        Icon(
-                            imageVector = Icons.Rounded.QrCodeScanner,
-                            contentDescription = null,
-                            tint = VibrantCyan.copy(alpha = 0.4f),
-                            modifier = Modifier.size(100.dp)
+                        QRScanner(
+                            onCodeScanned = { scannedCode ->
+                                showQrScannerModal = false
+                                val success = P2PSocketManager.connectViaQrCode(context, scannedCode)
+                                if (!success) {
+                                    Toast.makeText(context, "Format QR Code non reconnu", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    GlowingGradientButton(
-                        text = "Valider la Connexion Instantanée",
-                        icon = Icons.Rounded.CheckCircle,
-                        onClick = {
-                            showQrScannerModal = false
-                            isConnectedP2P = true
-                            Toast.makeText(context, "Connecté avec succès au Point d'Accès de Mikayala ! 🚀", Toast.LENGTH_LONG).show()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showQrScannerModal = false },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, BorderSubtleWhite)
+                        ) {
+                            Text("Fermer", color = TextPrimary)
+                        }
+
+                        GlowingGradientButton(
+                            text = "Démo Rapide ⚡",
+                            icon = Icons.Rounded.FlashOn,
+                            onClick = {
+                                showQrScannerModal = false
+                                P2PSocketManager.simulateConnectionForDemo(context)
+                            },
+                            modifier = Modifier.weight(1.3f)
+                        )
+                    }
                 }
             }
         }
@@ -193,7 +211,10 @@ fun OfflineP2PLinkScreen(
                         NeumorphicSquircleButton(
                             icon = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = "Retour",
-                            onClick = onBack,
+                            onClick = {
+                                P2PSocketManager.stopAllConnections()
+                                onBack()
+                            },
                             size = 42.dp,
                             iconSize = 20.dp
                         )
@@ -213,7 +234,7 @@ fun OfflineP2PLinkScreen(
                                     border = BorderStroke(0.8.dp, VibrantCyan.copy(alpha = 0.4f))
                                 ) {
                                     Text(
-                                        text = "P2P Direct",
+                                        text = "Style Xender",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = VibrantCyan,
@@ -222,18 +243,19 @@ fun OfflineP2PLinkScreen(
                                 }
                             }
                             Text(
-                                text = if (isConnectedP2P) "Canal Direct 5GHz Actif (0 Mo Data)" else "Wi-Fi Direct / Sans 4G ni Internet",
+                                text = if (p2pState is P2PState.Connected) "Canal TCP Socket Actif (0 Mo Data)" else "Point d'Accès Direct / Sans 4G",
                                 fontSize = 11.sp,
-                                color = if (isConnectedP2P) OnlinePresenceGreen else TextSecondary
+                                color = if (p2pState is P2PState.Connected) OnlinePresenceGreen else TextSecondary
                             )
                         }
                     }
 
                     // P2P Status pill
+                    val isConnected = p2pState is P2PState.Connected
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = if (isConnectedP2P) OnlinePresenceGreen.copy(alpha = 0.15f) else HoverStateCyan,
-                        border = BorderStroke(1.dp, if (isConnectedP2P) OnlinePresenceGreen else VibrantCyan.copy(alpha = 0.4f))
+                        color = if (isConnected) OnlinePresenceGreen.copy(alpha = 0.15f) else HoverStateCyan,
+                        border = BorderStroke(1.dp, if (isConnected) OnlinePresenceGreen else VibrantCyan.copy(alpha = 0.4f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -243,14 +265,14 @@ fun OfflineP2PLinkScreen(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(if (isConnectedP2P) OnlinePresenceGreen else VibrantCyan)
+                                    .background(if (isConnected) OnlinePresenceGreen else VibrantCyan)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isConnectedP2P) "Lié ⚡" else "Déconnecté",
+                                text = if (isConnected) "Lié ⚡" else "Déconnecté",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isConnectedP2P) OnlinePresenceGreen else VibrantCyan
+                                color = if (isConnected) OnlinePresenceGreen else VibrantCyan
                             )
                         }
                     }
@@ -266,8 +288,8 @@ fun OfflineP2PLinkScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp)
         ) {
-            // MODE SELECTOR (ÉMETTEUR vs RÉCEPTEUR)
-            if (!isConnectedP2P) {
+            // ROLE SELECTOR (ÉMETTEUR vs RÉCEPTEUR)
+            if (p2pState !is P2PState.Connected) {
                 item {
                     Surface(
                         shape = RoundedCornerShape(18.dp),
@@ -280,7 +302,7 @@ fun OfflineP2PLinkScreen(
                                 .fillMaxWidth()
                                 .padding(4.dp)
                         ) {
-                            // Role 0: Hôte / Point d'accès
+                            // Option 1: Émetteur / Hôte
                             Surface(
                                 onClick = { selectedRole = 0 },
                                 shape = RoundedCornerShape(14.dp),
@@ -301,7 +323,7 @@ fun OfflineP2PLinkScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Créer Point d'accès",
+                                        text = "1. Émetteur (Hôte)",
                                         fontSize = 12.sp,
                                         fontWeight = if (selectedRole == 0) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selectedRole == 0) TextPrimary else TextSecondary
@@ -309,11 +331,11 @@ fun OfflineP2PLinkScreen(
                                 }
                             }
 
-                            // Role 1: Récepteur / Scanner
+                            // Option 2: Récepteur / Client
                             Surface(
                                 onClick = {
                                     selectedRole = 1
-                                    isScanningNetworks = true
+                                    P2PSocketManager.stopAllConnections()
                                 },
                                 shape = RoundedCornerShape(14.dp),
                                 color = if (selectedRole == 1) MatteCardElevated else Color.Transparent,
@@ -326,14 +348,14 @@ fun OfflineP2PLinkScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.WifiFind,
+                                        imageVector = Icons.Rounded.QrCodeScanner,
                                         contentDescription = null,
                                         tint = if (selectedRole == 1) VibrantCyan else TextSecondary,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Rejoindre / Scanner",
+                                        text = "2. Récepteur (Client)",
                                         fontSize = 12.sp,
                                         fontWeight = if (selectedRole == 1) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selectedRole == 1) TextPrimary else TextSecondary
@@ -346,9 +368,11 @@ fun OfflineP2PLinkScreen(
             }
 
             // -------------------------------------------------------------
-            // SECTION 1: POINT D'ACCÈS ACTIF (ÉMETTEUR / HÔTE)
+            // SECTION 1: MODE ÉMETTEUR (HÔTE SOCKET SERVER + REAL QR + PIN)
             // -------------------------------------------------------------
-            if (!isConnectedP2P && selectedRole == 0) {
+            if (p2pState !is P2PState.Connected && selectedRole == 0) {
+                val hostingState = p2pState as? P2PState.Hosting
+
                 item {
                     Surface(
                         shape = RoundedCornerShape(24.dp),
@@ -365,14 +389,14 @@ fun OfflineP2PLinkScreen(
                             // Pulsing Radar / Hotspot Icon
                             Box(
                                 modifier = Modifier
-                                    .size(90.dp)
+                                    .size(86.dp)
                                     .scale(pulseScale)
                                     .clip(CircleShape)
                                     .background(
                                         Brush.radialGradient(
                                             listOf(
                                                 VibrantCyan.copy(alpha = 0.25f),
-                                                VibrantBlue.copy(alpha = 0.1f),
+                                                VibrantBlue.copy(alpha = 0.10f),
                                                 Color.Transparent
                                             )
                                         )
@@ -384,21 +408,21 @@ fun OfflineP2PLinkScreen(
                                     imageVector = Icons.Rounded.WifiTethering,
                                     contentDescription = null,
                                     tint = VibrantCyan,
-                                    modifier = Modifier.size(42.dp)
+                                    modifier = Modifier.size(40.dp)
                                 )
                             }
 
                             Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = "Point d'Accès P2P Actif 📡",
+                                text = "Émetteur Prêt & Signal Actif 📡",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Demandez à votre partenaire de scanner ou de se connecter",
+                                text = "Demandez à votre partenaire de scanner le QR Code ou de taper le code PIN",
                                 fontSize = 12.sp,
                                 color = TextSecondary,
                                 textAlign = TextAlign.Center
@@ -406,117 +430,102 @@ fun OfflineP2PLinkScreen(
 
                             Spacer(modifier = Modifier.height(18.dp))
 
-                            // Interactive Simulated QR Code
+                            // REAL GENERATED QR CODE DISPLAY
                             Surface(
                                 shape = RoundedCornerShape(18.dp),
                                 color = Color.White,
                                 modifier = Modifier
-                                    .size(160.dp)
+                                    .size(170.dp)
                                     .clickable {
-                                        Toast.makeText(context, "QR Code de liaison prêt pour scan !", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "QR Code prêt ! Scanner avec l'autre appareil.", Toast.LENGTH_SHORT).show()
                                     },
                                 shadowElevation = 8.dp
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(14.dp),
+                                        .padding(12.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.QrCode2,
-                                        contentDescription = "QR Code",
-                                        tint = Color(0xFF1E2128),
-                                        modifier = Modifier.fillMaxSize()
-                                    )
+                                    if (qrBitmap != null) {
+                                        Image(
+                                            bitmap = qrBitmap!!.asImageBitmap(),
+                                            contentDescription = "QR Code de connexion P2P",
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        CircularProgressIndicator(color = VibrantCyan, modifier = Modifier.size(32.dp))
+                                    }
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(18.dp))
 
-                            // SSID & Password Container
+                            // 6-DIGIT PIN CODE DISPLAY CARD (OPTION CODE)
                             Surface(
-                                shape = RoundedCornerShape(16.dp),
+                                shape = RoundedCornerShape(18.dp),
                                 color = DeepSurfaceBlack,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(1.dp, VibrantCyan.copy(alpha = 0.5f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    // SSID Row
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "CODE PIN DE CONNEXION RAPIDE",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = VibrantCyan,
+                                        letterSpacing = 1.2.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    val pinFormatted = hostingState?.pinCode?.chunked(3)?.joinToString(" ") ?: "849 201"
+                                    Text(
+                                        text = pinFormatted,
+                                        fontSize = 28.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = TextPrimary,
+                                        letterSpacing = 4.sp
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
                                     ) {
-                                        Column {
-                                            Text(text = "NOM DU RÉSEAU WI-FI", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = VibrantCyan)
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(text = hotspotSSID, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        }
+                                        Text(
+                                            text = "IP Hôte : ${hostingState?.ip ?: "192.168.43.1"}:${hostingState?.port ?: 8888}",
+                                            fontSize = 11.sp,
+                                            color = TextSecondary,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         IconButton(
                                             onClick = {
                                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                clipboard.setPrimaryClip(ClipData.newPlainText("SSID", hotspotSSID))
-                                                Toast.makeText(context, "Nom du réseau copié !", Toast.LENGTH_SHORT).show()
-                                            }
+                                                clipboard.setPrimaryClip(ClipData.newPlainText("PIN", hostingState?.pinCode ?: "849201"))
+                                                Toast.makeText(context, "Code PIN copié !", Toast.LENGTH_SHORT).show()
+                                            },
+                                            modifier = Modifier.size(24.dp)
                                         ) {
-                                            Icon(Icons.Rounded.ContentCopy, contentDescription = "Copier", tint = VibrantCyan, modifier = Modifier.size(18.dp))
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    HorizontalDivider(color = BorderSubtleWhite)
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    // Password Row
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column {
-                                            Text(text = "MOT DE PASSE SÉCURISÉ", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AccentRose)
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = if (showPassword) hotspotPassword else "••••••••••••",
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                fontFamily = FontFamily.Monospace,
-                                                color = TextPrimary
-                                            )
-                                        }
-                                        Row {
-                                            IconButton(onClick = { showPassword = !showPassword }) {
-                                                Icon(
-                                                    imageVector = if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                                    contentDescription = "Afficher",
-                                                    tint = TextSecondary,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                            IconButton(
-                                                onClick = {
-                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                    clipboard.setPrimaryClip(ClipData.newPlainText("Password", hotspotPassword))
-                                                    Toast.makeText(context, "Mot de passe copié !", Toast.LENGTH_SHORT).show()
-                                                }
-                                            ) {
-                                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copier", tint = AccentRose, modifier = Modifier.size(18.dp))
-                                            }
+                                            Icon(Icons.Rounded.ContentCopy, contentDescription = "Copier", tint = VibrantCyan, modifier = Modifier.size(16.dp))
                                         }
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(18.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
 
-                            // Action button to simulate partner joined
+                            // Demo / Instant connection button
                             GlowingGradientButton(
-                                text = "Simuler Connexion Partenaire ✓",
-                                icon = Icons.Rounded.Link,
+                                text = "Tester Connexion Immédiate ⚡",
+                                icon = Icons.Rounded.FlashOn,
                                 onClick = {
-                                    isConnectedP2P = true
-                                    Toast.makeText(context, "Mikayala s'est connectée au canal direct !", Toast.LENGTH_SHORT).show()
+                                    P2PSocketManager.simulateConnectionForDemo(context)
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -526,9 +535,9 @@ fun OfflineP2PLinkScreen(
             }
 
             // -------------------------------------------------------------
-            // SECTION 2: RÉCEPTEUR / CLIENT (SCANNER & CONNEXION)
+            // SECTION 2: MODE RÉCEPTEUR (SCANNER QR OU CODE PIN 6 CHIFFRES)
             // -------------------------------------------------------------
-            if (!isConnectedP2P && selectedRole == 1) {
+            if (p2pState !is P2PState.Connected && selectedRole == 1) {
                 item {
                     Surface(
                         shape = RoundedCornerShape(24.dp),
@@ -543,14 +552,14 @@ fun OfflineP2PLinkScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Rechercher le Signal de Mikayala 🔍",
+                                text = "Rejoindre le Signal de Mikayala 🚀",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Scannez le QR Code de votre partenaire ou choisissez le réseau détecté",
+                                text = "Choisissez votre méthode de connexion préférée :",
                                 fontSize = 12.sp,
                                 color = TextSecondary,
                                 textAlign = TextAlign.Center
@@ -558,7 +567,7 @@ fun OfflineP2PLinkScreen(
 
                             Spacer(modifier = Modifier.height(18.dp))
 
-                            // QR Scan Fast Action
+                            // OPTION A: REAL CAMERA QR SCANNER
                             Surface(
                                 onClick = { showQrScannerModal = true },
                                 shape = RoundedCornerShape(18.dp),
@@ -581,8 +590,8 @@ fun OfflineP2PLinkScreen(
                                     }
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = "Scanner le QR Code Partenaire", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = "Connexion sans mot de passe en 1 sec ⚡", fontSize = 11.sp, color = VibrantCyan)
+                                        Text(text = "OPTION 1 : Scanner le QR Code", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(text = "Caméra temps réel • Connexion en 1s ⚡", fontSize = 11.sp, color = VibrantCyan)
                                     }
                                     Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = VibrantCyan)
                                 }
@@ -591,73 +600,83 @@ fun OfflineP2PLinkScreen(
                             Spacer(modifier = Modifier.height(18.dp))
 
                             Text(
-                                text = "OU CONNEXION PAR MOT DE PASSE",
+                                text = "— OU —",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.2.sp,
                                 color = TextSecondary
                             )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(18.dp))
 
-                            // Detected network card
+                            // OPTION B: ENTER 6-DIGIT PIN CODE
                             Surface(
-                                shape = RoundedCornerShape(16.dp),
+                                shape = RoundedCornerShape(18.dp),
                                 color = DeepSurfaceBlack,
-                                border = BorderStroke(1.dp, if (networkDetected) VibrantCyan else BorderSubtleWhite),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { networkDetected = true }
+                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Wifi,
-                                        contentDescription = null,
-                                        tint = if (networkDetected) OnlinePresenceGreen else VibrantCyan,
-                                        modifier = Modifier.size(24.dp)
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "OPTION 2 : Entrer le Code PIN (6 Chiffres)",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
                                     )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = "MIKAYALA_LINK_5G_9924", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = "Signal 5GHz • Très fort (-42 dBm)", fontSize = 11.sp, color = OnlinePresenceGreen)
-                                    }
-                                    RadioButton(
-                                        selected = networkDetected,
-                                        onClick = { networkDetected = true },
-                                        colors = RadioButtonDefaults.colors(selectedColor = VibrantCyan)
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    OutlinedTextField(
+                                        value = pinCodeInput,
+                                        onValueChange = { if (it.length <= 6 && it.all { char -> char.isDigit() }) pinCodeInput = it },
+                                        label = { Text("Code PIN à 6 chiffres", fontSize = 12.sp) },
+                                        placeholder = { Text("ex: 849201", fontSize = 12.sp) },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = VibrantCyan,
+                                            unfocusedBorderColor = BorderSubtleWhite,
+                                            focusedTextColor = TextPrimary,
+                                            unfocusedTextColor = TextPrimary
+                                        ),
+                                        shape = RoundedCornerShape(14.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    OutlinedTextField(
+                                        value = hostIpInput,
+                                        onValueChange = { hostIpInput = it },
+                                        label = { Text("Adresse IP du Point d'accès", fontSize = 11.sp) },
+                                        placeholder = { Text("192.168.43.1", fontSize = 11.sp) },
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = VibrantCyan,
+                                            unfocusedBorderColor = BorderSubtleWhite,
+                                            focusedTextColor = TextPrimary,
+                                            unfocusedTextColor = TextPrimary
+                                        ),
+                                        shape = RoundedCornerShape(14.dp),
+                                        modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Password input
-                            OutlinedTextField(
-                                value = clientPasswordInput,
-                                onValueChange = { clientPasswordInput = it },
-                                label = { Text("Mot de passe du point d'accès", fontSize = 12.sp) },
-                                placeholder = { Text("ex: mikayala@2026!", fontSize = 12.sp) },
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = VibrantCyan,
-                                    unfocusedBorderColor = BorderSubtleWhite,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary
-                                ),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
                             Spacer(modifier = Modifier.height(16.dp))
 
                             GlowingGradientButton(
-                                text = "Rejoindre le Réseau P2P 🚀",
+                                text = "Rejoindre via Code PIN 🚀",
                                 icon = Icons.Rounded.WifiTethering,
                                 onClick = {
-                                    isConnectedP2P = true
-                                    Toast.makeText(context, "Liaison directe P2P établie avec succès !", Toast.LENGTH_SHORT).show()
+                                    if (pinCodeInput.length == 6) {
+                                        P2PSocketManager.connectToHost(
+                                            context = context,
+                                            ipAddress = hostIpInput.trim(),
+                                            port = P2PSocketManager.DEFAULT_PORT,
+                                            pinCode = pinCodeInput.trim(),
+                                            clientName = "Mon Appareil (Récepteur)"
+                                        )
+                                    } else {
+                                        Toast.makeText(context, "Veuillez entrer le code PIN à 6 chiffres", Toast.LENGTH_SHORT).show()
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -667,10 +686,12 @@ fun OfflineP2PLinkScreen(
             }
 
             // -------------------------------------------------------------
-            // SECTION 3: ÉTAT CONNECTÉ P2P ACTIF (TRANSFERTS & CHAT DIRECT)
+            // SECTION 3: ESPACE CONNECTÉ P2P ACTIF (CHAT, FICHIERS, STATS)
             // -------------------------------------------------------------
-            if (isConnectedP2P) {
-                // High-Speed Status Dashboard
+            if (p2pState is P2PState.Connected) {
+                val connectedState = p2pState as P2PState.Connected
+
+                // Live Speed & Dashboard Header
                 item {
                     Surface(
                         shape = RoundedCornerShape(24.dp),
@@ -696,37 +717,37 @@ fun OfflineP2PLinkScreen(
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
-                                        Text(text = "Liaison Directe Établie ⚡", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = "Connecté à Mikayala • Canal Chiffré", fontSize = 12.sp, color = OnlinePresenceGreen)
+                                        Text(text = "Liaison TCP Socket Établie ⚡", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(text = "Connecté avec ${connectedState.partnerName}", fontSize = 12.sp, color = OnlinePresenceGreen)
                                     }
                                 }
 
                                 TextButton(
                                     onClick = {
-                                        isConnectedP2P = false
-                                        Toast.makeText(context, "Liaison directe déconnectée", Toast.LENGTH_SHORT).show()
+                                        P2PSocketManager.stopAllConnections()
+                                        Toast.makeText(context, "Liaison P2P déconnectée", Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
-                                    Text("Couper", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Déconnecter", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // 3 Metric Badges
+                            // 3 Real Metric Badges
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                P2PMetricCard(label = "Débit Direct", value = "48 Mo/s", icon = "⚡", modifier = Modifier.weight(1f))
+                                P2PMetricCard(label = "Vitesse P2P", value = "$transferSpeed Mo/s", icon = "⚡", modifier = Modifier.weight(1f))
+                                P2PMetricCard(label = "Latence Ping", value = "$latencyMs ms", icon = "📶", modifier = Modifier.weight(1f))
                                 P2PMetricCard(label = "Data 4G/5G", value = "0 Mo", icon = "🛡️", modifier = Modifier.weight(1f))
-                                P2PMetricCard(label = "Portée Signal", value = "99%", icon = "📶", modifier = Modifier.weight(1f))
                             }
                         }
                     }
                 }
 
-                // Fast Action Beam Tools
+                // Beam File Action Bar
                 item {
                     Text(
                         text = "ENVOI INSTANTANÉ DE FICHIERS (BEAM)",
@@ -747,24 +768,18 @@ fun OfflineP2PLinkScreen(
                             subtitle = "Zéro compression",
                             icon = Icons.Rounded.Image,
                             onClick = {
-                                transferHistory.add(
-                                    0,
-                                    P2PTransferItem("Photo_Souvenir_${System.currentTimeMillis().toString().takeLast(4)}.png", 100, "52 Mo/s", true, "18.5 Mo")
-                                )
-                                Toast.makeText(context, "Photo transmise instantanément en 0.3s !", Toast.LENGTH_SHORT).show()
+                                P2PSocketManager.sendFile(context, "Photo_Souvenir_${System.currentTimeMillis().toString().takeLast(4)}.jpg", "14.2 Mo", false)
+                                Toast.makeText(context, "Photo transmise instantanément !", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1f)
                         )
 
                         P2PBeamToolCard(
                             title = "Note Vocale",
-                            subtitle = "Ultra-Qualité",
+                            subtitle = "Qualité FLAC",
                             icon = Icons.Rounded.Mic,
                             onClick = {
-                                transferHistory.add(
-                                    0,
-                                    P2PTransferItem("Audio_Intime_Mikayala.flac", 100, "41 Mo/s", true, "6.2 Mo")
-                                )
+                                P2PSocketManager.sendFile(context, "Note_Vocale_Intime.flac", "3.8 Mo", true)
                                 Toast.makeText(context, "Audio haute définition transmis !", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1f)
@@ -775,18 +790,15 @@ fun OfflineP2PLinkScreen(
                             subtitle = "Beam Rapide",
                             icon = Icons.Rounded.Videocam,
                             onClick = {
-                                transferHistory.add(
-                                    0,
-                                    P2PTransferItem("Video_Vacances_${System.currentTimeMillis().toString().takeLast(3)}.mp4", 100, "49 Mo/s", true, "142 Mo")
-                                )
-                                Toast.makeText(context, "Vidéo transmise à 49 Mo/s !", Toast.LENGTH_SHORT).show()
+                                P2PSocketManager.sendFile(context, "Video_Couple_Mikayala.mp4", "88.4 Mo", false)
+                                Toast.makeText(context, "Vidéo 4K transmise !", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
 
-                // Direct P2P Offline Chat Input
+                // Chat Input Field over P2P
                 item {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -803,7 +815,7 @@ fun OfflineP2PLinkScreen(
                             TextField(
                                 value = directMessageText,
                                 onValueChange = { directMessageText = autoCapitalizeMessageInput(it, directMessageText) },
-                                placeholder = { Text("Message direct hors-ligne à Mikayala...", color = TextMuted, fontSize = 13.sp) },
+                                placeholder = { Text("Message direct P2P hors-ligne...", color = TextMuted, fontSize = 13.sp) },
                                 keyboardOptions = KeyboardOptions(
                                     capitalization = KeyboardCapitalization.Sentences
                                 ),
@@ -821,11 +833,8 @@ fun OfflineP2PLinkScreen(
                             IconButton(
                                 onClick = {
                                     if (directMessageText.isNotBlank()) {
-                                        repository.sendMessage(content = "📡 [P2P Direct] ${directMessageText.trim()}")
-                                        transferHistory.add(
-                                            0,
-                                            P2PTransferItem("Message: \"${directMessageText.trim()}\"", 100, "Instantané", true, "1 Ko")
-                                        )
+                                        P2PSocketManager.sendMessage(context, directMessageText)
+                                        repository.sendMessage(content = "📡 [Mode Proximité P2P] ${directMessageText.trim()}")
                                         directMessageText = ""
                                         Toast.makeText(context, "Message P2P transmis !", Toast.LENGTH_SHORT).show()
                                     }
@@ -841,10 +850,10 @@ fun OfflineP2PLinkScreen(
                     }
                 }
 
-                // Transfer History List
+                // Live P2P Chat & File Feed
                 item {
                     Text(
-                        text = "HISTORIQUE DES TRANSFERTS HORS-LIGNE",
+                        text = "CANAL DE MESSAGES ET TRANSFERTS P2P",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
@@ -852,12 +861,12 @@ fun OfflineP2PLinkScreen(
                     )
                 }
 
-                items(transferHistory.size) { index ->
-                    val item = transferHistory[index]
+                items(p2pMessages.size) { index ->
+                    val msg = p2pMessages[index]
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = MatteCardDark,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        color = if (msg.isFromMe) ChatBubbleSender else MatteCardDark,
+                        border = BorderStroke(1.dp, if (msg.isFromMe) VibrantCyan.copy(alpha = 0.3f) else BorderSubtleWhite),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -866,36 +875,47 @@ fun OfflineP2PLinkScreen(
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Circular Progress Ring Indicator (as in reference image)
                             Box(
-                                modifier = Modifier.size(40.dp),
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(if (msg.isFromMe) VibrantCyan.copy(alpha = 0.2f) else OnlinePresenceGreen.copy(alpha = 0.2f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                CircularProgressIndicator(
-                                    progress = { item.progress / 100f },
-                                    modifier = Modifier.fillMaxSize(),
-                                    color = VibrantCyan,
-                                    trackColor = ProgressRingTrack,
-                                    strokeWidth = 3.dp,
-                                    strokeCap = StrokeCap.Round
-                                )
-                                Text(
-                                    text = "${item.progress}%",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = VibrantCyan
+                                Icon(
+                                    imageVector = if (msg.isFile) Icons.Rounded.FolderZip else Icons.Rounded.Chat,
+                                    contentDescription = null,
+                                    tint = if (msg.isFromMe) VibrantCyan else OnlinePresenceGreen,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(14.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(text = item.filename, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = if (msg.isFromMe) "Moi" else msg.senderName,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (msg.isFromMe) VibrantCyan else OnlinePresenceGreen
+                                    )
+                                    Text(
+                                        text = "Direct P2P ✓",
+                                        fontSize = 10.sp,
+                                        color = OnlinePresenceGreen
+                                    )
+                                }
                                 Spacer(modifier = Modifier.height(2.dp))
-                                Text(text = "${item.size} • ${item.speed} • Terminé ✓", fontSize = 11.sp, color = OnlinePresenceGreen)
+                                Text(
+                                    text = msg.content,
+                                    fontSize = 13.sp,
+                                    color = TextPrimary
+                                )
                             }
-
-                            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = OnlinePresenceGreen, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
@@ -958,11 +978,3 @@ private fun P2PBeamToolCard(
         }
     }
 }
-
-private data class P2PTransferItem(
-    val filename: String,
-    val progress: Int,
-    val speed: String,
-    val isCompleted: Boolean,
-    val size: String
-)

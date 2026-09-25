@@ -101,11 +101,29 @@ class VoiceRecorderManager(private val context: Context) {
         return false
     }
 
+    fun getCurrentFilePath(): String? = currentFilePath
+
+    fun getMaxAmplitude(): Int {
+        return try {
+            if (isRecording && !isPaused) {
+                mediaRecorder?.maxAmplitude ?: 0
+            } else 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
     fun stopRecording(): String? {
-        if (!isRecording) return null
+        if (!isRecording) return currentFilePath
         val path = currentFilePath
         return try {
             mediaRecorder?.apply {
+                if (isPaused) {
+                    try {
+                        resume()
+                    } catch (ignored: Exception) {}
+                    isPaused = false
+                }
                 stop()
                 reset()
                 release()

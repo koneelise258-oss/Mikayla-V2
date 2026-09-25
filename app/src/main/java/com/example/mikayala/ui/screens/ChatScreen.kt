@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
 import com.example.mikayala.ui.media.MediaEditorTarget
+import com.example.mikayala.ui.components.InAppCameraCaptureDialog
+import com.example.mikayala.ui.components.CameraCaptureMode
 import com.example.mikayala.ui.media.photo.PhotoEditorScreen
 import com.example.mikayala.ui.media.video.VideoEditorScreen
 import kotlinx.coroutines.isActive
@@ -81,6 +83,8 @@ fun ChatScreen(
 
     // 📸 REAL PHOTO, VIDEO & CAMERA LAUNCHERS (Routed to Media Editor)
     var activeMediaEditorTarget by remember { mutableStateOf<MediaEditorTarget?>(null) }
+    var showInAppCamera by remember { mutableStateOf(false) }
+    var inAppCameraMode by remember { mutableStateOf(CameraCaptureMode.PHOTO) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -145,7 +149,11 @@ fun ChatScreen(
         }
     }
 
-    val messages by repository.allMessages.collectAsState()
+    val rawMessages by repository.allMessages.collectAsState()
+    val myUserId = remember { repository.getCurrentUserId() }
+    val messages = remember(rawMessages, myUserId) {
+        rawMessages.filter { !it.deletedFor.contains(myUserId) }
+    }
     val isPartnerTyping by repository.isPartnerTyping.collectAsState()
     val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
     val userSettings by repository.userSettings.collectAsState()
@@ -173,19 +181,38 @@ fun ChatScreen(
     }
 
     val coupleSpace by repository.activeCoupleSpace.collectAsState()
+    DisposableEffect(Unit) {
+        com.example.mikayala.util.P2PSocketManager.isChatScreenActive = true
+        com.example.mikayala.util.P2PSocketManager.sendReadAckAll()
+        onDispose {
+            com.example.mikayala.util.P2PSocketManager.isChatScreenActive = false
+        }
+    }
+
     LaunchedEffect(messages.size, coupleSpace.id) {
         val coupleId = coupleSpace.id
         if (coupleId.isNotEmpty()) {
             repository.markMessagesDelivered(coupleId)
             repository.markMessagesRead(coupleId)
+            com.example.mikayala.util.P2PSocketManager.sendReadAckAll()
         }
     }
 
-    // Periodic presence & activity update while in chat screen
+    // Fast periodic sync loop while viewing chat screen so message checkmark statuses update live in real-time
     LaunchedEffect(Unit) {
         while (true) {
-            repository.syncProfiles()
-            delay(30000)
+            try {
+                repository.syncWithSupabase()
+                val cId = coupleSpace.id
+                if (cId.isNotEmpty()) {
+                    repository.markMessagesDelivered(cId)
+                    repository.markMessagesRead(cId)
+                    com.example.mikayala.util.P2PSocketManager.sendReadAckAll()
+                }
+            } catch (e: Exception) {
+                // Ignore transient network errors
+            }
+            delay(2500)
         }
     }
 
@@ -337,6 +364,7 @@ fun ChatScreen(
                 items(messages, key = { it.id }) { message ->
                     MessageBubble(
                         message = message,
+                        repository = repository,
                         currentUserId = repository.getCurrentUserId(),
                         timeFormatted = timeFormat.format(Date(message.createdAt)),
                         userSettings = userSettings,
@@ -401,7 +429,7 @@ fun ChatScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (reply.senderId == "me") "Réponse à vous-même" else "Réponse à Mikayala",
+                                    text = if (repository.isMessageFromMe(reply)) "Réponse à vous-même" else "Réponse à Mikayala",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = AccentRose
@@ -531,14 +559,11 @@ fun ChatScreen(
                                     )
                                 }
 
-                                 // Camera 📷 Button (Quick snap)
+                                // Camera 📷 Button (In-app camera with photo/video switch & flash)
                                 IconButton(
                                     onClick = {
-                                        try {
-                                            cameraLauncher.launch(null)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Impossible d'ouvrir la caméra", Toast.LENGTH_SHORT).show()
-                                        }
+                                        inAppCameraMode = CameraCaptureMode.PHOTO
+                                        showInAppCamera = true
                                     },
                                     modifier = Modifier
                                         .size(38.dp)
@@ -581,7 +606,7 @@ fun ChatScreen(
                                     )
                                     
                                     if (recordingState == RecordingState.LOCKED || recordingState == RecordingState.PAUSED) {
-                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         
                                         // Pause/Resume Button
                                         IconButton(
@@ -602,6 +627,17 @@ fun ChatScreen(
                                                 tint = VibrantCyan,
                                                 modifier = Modifier.size(20.dp)
                                             )
+                                        }
+
+                                        if (recordingState == RecordingState.PAUSED) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                VoicePlayerWaveform(
+                                                    durationSeconds = recordingTimerSeconds,
+                                                    isSender = true,
+                                                    audioUrl = voiceRecorder.getCurrentFilePath()
+                                                )
+                                            }
                                         }
                                     }
 
@@ -707,13 +743,23 @@ fun ChatScreen(
                                         }
                                     }
 
+                                    var isCanceledViaSwipe = false
                                     do {
                                         val event = awaitPointerEvent()
                                         val change = event.changes.firstOrNull() ?: break
                                         if (change.pressed) {
                                             val dragY = change.position.y - down.position.y
+                                            val dragX = change.position.x - down.position.x
                                             dragOffsetY = dragY
                                             if (dragY < maxDragUp) maxDragUp = dragY
+
+                                            if (dragX < -100f && recordingState == RecordingState.RECORDING) {
+                                                voiceRecorder.cancelRecording()
+                                                recordingState = RecordingState.IDLE
+                                                isCanceledViaSwipe = true
+                                                Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
+                                                break
+                                            }
 
                                             // Deliberate swipe up threshold (~80dp)
                                             if (dragY < -lockThresholdPx && recordingState == RecordingState.RECORDING) {
@@ -726,7 +772,9 @@ fun ChatScreen(
                                     val duration = System.currentTimeMillis() - startTime
                                     dragOffsetY = 0f
 
-                                    if (recordingState == RecordingState.LOCKED || isLockedViaDrag) {
+                                    if (isCanceledViaSwipe) {
+                                        // Already canceled via swipe left
+                                    } else if (recordingState == RecordingState.LOCKED || isLockedViaDrag) {
                                         // Stay in hands-free locked mode
                                     } else {
                                         // Hold -> Releasing finger sends vocal
@@ -740,9 +788,10 @@ fun ChatScreen(
                                                 Toast.makeText(context, "Erreur lors de l'enregistrement", Toast.LENGTH_SHORT).show()
                                             }
                                         } else {
-                                            // Too short, cancel cleanly
+                                            // Too short / single tap -> Cancel cleanly and instruct user in-app
                                             voiceRecorder.cancelRecording()
                                             recordingState = RecordingState.IDLE
+                                            Toast.makeText(context, "Maintenir le bouton pour enregistrer un message vocal 🎙️", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
@@ -831,11 +880,8 @@ fun ChatScreen(
                 },
                 onSendCamera = {
                     showAttachmentSheet = false
-                    try {
-                        cameraLauncher.launch(null)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Impossible d'ouvrir la caméra", Toast.LENGTH_SHORT).show()
-                    }
+                    inAppCameraMode = CameraCaptureMode.PHOTO
+                    showInAppCamera = true
                 },
                 onSendVideo = {
                     showAttachmentSheet = false
@@ -920,6 +966,11 @@ fun ChatScreen(
                     showAttachmentSheet = false
                     repository.sendMessage(content = "🎟️ Bon d'Amour : Joker Câlin Infini sans condition ! Valable à tout moment ❤️", type = "coupon")
                     Toast.makeText(context, "Bon d'Amour offert 🎟️💖", Toast.LENGTH_SHORT).show()
+                },
+                onSendWheel = {
+                    showAttachmentSheet = false
+                    repository.sendMessage(content = "Roue de la Fortune d'Amour 🎡", type = "wheel", mediaUrl = "Massage 💆|Dîner aux chandelles 🍷|Soirée Film 🎬|Cuisiner ensemble 🍳|Baiser doux 💋|Vérité Intime 🤫")
+                    Toast.makeText(context, "Roue de la Fortune lancée ! 🎡", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -928,6 +979,7 @@ fun ChatScreen(
         selectedMessageForOptions?.let { message ->
             MessageOptionBottomSheet(
                 message = message,
+                isFromMe = repository.isMessageFromMe(message),
                 onDismiss = { selectedMessageForOptions = null },
                 onReply = {
                     replyToMessage = message
@@ -947,11 +999,30 @@ fun ChatScreen(
             )
         }
 
+        // 📷 IN-APP PHOTO & VIDEO CAMERA CAPTURE (Switch tabs + flash + flip)
+        if (showInAppCamera) {
+            InAppCameraCaptureDialog(
+                initialMode = inAppCameraMode,
+                onDismiss = { showInAppCamera = false },
+                onPhotoCaptured = { bitmap ->
+                    showInAppCamera = false
+                    activeMediaEditorTarget = MediaEditorTarget.PhotoBitmap(bitmap)
+                },
+                onVideoCaptured = { uri ->
+                    showInAppCamera = false
+                    activeMediaEditorTarget = MediaEditorTarget.Video(uri)
+                }
+            )
+        }
+
         // 🎨 NATIVE FULL-SCREEN MULTIMEDIA EDITORS (Before Sending)
         activeMediaEditorTarget?.let { target ->
             Dialog(
                 onDismissRequest = { activeMediaEditorTarget = null },
-                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                properties = androidx.compose.ui.window.DialogProperties(
+                    usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = false
+                )
             ) {
                 when (target) {
                     is MediaEditorTarget.PhotoUri -> {
@@ -997,6 +1068,7 @@ fun ChatScreen(
 @Composable
 private fun MessageBubble(
     message: MessageEntity,
+    repository: MikayalaRepository,
     currentUserId: String,
     timeFormatted: String,
     userSettings: com.example.mikayala.data.model.UserSettingsEntity,
@@ -1006,7 +1078,7 @@ private fun MessageBubble(
     onViewOnceClicked: () -> Unit
 ) {
     val context = LocalContext.current
-    val isSender = currentUserId.isNotEmpty() && message.senderId == currentUserId
+    val isSender = repository.isMessageFromMe(message)
 
     LaunchedEffect(message.id, message.status, isSender) {
         Log.d("ChatScreen", "[MIKAYALA_MESSAGE] messageId=${message.id} senderId=${message.senderId} currentAuthUid=$currentUserId isSender=$isSender status=${message.status} deliveredAt=${message.deliveredAt} readAt=${message.readAt}")
@@ -1209,6 +1281,13 @@ private fun MessageBubble(
                     message = message,
                     isSender = isSender,
                     timeFormatted = timeFormatted,
+                    reactionsMap = reactionsMap,
+                    onRetryMedia = {
+                        val path = message.storagePath ?: ""
+                        if (path.isNotEmpty()) {
+                            repository.retryFetchMediaUrl(message.id, path)
+                        }
+                    },
                     onViewOnceOpened = { onViewOnceClicked() }
                 )
             }
@@ -1217,7 +1296,14 @@ private fun MessageBubble(
                 VideoMessageItem(
                     message = message,
                     isSender = isSender,
-                    timeFormatted = timeFormatted
+                    timeFormatted = timeFormatted,
+                    reactionsMap = reactionsMap,
+                    onRetryMedia = {
+                        val path = message.storagePath ?: ""
+                        if (path.isNotEmpty()) {
+                            repository.retryFetchMediaUrl(message.id, path)
+                        }
+                    }
                 )
             }
 
@@ -1225,7 +1311,7 @@ private fun MessageBubble(
                 Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = ChatBubbleReceiver,
+                        color = if (isSender) ChatBubbleSender else ChatBubbleReceiver,
                         border = BorderStroke(1.dp, MatteSquircleBorder),
                         modifier = Modifier.widthIn(min = 220.dp, max = 310.dp)
                     ) {
@@ -1233,17 +1319,57 @@ private fun MessageBubble(
                             VoicePlayerWaveform(
                                 durationSeconds = message.duration,
                                 isSender = isSender,
-                                audioUrl = message.mediaUrl
+                                audioUrl = message.mediaUrl ?: message.storagePath,
+                                onRetryFetch = {
+                                    val path = message.storagePath ?: ""
+                                    if (path.isNotEmpty()) {
+                                        repository.retryFetchMediaUrl(message.id, path)
+                                    }
+                                }
                             )
                         }
                     }
+
+                    // Persistent Emoji Reactions Row
+                    if (reactionsMap.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = CardDarkElevated,
+                            border = BorderStroke(1.dp, BorderSubtleWhite),
+                            shadowElevation = 3.dp,
+                            modifier = Modifier.padding(bottom = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                reactionsMap.forEach { emoji ->
+                                    Text(text = emoji, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = timeFormatted,
-                        fontSize = 11.sp,
-                        color = TimeStampMuted,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (message.isStarred) {
+                            Icon(Icons.Rounded.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
+                        }
+                        Text(
+                            text = timeFormatted,
+                            fontSize = 11.sp,
+                            color = TimeStampMuted
+                        )
+                        if (isSender) {
+                            MessageStatusIndicator(status = message.status)
+                        }
+                    }
                 }
             }
 
@@ -1383,33 +1509,22 @@ private fun MessageBubble(
                 }
             }
 
-            "event" -> {
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = CardDarkElevated,
-                    border = BorderStroke(1.dp, Color(0xFFE91E63).copy(alpha = 0.4f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFE91E63).copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.Event, contentDescription = null, tint = Color(0xFFE91E63), modifier = Modifier.size(22.dp))
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(text = "Rendez-vous amoureux 📅", fontSize = 11.sp, color = Color(0xFFE91E63), fontWeight = FontWeight.Bold)
-                            Text(text = message.content, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                        }
-                    }
-                }
+            "event", "calendar" -> {
+                CalendarEventMessageItem(
+                    message = message,
+                    isSender = isSender,
+                    timeFormatted = timeFormatted,
+                    reactionsMap = reactionsMap
+                )
+            }
+
+            "wheel", "roue" -> {
+                WheelOfFortuneMessageItem(
+                    message = message,
+                    isSender = isSender,
+                    timeFormatted = timeFormatted,
+                    reactionsMap = reactionsMap
+                )
             }
 
             "ai_image" -> {
@@ -1812,12 +1927,23 @@ fun ImageMessageItem(
     message: MessageEntity,
     isSender: Boolean,
     timeFormatted: String,
+    reactionsMap: List<String> = emptyList(),
+    onRetryMedia: () -> Unit,
     onViewOnceOpened: () -> Unit
 ) {
     var showFullScreenPhoto by remember { mutableStateOf(false) }
+    var loadState by remember(message.mediaUrl) { mutableStateOf("INIT") }
+
+    LaunchedEffect(message.id, message.storagePath, message.mediaUrl) {
+        Log.d(
+            "ChatScreen",
+            "[MIKAYALA_MEDIA_UI] messageId=${message.id} type=${message.type} storagePath=${message.storagePath} mediaUrl=${message.mediaUrl} loadState=$loadState"
+        )
+    }
 
     Column(
-        horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
+        horizontalAlignment = if (isSender) Alignment.End else Alignment.Start,
+        modifier = Modifier.widthIn(max = 260.dp)
     ) {
         if (message.isViewOnce) {
             Surface(
@@ -1856,11 +1982,14 @@ fun ImageMessageItem(
                 color = MatteCardDark,
                 border = BorderStroke(1.dp, MatteSquircleBorder),
                 modifier = Modifier
-                    .widthIn(min = 180.dp, max = 260.dp)
-                    .heightIn(min = 180.dp, max = 320.dp)
+                    .width(240.dp)
+                    .heightIn(min = 180.dp, max = 260.dp)
+                    .clip(RoundedCornerShape(20.dp))
                     .clickable {
                         if (!message.mediaUrl.isNullOrEmpty()) {
                             showFullScreenPhoto = true
+                        } else if (!message.storagePath.isNullOrEmpty()) {
+                            onRetryMedia()
                         }
                     }
             ) {
@@ -1875,30 +2004,155 @@ fun ImageMessageItem(
                             model = message.mediaUrl,
                             contentDescription = "Photo partagée",
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            onLoading = {
+                                loadState = "LOADING"
+                                Log.d("ChatScreen", "[MIKAYALA_MEDIA_UI] messageId=${message.id} type=image storagePath=${message.storagePath} mediaUrl=${message.mediaUrl} loadState=LOADING")
+                            },
+                            onSuccess = {
+                                loadState = "SUCCESS"
+                                Log.d("ChatScreen", "[MIKAYALA_MEDIA_UI] messageId=${message.id} type=image storagePath=${message.storagePath} mediaUrl=${message.mediaUrl} loadState=SUCCESS")
+                            },
+                            onError = { errorState ->
+                                loadState = "ERROR"
+                                Log.e("ChatScreen", "[MIKAYALA_MEDIA_UI_ERROR] messageId=${message.id} type=image url=${message.mediaUrl} error=${errorState.result.throwable.message}")
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
+                        if (loadState == "LOADING") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color(0x55000000)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = VibrantCyan,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        } else if (loadState == "ERROR") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color(0xD91F0C16))
+                                    .padding(8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.BrokenImage,
+                                    contentDescription = "Erreur",
+                                    tint = AccentRose,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Erreur de chargement",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                TextButton(
+                                    onClick = onRetryMedia,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(text = "Réessayer 🔄", fontSize = 11.sp, color = VibrantCyan)
+                                }
+                            }
+                        }
                     } else {
-                        CircularProgressIndicator(
-                            color = VibrantCyan,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(32.dp)
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = VibrantCyan,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Envoi / Chargement photo...",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                            if (!message.storagePath.isNullOrEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                TextButton(
+                                    onClick = onRetryMedia,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(text = "Rafraîchir 🔄", fontSize = 10.sp, color = VibrantCyan)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = timeFormatted,
-            fontSize = 11.sp,
-            color = TimeStampMuted,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
+        if (message.content.isNotBlank() && message.content != "Photo partagée 🖼️" && message.content != "Photo éphémère 📸" && message.content != "Photo instantanée 📸") {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = message.content,
+                fontSize = 13.sp,
+                color = TextPrimary,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+
+        // Persistent Emoji Reactions Row
+        if (reactionsMap.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(3.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = CardDarkElevated,
+                border = BorderStroke(1.dp, BorderSubtleWhite),
+                shadowElevation = 3.dp,
+                modifier = Modifier.padding(bottom = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    reactionsMap.forEach { emoji ->
+                        Text(text = emoji, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(3.dp))
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (message.isStarred) {
+                Icon(Icons.Rounded.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
+            }
+            Text(
+                text = timeFormatted,
+                fontSize = 11.sp,
+                color = TimeStampMuted
+            )
+            if (isSender) {
+                MessageStatusIndicator(status = message.status)
+            }
+        }
     }
 
     if (showFullScreenPhoto && !message.mediaUrl.isNullOrEmpty()) {
-        FullScreenPhotoDialog(imageUrl = message.mediaUrl, onDismiss = { showFullScreenPhoto = false })
+        FullScreenPhotoDialog(
+            imageUrl = message.mediaUrl,
+            onRetry = onRetryMedia,
+            onDismiss = { showFullScreenPhoto = false }
+        )
     }
 }
 
@@ -1906,12 +2160,15 @@ fun ImageMessageItem(
 fun VideoMessageItem(
     message: MessageEntity,
     isSender: Boolean,
-    timeFormatted: String
+    timeFormatted: String,
+    reactionsMap: List<String> = emptyList(),
+    onRetryMedia: () -> Unit
 ) {
     var showFullScreenVideo by remember { mutableStateOf(false) }
 
     Column(
-        horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
+        horizontalAlignment = if (isSender) Alignment.End else Alignment.Start,
+        modifier = Modifier.widthIn(max = 260.dp)
     ) {
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -1920,9 +2177,12 @@ fun VideoMessageItem(
             modifier = Modifier
                 .width(240.dp)
                 .height(180.dp)
+                .clip(RoundedCornerShape(20.dp))
                 .clickable {
                     if (!message.mediaUrl.isNullOrEmpty()) {
                         showFullScreenVideo = true
+                    } else if (!message.storagePath.isNullOrEmpty()) {
+                        onRetryMedia()
                     }
                 }
         ) {
@@ -1982,34 +2242,102 @@ fun VideoMessageItem(
                         }
                     }
                 } else {
-                    CircularProgressIndicator(
-                        color = VibrantCyan,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = VibrantCyan,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Préparation de la vidéo...", fontSize = 11.sp, color = TextSecondary)
+                        if (!message.storagePath.isNullOrEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            TextButton(
+                                onClick = onRetryMedia,
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("Rafraîchir 🔄", fontSize = 10.sp, color = VibrantCyan)
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = timeFormatted,
-            fontSize = 11.sp,
-            color = TimeStampMuted,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
+        if (message.content.isNotBlank() && message.content != "Vidéo partagée 🎬") {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = message.content,
+                fontSize = 13.sp,
+                color = TextPrimary,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+
+        // Persistent Emoji Reactions Row
+        if (reactionsMap.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(3.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = CardDarkElevated,
+                border = BorderStroke(1.dp, BorderSubtleWhite),
+                shadowElevation = 3.dp,
+                modifier = Modifier.padding(bottom = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    reactionsMap.forEach { emoji ->
+                        Text(text = emoji, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(3.dp))
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (message.isStarred) {
+                Icon(Icons.Rounded.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
+            }
+            Text(
+                text = timeFormatted,
+                fontSize = 11.sp,
+                color = TimeStampMuted
+            )
+            if (isSender) {
+                MessageStatusIndicator(status = message.status)
+            }
+        }
     }
 
     if (showFullScreenVideo && !message.mediaUrl.isNullOrEmpty()) {
-        FullScreenVideoDialog(videoUrl = message.mediaUrl, onDismiss = { showFullScreenVideo = false })
+        FullScreenVideoDialog(
+            videoUrl = message.mediaUrl,
+            onDismiss = { showFullScreenVideo = false }
+        )
     }
 }
 
 @Composable
 fun FullScreenPhotoDialog(
     imageUrl: String,
+    onRetry: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
+    var loadError by remember { mutableStateOf(false) }
+
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
@@ -2022,10 +2350,38 @@ fun FullScreenPhotoDialog(
         ) {
             coil.compose.AsyncImage(
                 model = imageUrl,
-                contentDescription = null,
+                contentDescription = "Photo plein écran",
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                onError = {
+                    loadError = true
+                    Log.e("ChatScreen", "[MIKAYALA_MEDIA_UI_ERROR] FullScreenPhotoDialog error loading $imageUrl: ${it.result.throwable.message}")
+                },
+                onSuccess = {
+                    loadError = false
+                },
                 modifier = Modifier.fillMaxSize()
             )
+
+            if (loadError) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Rounded.BrokenImage, contentDescription = null, tint = AccentRose, modifier = Modifier.size(36.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Impossible de charger la photo", color = TextPrimary, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onRetry,
+                        colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan)
+                    ) {
+                        Text("Recharger l'image 🔄", color = Color.White, fontSize = 12.sp)
+                    }
+                }
+            }
 
             IconButton(
                 onClick = onDismiss,
@@ -2044,11 +2400,41 @@ fun FullScreenPhotoDialog(
     }
 }
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun FullScreenVideoDialog(
     videoUrl: String,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    var hasError by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+
+    val exoPlayer = remember(videoUrl) {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            val mediaItem = androidx.media3.common.MediaItem.fromUri(videoUrl)
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = true
+            addListener(object : androidx.media3.common.Player.Listener {
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    hasError = true
+                    errorMessage = error.localizedMessage ?: "Erreur de lecture"
+                    Log.e("ChatScreen", "[MIKAYALA_MEDIA_UI_ERROR] Video playback error for $videoUrl: ${error.message}", error)
+                }
+            })
+        }
+    }
+
+    DisposableEffect(exoPlayer) {
+        onDispose {
+            try {
+                exoPlayer.stop()
+                exoPlayer.release()
+            } catch (ignored: Exception) {}
+        }
+    }
+
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
@@ -2060,23 +2446,41 @@ fun FullScreenVideoDialog(
         ) {
             androidx.compose.ui.viewinterop.AndroidView(
                 factory = { ctx ->
-                    android.widget.VideoView(ctx).apply {
-                        val mediaController = android.widget.MediaController(ctx)
-                        mediaController.setAnchorView(this)
-                        setMediaController(mediaController)
-                        setVideoURI(android.net.Uri.parse(videoUrl))
-                        setOnPreparedListener { mp ->
-                            start()
-                        }
-                        setOnErrorListener { _, what, extra ->
-                            Log.e("ChatScreen", "Video playback error what=$what extra=$extra url=$videoUrl")
-                            android.widget.Toast.makeText(ctx, "Impossible de lire la vidéo", android.widget.Toast.LENGTH_SHORT).show()
-                            true
-                        }
+                    androidx.media3.ui.PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = true
+                        setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_ALWAYS)
                     }
                 },
                 modifier = Modifier.fillMaxSize()
             )
+
+            if (hasError) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Rounded.VideocamOff, contentDescription = null, tint = AccentRose, modifier = Modifier.size(36.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Impossible de lire cette vidéo", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(errorMessage, color = TextSecondary, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            hasError = false
+                            exoPlayer.prepare()
+                            exoPlayer.play()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan)
+                    ) {
+                        Text("Réessayer 🔄", color = Color.White, fontSize = 12.sp)
+                    }
+                }
+            }
 
             IconButton(
                 onClick = onDismiss,
@@ -2121,6 +2525,250 @@ internal fun autoCapitalizeMessageInput(input: String, previousText: String): St
     }
 
     return base
+}
+
+@Composable
+fun WheelOfFortuneMessageItem(
+    message: MessageEntity,
+    isSender: Boolean,
+    timeFormatted: String,
+    reactionsMap: List<String> = emptyList()
+) {
+    val items = remember(message.mediaUrl) {
+        val parsed = message.mediaUrl?.split("|")?.filter { it.isNotBlank() } ?: emptyList()
+        if (parsed.isNotEmpty()) parsed else listOf("Massage 💆", "Dîner 🍷", "Film 🎬", "Dîner 🍳", "Baiser 💋", "Vérité 🤫")
+    }
+    var targetRotation by remember { mutableFloatStateOf(0f) }
+    var selectedResult by remember { mutableStateOf<String?>(null) }
+    var isSpinning by remember { mutableStateOf(false) }
+
+    val animatedRotation by animateFloatAsState(
+        targetValue = targetRotation,
+        animationSpec = tween(durationMillis = 3500, easing = FastOutSlowInEasing),
+        label = "wheel_spin",
+        finishedListener = {
+            isSpinning = false
+            val normalizedDegree = (targetRotation % 360 + 360) % 360
+            val segmentAngle = 360f / items.size
+            val winningIndex = (((360 - normalizedDegree + segmentAngle / 2) % 360) / segmentAngle).toInt() % items.size
+            selectedResult = items[winningIndex]
+        }
+    )
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = CardDarkElevated,
+        border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color(0xFFFF007F), Color(0xFF7928CA)))),
+        modifier = Modifier.widthIn(min = 250.dp, max = 310.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Casino, contentDescription = null, tint = Color(0xFFFF007F), modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Roue de la Fortune d'Amour 🎡",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFF007F)
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Box(
+                modifier = Modifier.size(160.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .rotate(animatedRotation)
+                ) {
+                    val sweepAngle = 360f / items.size
+                    val colors = listOf(
+                        Color(0xFFFF2D55), Color(0xFF00B4D8), Color(0xFFFFD600),
+                        Color(0xFF9C27B0), Color(0xFF00C853), Color(0xFFFF9100)
+                    )
+
+                    items.forEachIndexed { index, _ ->
+                        drawArc(
+                            color = colors[index % colors.size],
+                            startAngle = index * sweepAngle - 90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = true
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = CircleShape,
+                    color = CardDarkElevated,
+                    border = BorderStroke(2.dp, Color.White),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(text = "💖", fontSize = 18.sp)
+                    }
+                }
+
+                Icon(
+                    imageVector = Icons.Rounded.ArrowDropDown,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .align(Alignment.TopCenter)
+                        .offset(y = (-10).dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (selectedResult != null) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0x33FF007F),
+                    border = BorderStroke(1.dp, Color(0xFFFF007F)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Résultat : $selectedResult 🎉",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            Button(
+                onClick = {
+                    if (!isSpinning) {
+                        isSpinning = true
+                        selectedResult = null
+                        val randomExtraSpins = (5..10).random() * 360f
+                        val randomDegree = (0..359).random().toFloat()
+                        targetRotation += randomExtraSpins + randomDegree
+                    }
+                },
+                enabled = !isSpinning,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF007F)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = if (isSpinning) "La roue tourne... 🎡" else "Tourner la Roue ! 🎡",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CalendarEventMessageItem(
+    message: MessageEntity,
+    isSender: Boolean,
+    timeFormatted: String,
+    reactionsMap: List<String> = emptyList()
+) {
+    var isConfirmed by remember { mutableStateOf(false) }
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = CardDarkElevated,
+        border = BorderStroke(1.dp, Color(0xFFE91E63).copy(alpha = 0.5f)),
+        modifier = Modifier.widthIn(min = 240.dp, max = 300.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFE91E63).copy(alpha = 0.2f),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Event,
+                            contentDescription = null,
+                            tint = Color(0xFFE91E63),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Événement de Couple 📅",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFE91E63)
+                    )
+                    Text(
+                        text = message.content,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0x22141C2B),
+                border = BorderStroke(1.dp, BorderSubtleWhite),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Schedule, contentDescription = null, tint = VibrantCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Prochainement", fontSize = 11.sp, color = TextPrimary)
+                    }
+                    Text(
+                        text = if (isConfirmed) "Confirmé ✅" else "En attente ⏳",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isConfirmed) Color(0xFF00C853) else AccentGold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                onClick = { isConfirmed = !isConfirmed },
+                colors = ButtonDefaults.buttonColors(containerColor = if (isConfirmed) Color(0xFF00C853) else Color(0xFFE91E63)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = if (isConfirmed) Icons.Rounded.CheckCircle else Icons.Rounded.Add,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (isConfirmed) "Inscrit à l'agenda de couple" else "Ajouter à mon agenda 📅",
+                    fontSize = 11.sp,
+                    color = Color.White
+                )
+            }
+        }
+    }
 }
 
 

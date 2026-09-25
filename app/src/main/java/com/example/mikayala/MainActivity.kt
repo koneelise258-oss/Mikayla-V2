@@ -54,6 +54,13 @@ class MainActivity : ComponentActivity() {
             Log.d("MikayalaStartup", "Creating notification channels...")
             com.example.mikayala.util.NotificationHelper.createNotificationChannels(applicationContext)
             Log.d("MikayalaStartup", "Notification channels created")
+
+            // Demande de permission pour les notifications sous Android 13+ (API 33+)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+                }
+            }
         } catch (e: Throwable) {
             Log.e("MikayalaStartup", "CRITICAL ERROR during initialization: ${e.message}", e)
             startupError = "${e.javaClass.simpleName}: ${e.message}"
@@ -121,7 +128,7 @@ class MainActivity : ComponentActivity() {
                                                 if (coupleSpace.isPaired) {
                                                     if (userSettings.hasLocalPassword && userSettings.pinCode.isNotEmpty()) {
                                                         navigationState = AppNavigationState.LOCK
-                                                    } else if (!userSettings.hasCompletedPairingSetup) {
+                                                    } else if (!userSettings.hasCompletedPairingSetup || userSettings.pinCode.isEmpty()) {
                                                         navigationState = AppNavigationState.SET_FIRST_PASSWORD
                                                     } else {
                                                         navigationState = AppNavigationState.MAIN_APP

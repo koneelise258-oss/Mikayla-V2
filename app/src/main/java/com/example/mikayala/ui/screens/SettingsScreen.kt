@@ -50,7 +50,11 @@ fun SettingsScreen(
     val context = LocalContext.current
     val settings by repository.userSettings.collectAsState()
     val coupleSpace by repository.activeCoupleSpace.collectAsState()
-    val messages by repository.allMessages.collectAsState()
+    val rawMessages by repository.allMessages.collectAsState()
+    val myUserId = remember { repository.getCurrentUserId() }
+    val messages = remember(rawMessages, myUserId) {
+        rawMessages.filter { !it.deletedFor.contains(myUserId) }
+    }
     val vaultItems by repository.allVaultItems.collectAsState()
 
     // Dialog & BottomSheet state toggles
@@ -778,6 +782,25 @@ fun SettingsScreen(
                     item {
                         Text(text = "Confidentialité & Sécurité (Style WhatsApp) 🔒", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         Text(text = "Contrôlez vos données, présence et chiffrement.", fontSize = 12.sp, color = TextSecondary)
+                    }
+
+                    item {
+                        // Biometric Auth (Empreinte digitale & Reconnaissance faciale)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(text = "Biométrie (Empreinte & Reconnaissance Faciale) 👆👤", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                                Text(text = "Déverrouillez rapidement l'application via votre capteur", fontSize = 11.sp, color = TextSecondary)
+                            }
+                            Switch(
+                                checked = bioEnabled,
+                                onCheckedChange = { bioEnabled = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
+                            )
+                        }
                     }
 
                     item {
