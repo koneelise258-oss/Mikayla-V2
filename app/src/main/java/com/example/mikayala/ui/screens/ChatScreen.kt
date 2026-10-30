@@ -52,7 +52,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.mikayala.data.model.MessageEntity
 import com.example.mikayala.data.repository.MikayalaRepository
-import com.example.mikayala.utils.VoiceRecorderManager
+import com.example.mikayala.utils.VoiceNoteManager
+import com.example.mikayala.utils.VoiceNoteState
 import com.example.mikayala.theme.*
 import com.example.mikayala.ui.components.ChatAttachmentAndGamesBottomSheet
 import com.example.mikayala.ui.components.MessageOptionBottomSheet
@@ -60,6 +61,7 @@ import com.example.mikayala.ui.components.EmojiPicker
 import com.example.mikayala.ui.components.MessageStatusIndicator
 import com.example.mikayala.ui.components.NeumorphicSquircleButton
 import com.example.mikayala.ui.components.VoicePlayerWaveform
+import com.example.mikayala.ui.components.VoiceNoteRecorder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -67,8 +69,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
-
-enum class RecordingState { IDLE, RECORDING, LOCKED, PAUSED }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,7 +79,7 @@ fun ChatScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
-    val voiceRecorder = remember { VoiceRecorderManager(context) }
+    val voiceNoteManager = remember { VoiceNoteManager(context) }
 
     // 📸 REAL PHOTO, VIDEO & CAMERA LAUNCHERS (Routed to Media Editor)
     var activeMediaEditorTarget by remember { mutableStateOf<MediaEditorTarget?>(null) }
@@ -166,10 +166,7 @@ fun ChatScreen(
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showEmojiBar by remember { mutableStateOf(false) }
 
-    // Recording State
-    var recordingState by remember { mutableStateOf(RecordingState.IDLE) }
-    var recordingTimerSeconds by remember { mutableIntStateOf(0) }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val voiceRecordingState by voiceNoteManager.recordingState.collectAsState()
 
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.FRANCE) }
 
@@ -186,6 +183,7 @@ fun ChatScreen(
         com.example.mikayala.util.P2PSocketManager.sendReadAckAll()
         onDispose {
             com.example.mikayala.util.P2PSocketManager.isChatScreenActive = false
+            voiceNoteManager.release()
         }
     }
 
@@ -226,21 +224,10 @@ fun ChatScreen(
         }
     }
 
-    // Broadcast recording status
-    LaunchedEffect(recordingState) {
-        val isRecording = (recordingState == RecordingState.RECORDING || recordingState == RecordingState.LOCKED)
+    // Broadcast recording status to partner
+    LaunchedEffect(voiceRecordingState) {
+        val isRecording = (voiceRecordingState == VoiceNoteState.RECORDING || voiceRecordingState == VoiceNoteState.LOCKED)
         repository.sendRecordingBroadcast(isRecording)
-    }
-
-    // Audio recording timer loop
-    LaunchedEffect(recordingState) {
-        if (recordingState == RecordingState.RECORDING || recordingState == RecordingState.LOCKED) {
-            recordingTimerSeconds = 0
-            while (recordingState == RecordingState.RECORDING || recordingState == RecordingState.LOCKED) {
-                delay(1000)
-                recordingTimerSeconds++
-            }
-        }
     }
 
     // Pinned Message banner
@@ -478,380 +465,45 @@ fun ChatScreen(
 
             // Quick Emoji Drawer removed in favor of premium EmojiPicker below
 
-            // Input Bar (Bottom) - Matching WhatsApp layout with Dark Luxury styling
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Main capsule input container
-                Surface(
-                    color = Color(0x381E2A3A),
-                    shape = RoundedCornerShape(26.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Left Smiley / Emoji Button
-                        IconButton(
-                            onClick = { showEmojiBar = !showEmojiBar },
-                            modifier = Modifier
-                                .size(38.dp)
-                                .testTag("chat_emoji_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.SentimentSatisfiedAlt,
-                                contentDescription = "Emojis",
-                                tint = if (showEmojiBar) VibrantCyan else TextSecondary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        when (recordingState) {
-                            RecordingState.IDLE -> {
-                                // Text input field
-                                TextField(
-                                    value = textInput,
-                                    onValueChange = { input ->
-                                        textInput = autoCapitalizeMessageInput(input, textInput)
-                                    },
-                                    placeholder = { Text("Message", color = TextMuted, fontSize = 15.sp) },
-                                    keyboardOptions = KeyboardOptions(
-                                        capitalization = KeyboardCapitalization.Sentences
-                                    ),
-                                    colors = TextFieldDefaults.colors(
-                                        focusedContainerColor = Color.Transparent,
-                                        unfocusedContainerColor = Color.Transparent,
-                                        focusedIndicatorColor = Color.Transparent,
-                                        unfocusedIndicatorColor = Color.Transparent,
-                                        focusedTextColor = TextPrimary,
-                                        unfocusedTextColor = TextPrimary,
-                                        cursorColor = VibrantCyan
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("chat_message_input"),
-                                    maxLines = 4
-                                )
-
-                                // Trombone 📎 Button (Attachments & Chat Games)
-                                IconButton(
-                                    onClick = { showAttachmentSheet = true },
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .testTag("chat_attachment_trombone_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.AttachFile,
-                                        contentDescription = "Pièces jointes et jeux",
-                                        tint = TextSecondary,
-                                        modifier = Modifier
-                                            .size(22.dp)
-                                            .rotate(-45f)
-                                    )
-                                }
-
-                                // Camera 📷 Button (In-app camera with photo/video switch & flash)
-                                IconButton(
-                                    onClick = {
-                                        inAppCameraMode = CameraCaptureMode.PHOTO
-                                        showInAppCamera = true
-                                    },
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .testTag("chat_camera_quick_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.PhotoCamera,
-                                        contentDescription = "Caméra",
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                            }
-                            RecordingState.RECORDING, RecordingState.LOCKED, RecordingState.PAUSED -> {
-                                // New recording UI
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(horizontal = 8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Mic,
-                                        contentDescription = "Enregistrement",
-                                        tint = AccentRose,
-                                        modifier = Modifier
-                                            .size(20.dp)
-                                            .graphicsLayer {
-                                                if (recordingState != RecordingState.PAUSED) {
-                                                    alpha = (0.5f + 0.5f * kotlin.math.sin(System.currentTimeMillis() / 250.0)).toFloat()
-                                                }
-                                            }
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = String.format("%02d:%02d", recordingTimerSeconds / 60, recordingTimerSeconds % 60),
-                                        fontSize = 14.sp,
-                                        color = TextPrimary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    
-                                    if (recordingState == RecordingState.LOCKED || recordingState == RecordingState.PAUSED) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        
-                                        // Pause/Resume Button
-                                        IconButton(
-                                            onClick = {
-                                                if (recordingState == RecordingState.PAUSED) {
-                                                    voiceRecorder.resumeRecording()
-                                                    recordingState = RecordingState.LOCKED
-                                                } else {
-                                                    voiceRecorder.pauseRecording()
-                                                    recordingState = RecordingState.PAUSED
-                                                }
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = if (recordingState == RecordingState.PAUSED) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-                                                contentDescription = if (recordingState == RecordingState.PAUSED) "Reprendre" else "Pause",
-                                                tint = VibrantCyan,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-
-                                        if (recordingState == RecordingState.PAUSED) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Box(modifier = Modifier.weight(1f)) {
-                                                VoicePlayerWaveform(
-                                                    durationSeconds = recordingTimerSeconds,
-                                                    isSender = true,
-                                                    audioUrl = voiceRecorder.getCurrentFilePath()
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.weight(1f))
-
-                                    // Cancel Button
-                                    IconButton(
-                                        onClick = {
-                                            voiceRecorder.cancelRecording()
-                                            recordingState = RecordingState.IDLE
-                                            Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Delete,
-                                            contentDescription = "Annuler",
-                                            tint = TextSecondary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
+            // Barre de saisie & Enregistreur vocal WhatsApp haute fidélité
+            VoiceNoteRecorder(
+                manager = voiceNoteManager,
+                textInput = textInput,
+                onTextInputChange = { input ->
+                    textInput = autoCapitalizeMessageInput(input, textInput)
+                },
+                onSendText = {
+                    val currentEditId = editingMessageId
+                    if (currentEditId != null) {
+                        repository.editMessage(currentEditId, textInput)
+                        editingMessageId = null
+                    } else {
+                        repository.sendMessage(
+                            content = textInput,
+                            type = "text",
+                            replyToId = replyToMessage?.id,
+                            replyToContent = replyToMessage?.content
+                        )
+                        textInput = ""
+                        replyToMessage = null
                     }
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                // Outside Right Button with Floating Lock Indicator & 3 Gesture Modes
-                Box(contentAlignment = Alignment.BottomCenter) {
-                    val density = androidx.compose.ui.platform.LocalDensity.current
-                    val lockThresholdPx = remember(density) { with(density) { 80.dp.toPx() } }
-                    val isLockThresholdMet = dragOffsetY < -lockThresholdPx
-
-                    // Floating Lock Prompt Indicator when holding/sliding
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = recordingState == RecordingState.RECORDING,
-                        enter = fadeIn() + slideInVertically { it },
-                        exit = fadeOut() + slideOutVertically { it }
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = CardDarkElevated,
-                            border = BorderStroke(
-                                1.dp,
-                                if (isLockThresholdMet) AccentRose else VibrantCyan
-                            ),
-                            shadowElevation = 8.dp,
-                            modifier = Modifier
-                                .offset(y = (-58).dp)
-                                .padding(bottom = 8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Lock,
-                                    contentDescription = null,
-                                    tint = if (isLockThresholdMet) AccentRose else VibrantCyan,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (isLockThresholdMet) "Relâchez pour verrouiller" else "Glissez vers le haut pour verrouiller",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isLockThresholdMet) AccentRose else TextPrimary
-                                )
-                            }
-                        }
-                    }
-
-                    // Main Circular Action Button (Mic or Send)
-                    Surface(
-                        shape = CircleShape,
-                        color = Color.Transparent,
-                        shadowElevation = 6.dp,
-                        modifier = Modifier
-                            .size(46.dp)
-                            .pointerInput(textInput, recordingState) {
-                                if (textInput.isNotBlank()) return@pointerInput
-
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(requireUnconsumed = false)
-                                    val startTime = System.currentTimeMillis()
-                                    var isLockedViaDrag = false
-                                    var maxDragUp = 0f
-
-                                    if (recordingState == RecordingState.IDLE) {
-                                        if (!hasRecordAudioPermission()) {
-                                            recordAudioLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                                            return@awaitEachGesture
-                                        }
-                                        val started = voiceRecorder.startRecording("vocal_${System.currentTimeMillis()}.m4a")
-                                        if (started) {
-                                            recordingState = RecordingState.RECORDING
-                                            dragOffsetY = 0f
-                                        } else {
-                                            Toast.makeText(context, "Impossible d'initialiser l'enregistrement", Toast.LENGTH_SHORT).show()
-                                            return@awaitEachGesture
-                                        }
-                                    }
-
-                                    var isCanceledViaSwipe = false
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        val change = event.changes.firstOrNull() ?: break
-                                        if (change.pressed) {
-                                            val dragY = change.position.y - down.position.y
-                                            val dragX = change.position.x - down.position.x
-                                            dragOffsetY = dragY
-                                            if (dragY < maxDragUp) maxDragUp = dragY
-
-                                            if (dragX < -100f && recordingState == RecordingState.RECORDING) {
-                                                voiceRecorder.cancelRecording()
-                                                recordingState = RecordingState.IDLE
-                                                isCanceledViaSwipe = true
-                                                Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
-                                                break
-                                            }
-
-                                            // Deliberate swipe up threshold (~80dp)
-                                            if (dragY < -lockThresholdPx && recordingState == RecordingState.RECORDING) {
-                                                recordingState = RecordingState.LOCKED
-                                                isLockedViaDrag = true
-                                            }
-                                        }
-                                    } while (event.changes.any { it.pressed })
-
-                                    val duration = System.currentTimeMillis() - startTime
-                                    dragOffsetY = 0f
-
-                                    if (isCanceledViaSwipe) {
-                                        // Already canceled via swipe left
-                                    } else if (recordingState == RecordingState.LOCKED || isLockedViaDrag) {
-                                        // Stay in hands-free locked mode
-                                    } else {
-                                        // Hold -> Releasing finger sends vocal
-                                        if (duration >= 500) {
-                                            val filePath = voiceRecorder.stopRecording()
-                                            recordingState = RecordingState.IDLE
-                                            if (filePath != null && File(filePath).length() > 0) {
-                                                repository.sendVoiceNote(filePath, recordingTimerSeconds)
-                                                Toast.makeText(context, "Vocal en cours d'envoi... 🎙️", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "Erreur lors de l'enregistrement", Toast.LENGTH_SHORT).show()
-                                            }
-                                        } else {
-                                            // Too short / single tap -> Cancel cleanly and instruct user in-app
-                                            voiceRecorder.cancelRecording()
-                                            recordingState = RecordingState.IDLE
-                                            Toast.makeText(context, "Maintenir le bouton pour enregistrer un message vocal 🎙️", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
-                            }
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    when {
-                                        textInput.isNotBlank() -> Brush.linearGradient(listOf(Color(0xFF00B4D8), Color(0xFF0077B6)))
-                                        recordingState == RecordingState.LOCKED || recordingState == RecordingState.PAUSED -> Brush.linearGradient(listOf(AccentRose, Color(0xFFE84393)))
-                                        recordingState == RecordingState.RECORDING -> Brush.linearGradient(listOf(VibrantCyan, Color(0xFF00B4D8)))
-                                        else -> Brush.linearGradient(listOf(Color(0xFF25D366), Color(0xFF075E54)))
-                                    }
-                                )
-                                .clickable(
-                                    enabled = textInput.isNotBlank() || recordingState == RecordingState.LOCKED || recordingState == RecordingState.PAUSED
-                                ) {
-                                    if (recordingState == RecordingState.LOCKED || recordingState == RecordingState.PAUSED) {
-                                        val filePath = voiceRecorder.stopRecording()
-                                        recordingState = RecordingState.IDLE
-                                        if (filePath != null && File(filePath).length() > 0) {
-                                            repository.sendVoiceNote(filePath, recordingTimerSeconds)
-                                            Toast.makeText(context, "Vocal en cours d'envoi... 🎙️", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Erreur lors de l'enregistrement", Toast.LENGTH_SHORT).show()
-                                        }
-                                    } else if (textInput.isNotBlank()) {
-                                        val currentEditId = editingMessageId
-                                        if (currentEditId != null) {
-                                            repository.editMessage(currentEditId, textInput)
-                                            editingMessageId = null
-                                        } else {
-                                            repository.sendMessage(
-                                                content = textInput,
-                                                type = "text",
-                                                replyToId = replyToMessage?.id,
-                                                replyToContent = replyToMessage?.content
-                                            )
-                                            textInput = ""
-                                            replyToMessage = null
-                                        }
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = when {
-                                    textInput.isNotBlank() || recordingState == RecordingState.LOCKED || recordingState == RecordingState.PAUSED -> Icons.AutoMirrored.Rounded.Send
-                                    else -> Icons.Rounded.Mic
-                                },
-                                contentDescription = if (textInput.isNotBlank() || recordingState == RecordingState.LOCKED || recordingState == RecordingState.PAUSED) "Envoyer" else "Enregistrer audio",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-                }
-            }
+                },
+                onSendVoiceNote = { file, duration ->
+                    repository.sendVoiceNote(file.absolutePath, duration)
+                    Toast.makeText(context, "Vocal en cours d'envoi... 🎙️", Toast.LENGTH_SHORT).show()
+                },
+                onRequestRecordPermission = {
+                    recordAudioLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                },
+                hasRecordPermission = { hasRecordAudioPermission() },
+                onAttachmentClick = { showAttachmentSheet = true },
+                onCameraClick = {
+                    inAppCameraMode = CameraCaptureMode.PHOTO
+                    showInAppCamera = true
+                },
+                onEmojiClick = { showEmojiBar = !showEmojiBar },
+                showEmojiBar = showEmojiBar
+            )
 
             // Full Premium Emoji Picker Panel
             AnimatedVisibility(visible = showEmojiBar) {

@@ -161,7 +161,27 @@ class SupabaseService(
     }
     
     fun setCredentials(url: String, key: String) {
-        customUrl = url
+        Log.d("SupabaseService", "DEBUG: setCredentials rawUrl: $url")
+        // Clean URL: remove potential trailing 'https', trailing slash, or even 'https://' if provided incorrectly
+        var cleanedUrl = url.trim()
+        
+        // Remove 'https://' from the start to prevent double protocols
+        if (cleanedUrl.startsWith("https://")) {
+            cleanedUrl = cleanedUrl.substring(8)
+        } else if (cleanedUrl.startsWith("http://")) {
+            cleanedUrl = cleanedUrl.substring(7)
+        }
+        
+        // Remove trailing slash
+        if (cleanedUrl.endsWith("/")) {
+            cleanedUrl = cleanedUrl.substring(0, cleanedUrl.length - 1)
+        }
+
+        // Re-add safe 'https://'
+        cleanedUrl = "https://$cleanedUrl"
+
+        Log.d("SupabaseService", "DEBUG: setCredentials cleanedUrl: $cleanedUrl")
+        customUrl = cleanedUrl
         customKey = key
     }
 
@@ -638,6 +658,8 @@ class SupabaseService(
                 val channel = supabase.channel(channelId)
                 activePresenceChannel = channel
 
+                channel.subscribe(blockUntilSubscribed = false)
+
                 // Listen to presence updates
                 launch {
                     channel.presenceDataFlow<PresencePayload>().collect { list ->
@@ -662,7 +684,6 @@ class SupabaseService(
                     }
                 }
 
-                channel.subscribe(blockUntilSubscribed = false)
             } catch (e: Exception) {
                 Log.e("SupabasePresence", "[REALTIME] Presence subscription failed: ${e.message}")
             }
@@ -1193,6 +1214,7 @@ class SupabaseService(
             } else {
                 "$supabaseUrl$path"
             }
+            Log.d("SupabaseService", "DEBUG: executePatch path: $path, supabaseUrl: $supabaseUrl, fullUrl: $fullUrl")
             val url = URL(fullUrl)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST" // HTTP connection workaround for PATCH or use X-HTTP-Method-Override

@@ -1110,6 +1110,13 @@ class MikayalaRepository(private val context: Context) {
                 }
             } catch (e: Exception) {
                 Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] Exception in sendVoiceNote: ${e.message}", e)
+            } finally {
+                try {
+                    val temp = File(filePath)
+                    if (temp.exists() && (temp.parentFile?.absolutePath == context.cacheDir.absolutePath || temp.name.startsWith("voice_note_") || temp.name.startsWith("vocal_"))) {
+                        temp.delete()
+                    }
+                } catch (ignored: Exception) {}
             }
         }
     }
