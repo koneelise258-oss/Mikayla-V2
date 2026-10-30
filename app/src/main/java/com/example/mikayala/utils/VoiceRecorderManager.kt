@@ -8,6 +8,10 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import java.io.File
 
+@Deprecated(
+    message = "Utiliser VoiceNoteManager qui centralise la gestion des notes vocales, des états et des amplitudes",
+    replaceWith = ReplaceWith("VoiceNoteManager")
+)
 class VoiceRecorderManager(private val context: Context) {
     private var mediaRecorder: MediaRecorder? = null
     private var currentFilePath: String? = null

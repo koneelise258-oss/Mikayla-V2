@@ -2,6 +2,9 @@ package com.example.mikayala.utils
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaRecorder
 import android.os.Build
 import android.util.Log
@@ -23,7 +26,8 @@ enum class VoiceNoteState {
 /**
  * Manager gérant le cycle de vie complet de l'enregistrement de notes vocales
  * avec échantillonnage d'amplitudes en temps réel (Waveform WhatsApp),
- * contrôle des états (Hold, Locked, Paused) et gestion des fichiers temporaires.
+ * contrôle des états (Hold, Locked, Paused, Idle), gestion du focus audio
+ * et persistance des fichiers temporaires.
  */
 class VoiceNoteManager(private val context: Context) {
 
@@ -31,10 +35,15 @@ class VoiceNoteManager(private val context: Context) {
         private const val TAG = "VoiceNoteManager"
     }
 
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private var audioFocusRequest: AudioFocusRequest? = null
+
     private var mediaRecorder: MediaRecorder? = null
     private var currentFile: File? = null
-    private var startTimeMillis: Long = 0L
-    private var accumulatedDurationSeconds: Int = 0
+
+    // Gestion précise du temps de capture (en millisecondes)
+    private var currentSessionStartTimeMs: Long = 0L
+    private var accumulatedDurationMs: Long = 0L
 
     private val _recordingState = MutableStateFlow(VoiceNoteState.IDLE)
     val recordingState: StateFlow<VoiceNoteState> = _recordingState.asStateFlow()
@@ -56,6 +65,65 @@ class VoiceNoteManager(private val context: Context) {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    private fun requestAudioFocus(): Boolean {
+        return try {
+            if (audioManager == null) return true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val playbackAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                    .setAudioAttributes(playbackAttributes)
+                    .setOnAudioFocusChangeListener { focusChange ->
+                        when (focusChange) {
+                            AudioManager.AUDIOFOCUS_LOSS,
+                            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                                Log.w(TAG, "Audio focus lost during recording ($focusChange)")
+                                if (_recordingState.value == VoiceNoteState.RECORDING ||
+                                    _recordingState.value == VoiceNoteState.LOCKED
+                                ) {
+                                    pauseRecording()
+                                }
+                            }
+                        }
+                    }
+                    .build()
+                audioFocusRequest = request
+                audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.requestAudioFocus(
+                    { focusChange ->
+                        if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+                            pauseRecording()
+                        }
+                    },
+                    AudioManager.STREAM_VOICE_CALL,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to request audio focus: ${e.message}")
+            true
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager?.abandonAudioFocus(null)
+            }
+            audioFocusRequest = null
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to abandon audio focus: ${e.message}")
+        }
+    }
+
+    @Synchronized
     fun startRecording(): Boolean {
         if (!hasRecordPermission()) {
             Log.e(TAG, "RECORD_AUDIO permission not granted")
@@ -63,6 +131,7 @@ class VoiceNoteManager(private val context: Context) {
         }
 
         cleanup()
+        requestAudioFocus()
 
         val tempFile = File(context.cacheDir, "voice_note_${System.currentTimeMillis()}.m4a")
         if (tempFile.exists()) {
@@ -86,13 +155,19 @@ class VoiceNoteManager(private val context: Context) {
                 setAudioEncodingBitRate(128000)
                 setAudioSamplingRate(44100)
                 setOutputFile(tempFile.absolutePath)
+
+                setOnErrorListener { _, what, extra ->
+                    Log.e(TAG, "MediaRecorder error: what=$what, extra=$extra")
+                    cancelRecording()
+                }
+
                 prepare()
                 start()
             }
 
             mediaRecorder = recorder
-            startTimeMillis = System.currentTimeMillis()
-            accumulatedDurationSeconds = 0
+            currentSessionStartTimeMs = System.currentTimeMillis()
+            accumulatedDurationMs = 0L
             _durationSeconds.value = 0
             _liveAmplitudes.value = List(18) { 0.12f }
             _recordingState.value = VoiceNoteState.RECORDING
@@ -110,6 +185,7 @@ class VoiceNoteManager(private val context: Context) {
             _recordingState.value = VoiceNoteState.IDLE
             currentFile?.delete()
             currentFile = null
+            abandonAudioFocus()
             false
         }
     }
@@ -118,8 +194,9 @@ class VoiceNoteManager(private val context: Context) {
         pollingJob?.cancel()
         pollingJob = coroutineScope.launch {
             while (isActive && (_recordingState.value == VoiceNoteState.RECORDING || _recordingState.value == VoiceNoteState.LOCKED)) {
-                val elapsedSec = ((System.currentTimeMillis() - startTimeMillis) / 1000).toInt() + accumulatedDurationSeconds
-                _durationSeconds.value = elapsedSec
+                val now = System.currentTimeMillis()
+                val currentTotalMs = accumulatedDurationMs + (now - currentSessionStartTimeMs)
+                _durationSeconds.value = (currentTotalMs / 1000).toInt()
 
                 val rawAmp = try {
                     mediaRecorder?.maxAmplitude ?: 0
@@ -140,6 +217,7 @@ class VoiceNoteManager(private val context: Context) {
         }
     }
 
+    @Synchronized
     fun lockRecording() {
         if (_recordingState.value == VoiceNoteState.RECORDING) {
             _recordingState.value = VoiceNoteState.LOCKED
@@ -147,16 +225,19 @@ class VoiceNoteManager(private val context: Context) {
         }
     }
 
+    @Synchronized
     fun pauseRecording(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
             (_recordingState.value == VoiceNoteState.RECORDING || _recordingState.value == VoiceNoteState.LOCKED)
         ) {
             return try {
                 mediaRecorder?.pause()
-                accumulatedDurationSeconds += ((System.currentTimeMillis() - startTimeMillis) / 1000).toInt()
+                val now = System.currentTimeMillis()
+                accumulatedDurationMs += (now - currentSessionStartTimeMs)
                 pollingJob?.cancel()
                 _recordingState.value = VoiceNoteState.PAUSED
-                Log.d(TAG, "Voice recording paused at $accumulatedDurationSeconds s")
+                _durationSeconds.value = (accumulatedDurationMs / 1000).toInt()
+                Log.d(TAG, "Voice recording paused at ${_durationSeconds.value} s")
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "pauseRecording failed: ${e.message}", e)
@@ -166,11 +247,12 @@ class VoiceNoteManager(private val context: Context) {
         return false
     }
 
+    @Synchronized
     fun resumeRecording(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && _recordingState.value == VoiceNoteState.PAUSED) {
             return try {
                 mediaRecorder?.resume()
-                startTimeMillis = System.currentTimeMillis()
+                currentSessionStartTimeMs = System.currentTimeMillis()
                 _recordingState.value = VoiceNoteState.LOCKED
                 startPolling()
                 Log.d(TAG, "Voice recording resumed")
@@ -183,18 +265,21 @@ class VoiceNoteManager(private val context: Context) {
         return false
     }
 
+    @Synchronized
     fun stopAndGetResult(): Pair<File?, Int> {
         val state = _recordingState.value
         if (state == VoiceNoteState.IDLE) return Pair(null, 0)
 
         pollingJob?.cancel()
         val file = currentFile
-        val totalDuration = if (state == VoiceNoteState.PAUSED) {
-            accumulatedDurationSeconds.coerceAtLeast(1)
+
+        val now = System.currentTimeMillis()
+        val totalMs = if (state == VoiceNoteState.PAUSED) {
+            accumulatedDurationMs
         } else {
-            val elapsed = ((System.currentTimeMillis() - startTimeMillis) / 1000).toInt() + accumulatedDurationSeconds
-            elapsed.coerceAtLeast(1)
+            accumulatedDurationMs + (now - currentSessionStartTimeMs)
         }
+        val totalDuration = ((totalMs + 500) / 1000).toInt().coerceAtLeast(1)
 
         return try {
             mediaRecorder?.apply {
@@ -209,6 +294,7 @@ class VoiceNoteManager(private val context: Context) {
             _recordingState.value = VoiceNoteState.IDLE
             _durationSeconds.value = 0
             _liveAmplitudes.value = emptyList()
+            abandonAudioFocus()
 
             if (file != null && file.exists() && file.length() > 0) {
                 Log.d(TAG, "Voice recording finished successfully: ${file.absolutePath}, duration=$totalDuration s, size=${file.length()} bytes")
@@ -227,12 +313,14 @@ class VoiceNoteManager(private val context: Context) {
         }
     }
 
+    @Synchronized
     fun cancelRecording() {
         cleanup()
     }
 
     fun getCurrentFilePath(): String? = currentFile?.absolutePath
 
+    @Synchronized
     private fun cleanup() {
         pollingJob?.cancel()
         pollingJob = null
@@ -251,6 +339,7 @@ class VoiceNoteManager(private val context: Context) {
             if (it.exists()) it.delete()
         }
         currentFile = null
+        abandonAudioFocus()
     }
 
     fun release() {

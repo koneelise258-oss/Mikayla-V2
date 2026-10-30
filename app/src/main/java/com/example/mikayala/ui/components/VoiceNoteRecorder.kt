@@ -100,6 +100,11 @@ fun VoiceNoteRecorder(
         label = "pulse_alpha"
     )
 
+    val currentOnSendVoiceNote by rememberUpdatedState(onSendVoiceNote)
+    val currentOnSendText by rememberUpdatedState(onSendText)
+    val currentHasRecordPermission by rememberUpdatedState(hasRecordPermission)
+    val currentOnRequestRecordPermission by rememberUpdatedState(onRequestRecordPermission)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -434,18 +439,44 @@ fun VoiceNoteRecorder(
                 shadowElevation = 6.dp,
                 modifier = Modifier
                     .size(46.dp)
-                    // Si pas de texte et pas verrouillé -> Gestion gestuelle WhatsApp (Hold & Drag)
+                    // Gestion gestuelle WhatsApp (Hold & Drag) quand il n'y a pas de texte tapé
                     .then(
-                        if (textInput.isBlank() && recordingState == VoiceNoteState.IDLE) {
+                        if (textInput.isBlank()) {
                             Modifier.pointerInput(Unit) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown(requireUnconsumed = false)
+                                    val state = manager.recordingState.value
 
-                                    if (!hasRecordPermission()) {
-                                        onRequestRecordPermission()
+                                    // 1. Si en mode verrouillé ou en pause : le bouton rond est le bouton Envoyer (tap simple)
+                                    if (state == VoiceNoteState.LOCKED || state == VoiceNoteState.PAUSED) {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                            if (!change.pressed) {
+                                                val (file, secs) = manager.stopAndGetResult()
+                                                if (file != null && file.length() > 0) {
+                                                    currentOnSendVoiceNote(file, secs)
+                                                } else {
+                                                    Toast.makeText(context, "Erreur d'enregistrement", Toast.LENGTH_SHORT).show()
+                                                }
+                                                break
+                                            }
+                                        }
                                         return@awaitEachGesture
                                     }
 
+                                    // Si déjà en cours d'enregistrement (pour éviter double démarrage)
+                                    if (state != VoiceNoteState.IDLE) {
+                                        return@awaitEachGesture
+                                    }
+
+                                    // 2. Vérification de la permission micro
+                                    if (!currentHasRecordPermission()) {
+                                        currentOnRequestRecordPermission()
+                                        return@awaitEachGesture
+                                    }
+
+                                    // 3. Démarrage immédiat de l'enregistrement
                                     val downTime = System.currentTimeMillis()
                                     val started = manager.startRecording()
                                     if (!started) {
@@ -459,52 +490,58 @@ fun VoiceNoteRecorder(
                                     var isCancelled = false
                                     var isLocked = false
 
-                                    do {
+                                    // 4. Boucle de suivi continu du doigt
+                                    while (true) {
                                         val event = awaitPointerEvent()
-                                        val change = event.changes.firstOrNull() ?: break
-                                        if (change.pressed) {
-                                            val dx = change.position.x - down.position.x
-                                            val dy = change.position.y - down.position.y
-
-                                            dragOffsetX = dx.coerceAtMost(0f)
-                                            dragOffsetY = dy.coerceAtMost(0f)
-
-                                            // 1. Glisser à GAUCHE -> Annuler
-                                            if (dx < -cancelThresholdPx && manager.recordingState.value == VoiceNoteState.RECORDING) {
-                                                manager.cancelRecording()
-                                                isCancelled = true
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
-                                                break
-                                            }
-
-                                            // 2. Glisser en HAUT -> Verrouiller
-                                            if (dy < -lockThresholdPx && manager.recordingState.value == VoiceNoteState.RECORDING) {
-                                                manager.lockRecording()
-                                                isLocked = true
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            }
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) {
+                                            break
                                         }
-                                    } while (event.changes.any { it.pressed })
+                                        change.consume()
+
+                                        val dx = change.position.x - down.position.x
+                                        val dy = change.position.y - down.position.y
+
+                                        dragOffsetX = dx.coerceAtMost(0f)
+                                        dragOffsetY = dy.coerceAtMost(0f)
+
+                                        // A. Glisser à GAUCHE -> Annuler
+                                        if (dx < -cancelThresholdPx && !isLocked && !isCancelled) {
+                                            isCancelled = true
+                                            manager.cancelRecording()
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
+                                            break
+                                        }
+
+                                        // B. Glisser en HAUT -> Verrouiller mains libres
+                                        if (dy < -lockThresholdPx && !isLocked && !isCancelled) {
+                                            isLocked = true
+                                            manager.lockRecording()
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            break
+                                        }
+                                    }
 
                                     dragOffsetX = 0f
                                     dragOffsetY = 0f
 
                                     if (isCancelled) {
-                                        // Annulé par le swipe gauche
+                                        // Annulé par le swipe à gauche
                                     } else if (isLocked || manager.recordingState.value == VoiceNoteState.LOCKED) {
-                                        // Reste en mode mains libres verrouillé
+                                        // Mode verrouillé actif : l'utilisateur relâche son doigt en toute sécurité
                                     } else {
-                                        // Relâcher le doigt -> Envoi automatique si durée suffisante
+                                        // 5. Relâchement normal : envoi automatique si durée suffisante
                                         val durationMs = System.currentTimeMillis() - downTime
                                         if (durationMs >= 800) {
                                             val (file, secs) = manager.stopAndGetResult()
                                             if (file != null && file.length() > 0) {
-                                                onSendVoiceNote(file, secs)
+                                                currentOnSendVoiceNote(file, secs)
                                             } else {
                                                 Toast.makeText(context, "Erreur d'enregistrement", Toast.LENGTH_SHORT).show()
                                             }
                                         } else {
+                                            // Appui accidentel trop court (< 800ms)
                                             manager.cancelRecording()
                                             Toast.makeText(context, "Maintenez le micro pour enregistrer 🎙️", Toast.LENGTH_SHORT).show()
                                         }
@@ -528,17 +565,10 @@ fun VoiceNoteRecorder(
                             }
                         )
                         .clickable(
-                            enabled = textInput.isNotBlank() || recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED
+                            enabled = textInput.isNotBlank()
                         ) {
-                            if (recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED) {
-                                val (file, secs) = manager.stopAndGetResult()
-                                if (file != null && file.length() > 0) {
-                                    onSendVoiceNote(file, secs)
-                                } else {
-                                    Toast.makeText(context, "Erreur d'enregistrement", Toast.LENGTH_SHORT).show()
-                                }
-                            } else if (textInput.isNotBlank()) {
-                                onSendText()
+                            if (textInput.isNotBlank()) {
+                                currentOnSendText()
                             }
                         },
                     contentAlignment = Alignment.Center

@@ -1042,6 +1042,7 @@ class MikayalaRepository(private val context: Context) {
         Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] RECORDING FINISHED path=$filePath duration=$durationSeconds myUserId=$myUserId")
 
         repositoryScope.launch {
+            var dedicatedFile: File? = null
             try {
                 val file = File(filePath)
                 if (!file.exists() || file.length() == 0L) {
@@ -1049,19 +1050,18 @@ class MikayalaRepository(private val context: Context) {
                     return@launch
                 }
 
-                // Save copy to dedicated public Mikayala folder (Style WhatsApp com.example.mikayala)
-                val dedicatedFile = com.example.mikayala.util.MikayalaMediaStorage.saveVoiceNoteToDedicatedFolder(context, file)
+                // 1. Sauvegarde une copie locale sécurisée dans le stockage dédié Mikayala
+                dedicatedFile = com.example.mikayala.util.MikayalaMediaStorage.saveVoiceNoteToDedicatedFolder(context, file)
                 val playableLocalPath = dedicatedFile?.absolutePath ?: file.absolutePath
 
                 val fileSize = file.length()
                 val bytes = file.readBytes()
                 val messageId = UUID.randomUUID().toString()
-                val storagePath = "$coupleId/audio/$messageId.mp4"
+                val storagePath = "$coupleId/audio/$messageId.m4a"
                 val hasNetwork = isNetworkAvailable()
                 val hasP2P = isP2PConnected()
 
-                val initialStatus = if (!hasNetwork && !hasP2P) "pending" else "sent"
-
+                // Statut initial honnête : TOUJOURS "pending" tant que la confirmation serveur ou P2P n'est pas acquise
                 val pendingMsg = MessageEntity(
                     id = messageId,
                     coupleId = coupleId,
@@ -1071,22 +1071,26 @@ class MikayalaRepository(private val context: Context) {
                     type = "audio",
                     mediaUrl = playableLocalPath,
                     storagePath = storagePath,
-                    duration = durationSeconds,
+                    duration = durationSeconds.coerceAtLeast(1),
                     createdAt = System.currentTimeMillis(),
-                    status = initialStatus
+                    status = "pending"
                 )
                 _messages.value = _messages.value + pendingMsg
                 saveLocalMessagesCache()
 
-                // Send over P2P socket if P2P is connected
+                // 2. Envoi via socket P2P local si connecté
                 if (hasP2P) {
                     val sizeFormatted = String.format("%.1f Mo", fileSize / (1024f * 1024f)).replace(',', '.')
-                    com.example.mikayala.util.P2PSocketManager.sendFile(context, "Vocal_${messageId.take(6)}.mp4", sizeFormatted, isAudio = true)
+                    com.example.mikayala.util.P2PSocketManager.sendFile(context, "Vocal_${messageId.take(6)}.m4a", sizeFormatted, isAudio = true)
+                    _messages.value = _messages.value.map {
+                        if (it.id == messageId && it.status == "pending") it.copy(status = "sent") else it
+                    }
+                    saveLocalMessagesCache()
                 }
 
+                // 3. Envoi via Supabase si réseau disponible
                 if (hasNetwork) {
-                    Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] AUTH UID=$myUserId COUPLE ID=$coupleId MESSAGE ID=$messageId STORAGE PATH=$storagePath FILE SIZE=$fileSize UPLOAD START")
-
+                    Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD START storagePath=$storagePath size=$fileSize bytes")
                     val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "audio/mp4")
                     val uploadSuccess = uploadedPath != null
                     Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] UPLOAD RESULT=$uploadSuccess storagePath=$storagePath")
@@ -1097,23 +1101,37 @@ class MikayalaRepository(private val context: Context) {
                             mediaUrlCache[storagePath] = signedUrl
                         }
                         val finalMediaUrl = signedUrl ?: playableLocalPath
-                        val updatedPending = pendingMsg.copy(mediaUrl = finalMediaUrl, storagePath = storagePath)
+                        val msgToPost = pendingMsg.copy(
+                            status = "sent",
+                            mediaUrl = finalMediaUrl,
+                            storagePath = storagePath
+                        )
 
-                        val insertSuccess = supabaseService.postMessageEntity(updatedPending, storagePath = storagePath)
+                        val insertSuccess = supabaseService.postMessageEntity(msgToPost, storagePath = storagePath)
                         if (insertSuccess) {
                             _messages.value = _messages.value.map {
                                 if (it.id == messageId) it.copy(status = "sent", mediaUrl = finalMediaUrl, storagePath = storagePath) else it
                             }
+                            Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] Voice note $messageId successfully sent and confirmed!")
+                        } else {
+                            Log.w("MikayalaRepository", "[MIKAYALA_AUDIO] Message insert pending for $messageId - will retry on reconnect")
                         }
+                    } else {
+                        Log.w("MikayalaRepository", "[MIKAYALA_AUDIO] Media upload failed for $messageId - status remains pending")
                     }
                     saveLocalMessagesCache()
                 }
             } catch (e: Exception) {
                 Log.e("MikayalaRepository", "[MIKAYALA_AUDIO] Exception in sendVoiceNote: ${e.message}", e)
             } finally {
+                // Nettoyage sécurisé : ne supprimer que le fichier cache temporaire initial, jamais la copie dédiée locale
                 try {
                     val temp = File(filePath)
-                    if (temp.exists() && (temp.parentFile?.absolutePath == context.cacheDir.absolutePath || temp.name.startsWith("voice_note_") || temp.name.startsWith("vocal_"))) {
+                    if (temp.exists() &&
+                        temp.absolutePath != dedicatedFile?.absolutePath &&
+                        (temp.parentFile?.absolutePath == context.cacheDir.absolutePath ||
+                         temp.name.startsWith("voice_note_") || temp.name.startsWith("vocal_"))
+                    ) {
                         temp.delete()
                     }
                 } catch (ignored: Exception) {}
