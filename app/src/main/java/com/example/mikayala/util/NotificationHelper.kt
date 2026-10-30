@@ -63,17 +63,37 @@ object NotificationHelper {
         }
     }
 
-    // --- 1. APPLIQUER LA NOTIFICATION D'APPEL ENTRANT (Style WhatsApp) ---
+    // --- 1. NOTIFICATION D'APPEL ENTRANT (Style WhatsApp avec Décrocher / Refuser) ---
     fun showIncomingCallNotification(context: Context, callerName: String, isVideo: Boolean) {
-        val intent = Intent(context, MainActivity::class.java).apply {
+        val fullScreenIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("OPEN_CALL", true)
             putExtra("CALLER_NAME", callerName)
             putExtra("IS_VIDEO", isVideo)
         }
 
-        val pendingIntent = PendingIntent.getActivity(
-            context, 0, intent,
+        val fullScreenPendingIntent = PendingIntent.getActivity(
+            context, 0, fullScreenIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Action Décrocher 💚
+        val answerIntent = Intent(context, com.example.mikayala.services.CallActionReceiver::class.java).apply {
+            action = com.example.mikayala.services.CallActionReceiver.ACTION_ANSWER_CALL
+            putExtra(com.example.mikayala.services.CallActionReceiver.EXTRA_CALLER_NAME, callerName)
+            putExtra(com.example.mikayala.services.CallActionReceiver.EXTRA_IS_VIDEO, isVideo)
+        }
+        val answerPendingIntent = PendingIntent.getBroadcast(
+            context, 1, answerIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Action Refuser ❌
+        val declineIntent = Intent(context, com.example.mikayala.services.CallActionReceiver::class.java).apply {
+            action = com.example.mikayala.services.CallActionReceiver.ACTION_DECLINE_CALL
+        }
+        val declinePendingIntent = PendingIntent.getBroadcast(
+            context, 2, declineIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -85,9 +105,10 @@ object NotificationHelper {
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setOngoing(true)
             .setAutoCancel(true)
-            .setFullScreenIntent(pendingIntent, true)
-            .setContentIntent(pendingIntent)
-            .addAction(R.mipmap.ic_launcher, "Décrocher 💚", pendingIntent)
+            .setFullScreenIntent(fullScreenPendingIntent, true)
+            .setContentIntent(fullScreenPendingIntent)
+            .addAction(R.mipmap.ic_launcher, "Refuser ❌", declinePendingIntent)
+            .addAction(R.mipmap.ic_launcher, "Décrocher 💚", answerPendingIntent)
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIF_ID_CALL, builder.build())
@@ -96,6 +117,29 @@ object NotificationHelper {
     fun dismissIncomingCallNotification(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.cancel(NOTIF_ID_CALL)
+    }
+
+    fun showMissedCallNotification(context: Context, callerName: String, isVideo: Boolean) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("OPEN_CALL", true)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 3, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_CALLS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(if (isVideo) "Appel vidéo manqué" else "Appel vocal manqué")
+            .setContentText("Appel manqué de $callerName")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIF_ID_CALL + 1, builder.build())
     }
 
     // --- 2. ÉPINGLAGE DU LOVE TIME DANS LA BARRE DE NOTIFICATION ---

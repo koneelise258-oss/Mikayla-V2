@@ -29,27 +29,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mikayala.theme.*
 import kotlinx.coroutines.delay
 import java.io.File
-import kotlin.math.abs
-import kotlin.math.sin
 
 /**
  * Lecteur audio de note vocale avec waveform interactive :
- * - Maintien du MediaPlayer pendant les pauses pour reprise exacte
- * - Synchronisation rigoureuse sur MediaPlayer.currentPosition (sans simulation)
- * - Navigation interactive par tap/seek sur les barres d'onde
- * - Contrôle de vitesse réel (1x, 1.5x, 2x)
- * - Silhouette acoustique déterministe basée sur l'identifiant audio
+ * - Empêche les créations multiples de MediaPlayer lors d'appuis rapides
+ * - Coordination globale : une seule lecture active à la fois dans l'application
+ * - Maintien du MediaPlayer lors de la pause pour reprise exacte
+ * - Libération rigoureuse des ressources (onDispose, erreurs, changement d'URL)
+ * - Waveform utilisant les amplitudes réelles si disponibles, ou silhouette neutre élégante
+ * - Vitesse de lecture dynamique (1x, 1.5x, 2x)
  */
 @Composable
 fun VoicePlayerWaveform(
     durationSeconds: Int,
     isSender: Boolean,
     audioUrl: String? = null,
+    amplitudes: List<Float>? = null,
     onRetryFetch: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -63,28 +64,74 @@ fun VoicePlayerWaveform(
     var actualDurationMs by remember(durationSeconds) { mutableIntStateOf((durationSeconds.coerceAtLeast(1)) * 1000) }
     var playbackSpeed by remember { mutableFloatStateOf(1f) }
 
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    // Suivi direct de l'instance active du MediaPlayer pour libération sans fuite
+    var activeMediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     val speeds = listOf(1.0f, 1.5f, 2.0f)
 
-    // Libération du MediaPlayer uniquement quand l'URL change ou que le composant quitte l'écran
+    // Coordination globale : si un autre composant démarre la lecture, mettre en pause celui-ci
+    val currentlyPlayingGlobal by VoicePlaybackCoordinator.currentlyPlayingUrl.collectAsState()
+    LaunchedEffect(currentlyPlayingGlobal) {
+        val activeGlobal = currentlyPlayingGlobal
+        if (activeGlobal != null && activeGlobal != audioUrl && isPlaying) {
+            try {
+                activeMediaPlayer?.pause()
+                currentPositionMs = activeMediaPlayer?.currentPosition ?: currentPositionMs
+            } catch (ignored: Exception) {}
+            isPlaying = false
+        }
+    }
+
+    // Libération stricte et déterministe lors du changement d'URL ou démontage du composant
     DisposableEffect(audioUrl) {
         onDispose {
-            try {
-                mediaPlayer?.stop()
-            } catch (ignored: Exception) {}
-            try {
-                mediaPlayer?.release()
-            } catch (ignored: Exception) {}
-            mediaPlayer = null
+            val playerToRelease = activeMediaPlayer
+            activeMediaPlayer = null
             isPrepared = false
             isPlaying = false
             isLoading = false
             currentPositionMs = 0
+
+            audioUrl?.let { VoicePlaybackCoordinator.notifyStopped(it) }
+
+            if (playerToRelease != null) {
+                try {
+                    if (playerToRelease.isPlaying) {
+                        playerToRelease.stop()
+                    }
+                } catch (ignored: Exception) {}
+                try {
+                    playerToRelease.reset()
+                    playerToRelease.release()
+                } catch (ignored: Exception) {}
+            }
         }
     }
 
-    // Fonction interne pour préparer et démarrer le lecteur
+    fun pausePlayback() {
+        val player = activeMediaPlayer
+        try {
+            player?.pause()
+            currentPositionMs = player?.currentPosition ?: currentPositionMs
+        } catch (ignored: Exception) {}
+        isPlaying = false
+        audioUrl?.let { VoicePlaybackCoordinator.notifyStopped(it) }
+    }
+
+    fun seekToPosition(targetMs: Int) {
+        val clamped = targetMs.coerceIn(0, actualDurationMs)
+        currentPositionMs = clamped
+        val player = activeMediaPlayer
+        if (player != null && isPrepared) {
+            try {
+                player.seekTo(clamped)
+            } catch (ignored: Exception) {}
+        }
+    }
+
     fun startOrResumePlayback() {
+        // Empêcher les doubles créations lors des clics rapides
+        if (isLoading) return
+
         val urlStr = audioUrl?.trim()
         if (urlStr.isNullOrEmpty()) {
             hasError = true
@@ -92,8 +139,11 @@ fun VoicePlayerWaveform(
             return
         }
 
-        // Cas 1 : Lecteur déjà préparé -> Reprendre là où on s'était arrêté
-        val existing = mediaPlayer
+        // Informer le coordinateur global pour stopper tout autre lecteur
+        VoicePlaybackCoordinator.requestPlay(urlStr)
+
+        // Cas 1 : Lecteur déjà préparé -> Reprendre
+        val existing = activeMediaPlayer
         if (existing != null && isPrepared) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -103,20 +153,31 @@ fun VoicePlayerWaveform(
                         Log.w("VoicePlayer", "Failed to update speed: ${e.message}")
                     }
                 }
+                if (currentPositionMs > 0 && currentPositionMs < actualDurationMs) {
+                    existing.seekTo(currentPositionMs)
+                }
                 existing.start()
                 isPlaying = true
                 hasError = false
             } catch (e: Exception) {
                 Log.e("VoicePlayer", "Resume error: ${e.message}")
                 hasError = true
+                VoicePlaybackCoordinator.notifyStopped(urlStr)
             }
             return
         }
 
-        // Cas 2 : Initialisation d'un nouveau MediaPlayer
+        // Cas 2 : Initialisation d'une nouvelle instance
         try {
             isLoading = true
             hasError = false
+
+            // Nettoyer toute instance résiduelle avant de créer la nouvelle
+            existing?.let { old ->
+                try { old.reset(); old.release() } catch (ignored: Exception) {}
+            }
+            activeMediaPlayer = null
+
             val player = MediaPlayer()
 
             if (urlStr.startsWith("http://") || urlStr.startsWith("https://") ||
@@ -133,6 +194,11 @@ fun VoicePlayerWaveform(
             }
 
             player.setOnPreparedListener { mp ->
+                if (activeMediaPlayer !== mp) {
+                    // Une autre instance a été initialisée entre-temps
+                    try { mp.release() } catch (ignored: Exception) {}
+                    return@setOnPreparedListener
+                }
                 isPrepared = true
                 isLoading = false
                 val dur = mp.duration
@@ -159,53 +225,46 @@ fun VoicePlayerWaveform(
                 try {
                     it.seekTo(0)
                 } catch (ignored: Exception) {}
+                VoicePlaybackCoordinator.notifyStopped(urlStr)
             }
 
-            player.setOnErrorListener { _, what, extra ->
+            player.setOnErrorListener { mp, what, extra ->
                 Log.e("VoicePlayer", "MediaPlayer playback error: what=$what, extra=$extra")
                 isPlaying = false
                 isLoading = false
                 isPrepared = false
                 hasError = true
+                try {
+                    mp.reset()
+                    mp.release()
+                } catch (ignored: Exception) {}
+                if (activeMediaPlayer === mp) {
+                    activeMediaPlayer = null
+                }
+                VoicePlaybackCoordinator.notifyStopped(urlStr)
                 onRetryFetch?.invoke()
                 true
             }
 
+            activeMediaPlayer = player
             player.prepareAsync()
-            mediaPlayer = player
         } catch (e: Exception) {
             Log.e("VoicePlayer", "Init MediaPlayer failed for $urlStr: ${e.message}", e)
             isLoading = false
             isPlaying = false
             hasError = true
+            activeMediaPlayer?.let { try { it.release() } catch (ignored: Exception) {} }
+            activeMediaPlayer = null
+            VoicePlaybackCoordinator.notifyStopped(urlStr)
             onRetryFetch?.invoke()
         }
     }
 
-    fun pausePlayback() {
-        try {
-            mediaPlayer?.pause()
-            currentPositionMs = mediaPlayer?.currentPosition ?: currentPositionMs
-        } catch (ignored: Exception) {}
-        isPlaying = false
-    }
-
-    fun seekToPosition(targetMs: Int) {
-        val clamped = targetMs.coerceIn(0, actualDurationMs)
-        currentPositionMs = clamped
-        val player = mediaPlayer
-        if (player != null && isPrepared) {
-            try {
-                player.seekTo(clamped)
-            } catch (ignored: Exception) {}
-        }
-    }
-
-    // Suivi continu de la position réelle (uniquement quand la lecture est effective)
+    // Suivi continu de la position de lecture réelle
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
             while (isPlaying) {
-                val player = mediaPlayer
+                val player = activeMediaPlayer
                 if (player != null && isPrepared) {
                     try {
                         if (player.isPlaying) {
@@ -213,31 +272,35 @@ fun VoicePlayerWaveform(
                         }
                     } catch (ignored: Exception) {}
                 }
-                delay(80)
+                delay(60)
             }
         }
     }
 
-    // Profil acoustique déterministe pour une waveform stable et esthétique
+    // Construction de la waveform : réelles amplitudes si disponibles, sinon forme équilibrée propre
     val barCount = 28
-    val waveSilhouette = remember(audioUrl, durationSeconds) {
-        val seed = abs((audioUrl?.hashCode() ?: durationSeconds.hashCode()))
-        List(barCount) { i ->
-            val factor = sin(i * 0.42 + (seed % 10)) * 0.45 + sin(i * 0.85 + (seed % 7)) * 0.35 + 0.5
-            (6 + (factor.coerceIn(0.1, 1.0) * 16)).toInt().dp
+    val waveHeights: List<Dp> = remember(amplitudes, durationSeconds) {
+        if (!amplitudes.isNullOrEmpty()) {
+            val src = amplitudes
+            List(barCount) { i ->
+                val srcIdx = ((i.toFloat() / barCount.toFloat()) * src.size).toInt().coerceIn(0, src.size - 1)
+                val amp = src[srcIdx].coerceIn(0f, 1f)
+                (5 + (amp * 17)).toInt().dp
+            }
+        } else {
+            // Silhouette neutre et sobre style mémo vocal standard
+            val basePattern = listOf(
+                0.3f, 0.45f, 0.7f, 0.55f, 0.85f, 0.6f, 0.95f, 0.75f,
+                0.5f, 0.65f, 0.8f, 0.9f, 0.6f, 0.75f, 0.85f, 0.5f,
+                0.7f, 0.9f, 0.65f, 0.8f, 0.55f, 0.75f, 0.95f, 0.6f,
+                0.8f, 0.5f, 0.4f, 0.3f
+            )
+            List(barCount) { i ->
+                val factor = basePattern.getOrElse(i) { 0.5f }
+                (6 + (factor * 16)).toInt().dp
+            }
         }
     }
-
-    val infiniteTransition = rememberInfiniteTransition(label = "waveform_anim")
-    val pulsePhase by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "waveform_pulse"
-    )
 
     Row(
         modifier = modifier
@@ -278,7 +341,7 @@ fun VoicePlayerWaveform(
                 hasError -> {
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
-                        contentDescription = "Réessayer",
+                        contentDescription = "Réessayer la lecture",
                         tint = Color.White,
                         modifier = Modifier.size(20.dp)
                     )
@@ -286,7 +349,7 @@ fun VoicePlayerWaveform(
                 isPlaying -> {
                     Icon(
                         imageVector = Icons.Rounded.Pause,
-                        contentDescription = "Pause",
+                        contentDescription = "Mettre en pause",
                         tint = Color.White,
                         modifier = Modifier.size(22.dp)
                     )
@@ -294,7 +357,7 @@ fun VoicePlayerWaveform(
                 else -> {
                     Icon(
                         imageVector = Icons.Rounded.PlayArrow,
-                        contentDescription = "Lire",
+                        contentDescription = "Lire la note vocale",
                         tint = Color.White,
                         modifier = Modifier.size(22.dp)
                     )
@@ -328,13 +391,7 @@ fun VoicePlayerWaveform(
                 for (i in 0 until barCount) {
                     val barFraction = i.toFloat() / barCount.toFloat()
                     val isPast = barFraction <= progressFraction
-                    val baseHeight = waveSilhouette[i]
-
-                    val renderedHeight = if (isPlaying && isPast) {
-                        (baseHeight.value * pulsePhase).coerceIn(4f, 24f).dp
-                    } else {
-                        baseHeight
-                    }
+                    val renderedHeight = waveHeights[i]
 
                     Box(
                         modifier = Modifier
@@ -350,7 +407,7 @@ fun VoicePlayerWaveform(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Horodatage (écoulé / total) et Sélecteur de vitesse
+            // Horodatage (écoulé / total) et Sélecteur de vitesse WhatsApp
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -380,7 +437,7 @@ fun VoicePlayerWaveform(
                         val nextIdx = (speeds.indexOf(playbackSpeed) + 1) % speeds.size
                         val newSpeed = speeds[nextIdx]
                         playbackSpeed = newSpeed
-                        val player = mediaPlayer
+                        val player = activeMediaPlayer
                         if (player != null && isPrepared && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             try {
                                 player.playbackParams = player.playbackParams.setSpeed(newSpeed)

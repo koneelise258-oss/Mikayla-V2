@@ -20,7 +20,43 @@ import java.util.UUID
 class MikayalaRepository(private val context: Context) {
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    val supabaseService = SupabaseService()
+    val supabaseService = SupabaseService.getInstance()
+
+    fun syncPendingPushToken() {
+        val pending = com.example.mikayala.services.MyFirebaseMessagingService.getPendingToken(context)
+        if (!pending.isNullOrEmpty()) {
+            repositoryScope.launch {
+                val ok = supabaseService.upsertDevicePushToken(pending)
+                if (ok) {
+                    com.example.mikayala.services.MyFirebaseMessagingService.clearPendingToken(context)
+                }
+            }
+        }
+    }
+
+    private fun notifyPartnerAfterInsert(type: String, previewText: String, messageId: String = "") {
+        val couple = _coupleSpace.value
+        val (myUserId, partnerId) = resolveCoupleMembers()
+        if (couple.id.isNotBlank() && partnerId.isNotBlank() && myUserId != partnerId) {
+            val hidePreview = _userSettings.value.notificationPrivacyMode != "romantic"
+            val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
+            repositoryScope.launch {
+                supabaseService.sendFcmPush(
+                    coupleId = couple.id,
+                    recipientId = partnerId,
+                    type = type,
+                    title = "Mikayala",
+                    body = previewText,
+                    extraData = mapOf(
+                        "messageId" to messageId,
+                        "coupleId" to couple.id,
+                        "senderName" to myName
+                    ),
+                    hidePreview = hidePreview
+                )
+            }
+        }
+    }
 
     // --- StateFlows ---
     private val _coupleSpace = MutableStateFlow(CoupleSpaceEntity())
@@ -316,6 +352,7 @@ class MikayalaRepository(private val context: Context) {
             if (userId.isNotEmpty()) {
                 prefs.edit().putString("user_id", userId).apply()
                 _userSettings.value = _userSettings.value.copy(userId = userId)
+                syncPendingPushToken()
             }
         } else {
             Log.e("MikayalaAuth", "ensureAnonymousSession FAILED")
@@ -335,6 +372,7 @@ class MikayalaRepository(private val context: Context) {
                     prefs.edit().putString("user_email", email).apply()
                 }
                 _userSettings.value = _userSettings.value.copy(userId = uid)
+                syncPendingPushToken()
                 uid
             } else {
                 Log.d("MikayalaAuth", "[SESSION] Aucune session Supabase active trouvée en mémoire.")
@@ -1022,6 +1060,7 @@ class MikayalaRepository(private val context: Context) {
                     _messages.value = _messages.value.map {
                         if (it.id == messageUuid && it.status == "pending") it.copy(status = "sent") else it
                     }
+                    notifyPartnerAfterInsert("chat_message", pendingMsg.content, messageUuid)
                 } else {
                     Log.e("MikayalaRepository", "[MIKAYALA_MESSAGE] INSERT FAILED for ID $messageUuid - keeping status as pending for auto-sync on reconnect")
                 }
@@ -1078,14 +1117,10 @@ class MikayalaRepository(private val context: Context) {
                 _messages.value = _messages.value + pendingMsg
                 saveLocalMessagesCache()
 
-                // 2. Envoi via socket P2P local si connecté
+                // 2. Envoi via socket P2P local si connecté (la confirmation d'état reste pending jusqu'à confirmation d'insertion)
                 if (hasP2P) {
                     val sizeFormatted = String.format("%.1f Mo", fileSize / (1024f * 1024f)).replace(',', '.')
                     com.example.mikayala.util.P2PSocketManager.sendFile(context, "Vocal_${messageId.take(6)}.m4a", sizeFormatted, isAudio = true)
-                    _messages.value = _messages.value.map {
-                        if (it.id == messageId && it.status == "pending") it.copy(status = "sent") else it
-                    }
-                    saveLocalMessagesCache()
                 }
 
                 // 3. Envoi via Supabase si réseau disponible
@@ -1113,6 +1148,7 @@ class MikayalaRepository(private val context: Context) {
                                 if (it.id == messageId) it.copy(status = "sent", mediaUrl = finalMediaUrl, storagePath = storagePath) else it
                             }
                             Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] Voice note $messageId successfully sent and confirmed!")
+                            notifyPartnerAfterInsert("audio", "🎤 Note vocale reçue", messageId)
                         } else {
                             Log.w("MikayalaRepository", "[MIKAYALA_AUDIO] Message insert pending for $messageId - will retry on reconnect")
                         }
@@ -2733,5 +2769,17 @@ class MikayalaRepository(private val context: Context) {
             }
         }
         return null
+    }
+
+    suspend fun declineIncomingCall() {
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return
+        val activeCall = supabaseService.fetchActiveCall(couple.id, couple.pairingCode)
+        if (activeCall != null) {
+            val callId = activeCall.optString("id")
+            if (callId.isNotEmpty()) {
+                supabaseService.updateCallStatus(callId, "declined")
+            }
+        }
     }
 }

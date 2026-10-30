@@ -38,6 +38,16 @@ class SupabaseService(
     private var customUrl: String? = null,
     private var customKey: String? = null
 ) {
+    companion object {
+        @Volatile
+        private var instance: SupabaseService? = null
+
+        fun getInstance(customUrl: String? = null, customKey: String? = null): SupabaseService {
+            return instance ?: synchronized(this) {
+                instance ?: SupabaseService(customUrl, customKey).also { instance = it }
+            }
+        }
+    }
     val supabase by lazy {
         try {
             createSupabaseClient(
@@ -1540,4 +1550,75 @@ class SupabaseService(
         }
         return@withContext null
     }
+
+    // --- NATIVE ANDROID FCM PUSH TOKEN & DISPATCH ---
+
+    suspend fun upsertDevicePushToken(fcmToken: String, deviceLabel: String = "Android"): Boolean = withContext(Dispatchers.IO) {
+        val uid = getCurrentSessionUid()
+        if (uid.isNullOrEmpty() || fcmToken.isBlank()) {
+            Log.w("FCM_TOKEN", "upsertDevicePushToken ignored: session non authentifiée ou jeton vide")
+            return@withContext false
+        }
+        val maskedToken = if (fcmToken.length > 10) "${fcmToken.take(6)}...${fcmToken.takeLast(4)}" else "***"
+        Log.d("FCM_TOKEN", "Enregistrement sécurisé du jeton FCM pour UID=$uid ($maskedToken)")
+        try {
+            val body = JSONObject().apply {
+                put("user_id", uid)
+                put("fcm_token", fcmToken.trim())
+                put("platform", "android")
+                put("device_label", deviceLabel)
+                put("updated_at", "now()")
+                put("last_seen_at", "now()")
+            }
+            val path = "/rest/v1/device_push_tokens?on_conflict=fcm_token"
+            val res = executePost(path, body.toString())
+            res != null
+        } catch (e: Exception) {
+            Log.e("FCM_TOKEN", "upsertDevicePushToken error: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun deleteDevicePushToken(fcmToken: String): Boolean = withContext(Dispatchers.IO) {
+        if (fcmToken.isBlank()) return@withContext false
+        try {
+            executeDelete("/rest/v1/device_push_tokens?fcm_token=eq.${fcmToken.trim()}")
+        } catch (e: Exception) {
+            Log.e("FCM_TOKEN", "deleteDevicePushToken error: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun sendFcmPush(
+        coupleId: String,
+        recipientId: String,
+        type: String,
+        title: String,
+        body: String,
+        extraData: Map<String, String> = emptyMap(),
+        hidePreview: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || recipientId.isBlank() || coupleId.isBlank()) return@withContext false
+        try {
+            val payload = JSONObject().apply {
+                put("coupleId", coupleId)
+                put("recipientId", recipientId)
+                put("type", type)
+                put("title", title)
+                put("body", body)
+                put("hidePreview", hidePreview)
+                val dataObj = JSONObject()
+                for ((k, v) in extraData) {
+                    dataObj.put(k, v)
+                }
+                put("data", dataObj)
+            }
+            val res = executePost("/functions/v1/send-fcm", payload.toString())
+            res != null
+        } catch (e: Exception) {
+            Log.w("FCM_SEND", "sendFcmPush failed: ${e.message}")
+            false
+        }
+    }
 }
+
