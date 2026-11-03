@@ -1290,6 +1290,43 @@ class SupabaseService(
         }
     }
 
+    private fun executeDeleteWithRepresentation(path: String): Boolean {
+        return try {
+            val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
+                path
+            } else {
+                "$supabaseUrl$path"
+            }
+            val url = URL(fullUrl)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "DELETE"
+            conn.setRequestProperty("apikey", supabaseKey)
+            val token = getAuthToken()
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Prefer", "return=representation")
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
+
+            if (conn.responseCode in 200..299) {
+                val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                val sb = java.lang.StringBuilder()
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    sb.append(line)
+                }
+                reader.close()
+                val responseText = sb.toString().trim()
+                if (responseText.startsWith("[")) {
+                    val jsonArray = JSONArray(responseText)
+                    jsonArray.length() > 0
+                } else false
+            } else false
+        } catch (e: Exception) {
+            Log.e("SupabaseService", "executeDeleteWithRepresentation failed: ${e.message}")
+            false
+        }
+    }
+
     suspend fun signOut(token: String): Boolean = withContext(Dispatchers.IO) {
         try {
             supabase.auth.signOut()
@@ -1602,7 +1639,7 @@ class SupabaseService(
         val masked = if (fcmToken.length > 10) "${fcmToken.take(6)}...${fcmToken.takeLast(4)}" else "***"
         Log.d("FCM_TOKEN", "deleteDevicePushToken : suppression sécurisée pour UID=$uid ($masked)")
         try {
-            executeDelete("/rest/v1/device_push_tokens?fcm_token=eq.${fcmToken.trim()}&user_id=eq.$uid")
+            executeDeleteWithRepresentation("/rest/v1/device_push_tokens?fcm_token=eq.${fcmToken.trim()}&user_id=eq.$uid")
         } catch (e: Exception) {
             Log.e("FCM_TOKEN", "deleteDevicePushToken error: ${e.message}")
             false

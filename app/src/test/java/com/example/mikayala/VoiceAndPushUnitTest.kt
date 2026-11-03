@@ -319,6 +319,36 @@ class VoiceAndPushUnitTest {
     }
 
     @Test
+    fun testLogoutUnregistersBothCurrentAndLastSyncedToken_whenTheyDiffer() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.saveLastSyncedTokenForUser("uid_logout", "old_token_logout")
+        val fetcher = FakeFirebaseTokenFetcher("new_token_logout")
+        val api = FakeSupabasePushApi(currentUid = "uid_logout", deleteSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val res = engine.unregisterDeviceTokenOnLogout()
+        assertTrue(res)
+
+        assertTrue(api.deletedTokens.contains(Pair("uid_logout", "old_token_logout")))
+        assertTrue(api.deletedTokens.contains(Pair("uid_logout", "new_token_logout")))
+        assertNull(storage.getLastSyncedTokenForUser("uid_logout"))
+    }
+
+    @Test
+    fun testTokenRenewalFailure_addsOldTokenToPendingUnregistrations() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.saveLastSyncedTokenForUser("uid_renew", "old_token_renew")
+        val fetcher = FakeFirebaseTokenFetcher("new_token_renew")
+        val api = FakeSupabasePushApi(currentUid = "uid_renew", deleteSuccess = false, upsertSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        engine.syncPendingAndCurrentToken()
+
+        val pendingUnregs = storage.getPendingUnregistrations()
+        assertTrue(pendingUnregs.contains(Pair("old_token_renew", "uid_renew")))
+    }
+
+    @Test
     fun testVoiceNoteStateTransitions() {
         val states = VoiceNoteState.values().map { it.name }
         assertTrue(states.contains("IDLE"))
