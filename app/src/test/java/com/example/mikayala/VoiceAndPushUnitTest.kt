@@ -408,6 +408,15 @@ class VoiceAndPushUnitTest {
     }
 
     @Test
+    fun testAndroidCompatibility_isDuplicateNotification_usesIteratorWithoutRemoveIf() {
+        val msg1 = "compat_msg_101"
+        val msg2 = "compat_msg_102"
+        assertFalse(MyFirebaseMessagingService.isDuplicateNotification(msg1))
+        assertTrue(MyFirebaseMessagingService.isDuplicateNotification(msg1))
+        assertFalse(MyFirebaseMessagingService.isDuplicateNotification(msg2))
+    }
+
+    @Test
     fun testVoiceNoteStateTransitions() {
         val states = VoiceNoteState.values().map { it.name }
         assertTrue(states.contains("IDLE"))

@@ -34,7 +34,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         fun isDuplicateNotification(messageId: String?): Boolean {
             if (messageId.isNullOrBlank()) return false
             val now = System.currentTimeMillis()
-            processedMessageIds.entries.removeIf { now - it.value > 60_000 }
+            val iterator = processedMessageIds.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                if (now - entry.value > 60_000) {
+                    iterator.remove()
+                }
+            }
             val existingTime = processedMessageIds[messageId]
             if (existingTime != null && now - existingTime < 60_000) {
                 return true
