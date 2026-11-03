@@ -14,6 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -22,12 +23,33 @@ import java.util.TimeZone
 
 class FakeTokenStorage : TokenStorage {
     private var pending: String? = null
-    private var pendingUnregister: String? = null
+    private var pendingUnregisterToken: String? = null
+    private var pendingUnregisterUid: String? = null
+    private var lastSyncedToken: String? = null
+    private var lastSyncedUid: String? = null
 
     override fun getPendingToken(): String? = pending
     override fun savePendingToken(token: String?) { pending = token }
-    override fun getPendingUnregistrationToken(): String? = pendingUnregister
-    override fun savePendingUnregistrationToken(token: String?) { pendingUnregister = token }
+
+    override fun getPendingUnregistrationInfo(): Pair<String, String>? {
+        if (pendingUnregisterToken.isNullOrEmpty() || pendingUnregisterUid.isNullOrEmpty()) return null
+        return Pair(pendingUnregisterToken!!, pendingUnregisterUid!!)
+    }
+
+    override fun savePendingUnregistrationInfo(token: String?, ownerUid: String?) {
+        pendingUnregisterToken = token
+        pendingUnregisterUid = ownerUid
+    }
+
+    override fun getLastSyncedTokenInfo(): Pair<String, String>? {
+        if (lastSyncedToken.isNullOrEmpty() || lastSyncedUid.isNullOrEmpty()) return null
+        return Pair(lastSyncedToken!!, lastSyncedUid!!)
+    }
+
+    override fun saveLastSyncedTokenInfo(token: String?, uid: String?) {
+        lastSyncedToken = token
+        lastSyncedUid = uid
+    }
 }
 
 class FakeFirebaseTokenFetcher(var tokenToReturn: String? = null) : FirebaseTokenFetcher {
@@ -61,25 +83,25 @@ class FakeSupabasePushApi(
 
 class VoiceAndPushUnitTest {
 
+    @Before
+    fun setUp() {
+        FcmTokenSyncEngine.resetInstance()
+    }
+
     @Test
     fun testVoicePlaybackCoordinatorSinglePlayback() {
-        // État initial propre
         VoicePlaybackCoordinator.stopAll()
         assertNull(VoicePlaybackCoordinator.currentlyPlayingUrl.value)
 
-        // Début de lecture note 1
         VoicePlaybackCoordinator.requestPlay("https://supabase.co/audio1.m4a")
         assertEquals("https://supabase.co/audio1.m4a", VoicePlaybackCoordinator.currentlyPlayingUrl.value)
 
-        // Début de lecture note 2 -> le coordinateur bascule immédiatement sur note 2
         VoicePlaybackCoordinator.requestPlay("https://supabase.co/audio2.m4a")
         assertEquals("https://supabase.co/audio2.m4a", VoicePlaybackCoordinator.currentlyPlayingUrl.value)
 
-        // Notification d'arrêt obsolète de note 1 -> ne doit pas stopper note 2
         VoicePlaybackCoordinator.notifyStopped("https://supabase.co/audio1.m4a")
         assertEquals("https://supabase.co/audio2.m4a", VoicePlaybackCoordinator.currentlyPlayingUrl.value)
 
-        // Notification d'arrêt effective de note 2 -> libère la lecture
         VoicePlaybackCoordinator.notifyStopped("https://supabase.co/audio2.m4a")
         assertNull(VoicePlaybackCoordinator.currentlyPlayingUrl.value)
     }
@@ -163,112 +185,123 @@ class VoiceAndPushUnitTest {
     // --- TESTS DU CODE DE PRODUCTION FcmTokenSyncEngine ---
 
     @Test
-    fun testSyncNetworkFailureRetainsPendingToken() = runBlocking {
+    fun testSharedSingletonInstanceAcrossEntryPoints() {
         val storage = FakeTokenStorage()
-        val fetcher = FakeFirebaseTokenFetcher("token_network_fail_123")
-        val api = FakeSupabasePushApi(currentUid = "user_alice", upsertSuccess = false)
-        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+        val fetcher = FakeFirebaseTokenFetcher("token_singleton")
+        val api = FakeSupabasePushApi(currentUid = "user_singleton")
 
-        val result = engine.syncPendingAndCurrentToken()
+        val engine1 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+        val engine2 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
 
-        assertFalse(result)
-        assertEquals("token_network_fail_123", storage.getPendingToken())
+        // Les deux points d'entrée partagent EXACTEMENT la même instance Singleton
+        assertTrue(engine1 === engine2)
     }
 
     @Test
-    fun testSyncNoSessionRetainsPendingToken() = runBlocking {
+    fun testTwoSimultaneousCallsFromDifferentEntryPoints() = runBlocking {
         val storage = FakeTokenStorage()
-        val fetcher = FakeFirebaseTokenFetcher("token_no_session_456")
-        val api = FakeSupabasePushApi(currentUid = null)
-        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+        val fetcher = FakeFirebaseTokenFetcher("token_simultaneous")
+        val api = FakeSupabasePushApi(currentUid = "user_simultaneous")
 
-        val result = engine.syncPendingAndCurrentToken()
+        val engine1 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+        val engine2 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
 
-        assertFalse(result)
-        assertEquals("token_no_session_456", storage.getPendingToken())
-    }
-
-    @Test
-    fun testConcurrentSyncRequestsAreQueuedAndProcessed() = runBlocking {
-        val storage = FakeTokenStorage()
-        val fetcher = FakeFirebaseTokenFetcher("token_concurrent_789")
-        val api = FakeSupabasePushApi(currentUid = "user_bob", upsertSuccess = true)
-        val engine = FcmTokenSyncEngine(storage, fetcher, api)
-
-        val job1 = async { engine.syncPendingAndCurrentToken() }
-        val job2 = async { engine.syncPendingAndCurrentToken() }
+        // Simulation de 2 appels simultanés (ex: Application + MainActivity)
+        val job1 = async { engine1.syncPendingAndCurrentToken() }
+        val job2 = async { engine2.syncPendingAndCurrentToken() }
 
         val res1 = job1.await()
         val res2 = job2.await()
 
         assertTrue(res1 || res2)
-        assertNull(storage.getPendingToken())
-        assertTrue(api.upsertedTokens.any { it.first == "user_bob" && it.second == "token_concurrent_789" })
+        assertEquals(1, api.upsertedTokens.size)
+        assertEquals(Pair("user_simultaneous", "token_simultaneous"), api.upsertedTokens.first())
     }
 
     @Test
-    fun testRenewedTokenReplacesOldPendingToken() = runBlocking {
+    fun testAccountUnregistrationOwnerUidIsolation() = runBlocking {
         val storage = FakeTokenStorage()
-        storage.savePendingToken("old_token_111")
-        val fetcher = FakeFirebaseTokenFetcher("fresh_token_999")
-        val api = FakeSupabasePushApi(currentUid = "user_charlie", upsertSuccess = true)
-        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+        // Désinscription en attente enregistrée pour l'Utilisateur A
+        storage.savePendingUnregistrationInfo("token_device_A", "user_account_A")
 
+        val fetcher = FakeFirebaseTokenFetcher("token_device_B")
+        // L'Utilisateur B se connecte
+        val api = FakeSupabasePushApi(currentUid = "user_account_B", deleteSuccess = true, upsertSuccess = true)
+
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
         val result = engine.syncPendingAndCurrentToken()
 
         assertTrue(result)
-        assertNull(storage.getPendingToken())
-        assertEquals("fresh_token_999", api.upsertedTokens.last().second)
+        // Vérifie que la désinscription du jeton de l'Utilisateur A n'a PAS été exécutée sous la session de l'Utilisateur B
+        assertTrue(api.deletedTokens.none { it.first == "user_account_B" && it.second == "token_device_A" })
+        // Vérifie que les infos de désinscription de l'Utilisateur A sont restées intactes pour sa prochaine reconnexion
+        assertEquals(Pair("token_device_A", "user_account_A"), storage.getPendingUnregistrationInfo())
+        // Vérifie que le jeton de l'Utilisateur B a été correctement inscrit
+        assertEquals(Pair("user_account_B", "token_device_B"), api.upsertedTokens.last())
     }
 
     @Test
-    fun testFailedLogoutUnregistrationRetainsInfo() = runBlocking {
+    fun testUnregistrationPassFailsDoesNotReRegisterSameToken() = runBlocking {
         val storage = FakeTokenStorage()
-        storage.savePendingToken("active_token_555")
-        val fetcher = FakeFirebaseTokenFetcher("active_token_555")
-        val api = FakeSupabasePushApi(currentUid = "user_david", deleteSuccess = false)
-        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+        // Désinscription en attente pour l'Utilisateur A avec le jeton "token_failed_unreg"
+        storage.savePendingUnregistrationInfo("token_failed_unreg", "user_account_A")
 
-        val result = engine.unregisterDeviceTokenOnLogout()
+        val fetcher = FakeFirebaseTokenFetcher("token_failed_unreg")
+        val api = FakeSupabasePushApi(currentUid = "user_account_A", deleteSuccess = false, upsertSuccess = true)
+
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+        val result = engine.syncPendingAndCurrentToken()
 
         assertFalse(result)
-        assertEquals("active_token_555", storage.getPendingUnregistrationToken())
+        // La désinscription ayant échoué, le jeton ne doit pas être ré-inscrit dans la même passe !
+        assertTrue(api.upsertedTokens.none { it.second == "token_failed_unreg" })
     }
 
     @Test
-    fun testRetryLogoutUnregistrationSucceedsOnNextSync() = runBlocking {
+    fun testTokenRenewalDeletesOldTokenAndRegistersNew() = runBlocking {
         val storage = FakeTokenStorage()
-        storage.savePendingUnregistrationToken("failed_token_777")
-        val fetcher = FakeFirebaseTokenFetcher("fresh_token_888")
-        val api = FakeSupabasePushApi(currentUid = "user_david", deleteSuccess = true, upsertSuccess = true)
-        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+        // Ancien jeton synchronisé pour Alice
+        storage.saveLastSyncedTokenInfo("token_v1_old", "user_alice")
 
+        // Firebase fournit un jeton renouvelé
+        val fetcher = FakeFirebaseTokenFetcher("token_v2_new")
+        val api = FakeSupabasePushApi(currentUid = "user_alice", deleteSuccess = true, upsertSuccess = true)
+
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
         val result = engine.syncPendingAndCurrentToken()
 
         assertTrue(result)
-        assertNull(storage.getPendingUnregistrationToken())
-        assertTrue(api.deletedTokens.any { it.second == "failed_token_777" })
+        // Ancien jeton supprimé pour Alice
+        assertTrue(api.deletedTokens.contains(Pair("user_alice", "token_v1_old")))
+        // Nouveau jeton inscrit pour Alice
+        assertTrue(api.upsertedTokens.contains(Pair("user_alice", "token_v2_new")))
+        // Info de dernier jeton synchronisé mise à jour
+        assertEquals(Pair("token_v2_new", "user_alice"), storage.getLastSyncedTokenInfo())
     }
 
     @Test
-    fun testAccountSwitchingIsolation() = runBlocking {
-        val storageA = FakeTokenStorage()
-        val fetcherA = FakeFirebaseTokenFetcher("shared_device_token")
-        val apiA = FakeSupabasePushApi(currentUid = "user_account_A", deleteSuccess = true)
-        val engineA = FcmTokenSyncEngine(storageA, fetcherA, apiA)
+    fun testNetworkFailureAndPersistenceAcrossRestarts() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("token_offline_999")
+        val api = FakeSupabasePushApi(currentUid = "user_bob", upsertSuccess = false)
 
-        val logoutResult = engineA.unregisterDeviceTokenOnLogout()
-        assertTrue(logoutResult)
-        assertEquals(Pair("user_account_A", "shared_device_token"), apiA.deletedTokens.last())
+        val engine1 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+        val result1 = engine1.syncPendingAndCurrentToken()
 
-        val storageB = FakeTokenStorage()
-        val fetcherB = FakeFirebaseTokenFetcher("shared_device_token")
-        val apiB = FakeSupabasePushApi(currentUid = "user_account_B", upsertSuccess = true)
-        val engineB = FcmTokenSyncEngine(storageB, fetcherB, apiB)
+        assertFalse(result1)
+        // Jeton conservé localement
+        assertEquals("token_offline_999", storage.getPendingToken())
 
-        val syncResult = engineB.syncPendingAndCurrentToken()
-        assertTrue(syncResult)
-        assertEquals(Pair("user_account_B", "shared_device_token"), apiB.upsertedTokens.last())
+        // Simulation de redémarrage du processus : ré-initialisation du singleton avec la même mémoire locale
+        FcmTokenSyncEngine.resetInstance()
+        api.upsertSuccess = true
+
+        val engine2 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+        val result2 = engine2.syncPendingAndCurrentToken()
+
+        assertTrue(result2)
+        assertNull(storage.getPendingToken())
+        assertEquals(Pair("user_bob", "token_offline_999"), api.upsertedTokens.last())
     }
 
     @Test

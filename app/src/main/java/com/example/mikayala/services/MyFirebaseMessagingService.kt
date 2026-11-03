@@ -25,7 +25,10 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     companion object {
         private const val PREFS_NAME = "mikayala_push_prefs"
         private const val KEY_PENDING_TOKEN = "pending_fcm_token"
-        private const val KEY_PENDING_UNREGISTER = "pending_unregister_fcm_token"
+        private const val KEY_PENDING_UNREGISTER_TOKEN = "pending_unregister_fcm_token"
+        private const val KEY_PENDING_UNREGISTER_UID = "pending_unregister_user_id"
+        private const val KEY_LAST_SYNCED_TOKEN = "last_synced_fcm_token"
+        private const val KEY_LAST_SYNCED_UID = "last_synced_user_id"
 
         fun getPendingToken(context: Context): String? {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -49,27 +52,55 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             prefs.apply()
         }
 
-        fun getPendingUnregistrationToken(context: Context): String? {
-            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(KEY_PENDING_UNREGISTER, null)
+        fun getPendingUnregistrationInfo(context: Context): Pair<String, String>? {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val token = prefs.getString(KEY_PENDING_UNREGISTER_TOKEN, null)
+            val uid = prefs.getString(KEY_PENDING_UNREGISTER_UID, null)
+            if (token.isNullOrEmpty() || uid.isNullOrEmpty()) return null
+            return Pair(token, uid)
         }
 
-        fun savePendingUnregistrationToken(context: Context, token: String?) {
+        fun savePendingUnregistrationInfo(context: Context, token: String?, ownerUid: String?) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            if (token.isNullOrEmpty()) {
-                prefs.remove(KEY_PENDING_UNREGISTER)
+            if (token.isNullOrEmpty() || ownerUid.isNullOrEmpty()) {
+                prefs.remove(KEY_PENDING_UNREGISTER_TOKEN)
+                prefs.remove(KEY_PENDING_UNREGISTER_UID)
             } else {
-                prefs.putString(KEY_PENDING_UNREGISTER, token)
+                prefs.putString(KEY_PENDING_UNREGISTER_TOKEN, token)
+                prefs.putString(KEY_PENDING_UNREGISTER_UID, ownerUid)
             }
             prefs.apply()
         }
 
-        private fun createEngine(context: Context): FcmTokenSyncEngine {
+        fun getLastSyncedTokenInfo(context: Context): Pair<String, String>? {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val token = prefs.getString(KEY_LAST_SYNCED_TOKEN, null)
+            val uid = prefs.getString(KEY_LAST_SYNCED_UID, null)
+            if (token.isNullOrEmpty() || uid.isNullOrEmpty()) return null
+            return Pair(token, uid)
+        }
+
+        fun saveLastSyncedTokenInfo(context: Context, token: String?, uid: String?) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            if (token.isNullOrEmpty() || uid.isNullOrEmpty()) {
+                prefs.remove(KEY_LAST_SYNCED_TOKEN)
+                prefs.remove(KEY_LAST_SYNCED_UID)
+            } else {
+                prefs.putString(KEY_LAST_SYNCED_TOKEN, token)
+                prefs.putString(KEY_LAST_SYNCED_UID, uid)
+            }
+            prefs.apply()
+        }
+
+        fun getSyncEngine(context: Context): FcmTokenSyncEngine {
+            val appContext = context.applicationContext
             val storage = object : TokenStorage {
-                override fun getPendingToken(): String? = MyFirebaseMessagingService.getPendingToken(context)
-                override fun savePendingToken(token: String?) = MyFirebaseMessagingService.savePendingToken(context, token)
-                override fun getPendingUnregistrationToken(): String? = MyFirebaseMessagingService.getPendingUnregistrationToken(context)
-                override fun savePendingUnregistrationToken(token: String?) = MyFirebaseMessagingService.savePendingUnregistrationToken(context, token)
+                override fun getPendingToken(): String? = getPendingToken(appContext)
+                override fun savePendingToken(token: String?) = savePendingToken(appContext, token)
+                override fun getPendingUnregistrationInfo(): Pair<String, String>? = getPendingUnregistrationInfo(appContext)
+                override fun savePendingUnregistrationInfo(token: String?, ownerUid: String?) = savePendingUnregistrationInfo(appContext, token, ownerUid)
+                override fun getLastSyncedTokenInfo(): Pair<String, String>? = getLastSyncedTokenInfo(appContext)
+                override fun saveLastSyncedTokenInfo(token: String?, uid: String?) = saveLastSyncedTokenInfo(appContext, token, uid)
             }
             val fetcher = object : FirebaseTokenFetcher {
                 override suspend fun fetchToken(): String? = suspendCancellableCoroutine<String?> { cont ->
@@ -95,15 +126,15 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 override suspend fun upsertDevicePushToken(fcmToken: String): Boolean = supabase.upsertDevicePushToken(fcmToken)
                 override suspend fun deleteDevicePushToken(fcmToken: String): Boolean = supabase.deleteDevicePushToken(fcmToken)
             }
-            return FcmTokenSyncEngine(storage, fetcher, api)
+            return FcmTokenSyncEngine.getInstance(storage, fetcher, api)
         }
 
         suspend fun getOrFetchFcmToken(context: Context): String? {
-            return createEngine(context).getOrFetchFcmToken()
+            return getSyncEngine(context).getOrFetchFcmToken()
         }
 
         suspend fun syncPendingAndCurrentToken(context: Context): Boolean {
-            return createEngine(context).syncPendingAndCurrentToken()
+            return getSyncEngine(context).syncPendingAndCurrentToken()
         }
 
         fun fetchAndSyncToken(context: Context, onSynced: ((Boolean) -> Unit)? = null) {
@@ -114,7 +145,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
 
         suspend fun unregisterDeviceTokenOnLogout(context: Context): Boolean {
-            return createEngine(context).unregisterDeviceTokenOnLogout()
+            return getSyncEngine(context).unregisterDeviceTokenOnLogout()
         }
 
         fun maskToken(token: String): String {
