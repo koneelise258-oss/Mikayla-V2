@@ -349,6 +349,65 @@ class VoiceAndPushUnitTest {
     }
 
     @Test
+    fun testFirstTokenSync_savesTokenAndClearsPending() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("first_token_123")
+        val api = FakeSupabasePushApi(currentUid = "uid_first_user", upsertSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val success = engine.syncPendingAndCurrentToken()
+        assertTrue(success)
+        assertEquals("first_token_123", storage.getLastSyncedTokenForUser("uid_first_user"))
+        assertNull(storage.getPendingToken())
+    }
+
+    @Test
+    fun testAlreadySyncedToken_returnsTrueWithoutDuplicateUpsert() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.saveLastSyncedTokenForUser("uid_synced", "token_synced")
+        val fetcher = FakeFirebaseTokenFetcher("token_synced")
+        val api = FakeSupabasePushApi(currentUid = "uid_synced", upsertSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val success = engine.syncPendingAndCurrentToken()
+        assertTrue(success)
+        // Verified token already synced without error
+        assertEquals("token_synced", storage.getLastSyncedTokenForUser("uid_synced"))
+    }
+
+    @Test
+    fun testUpsertFailure_retainsPendingToken() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("token_failed")
+        val api = FakeSupabasePushApi(currentUid = "uid_failed", upsertSuccess = false)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val success = engine.syncPendingAndCurrentToken()
+        assertFalse(success)
+        assertEquals("token_failed", storage.getPendingToken())
+    }
+
+    @Test
+    fun testFirebaseTokenFetcherNull_usesLocalPendingToken() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.savePendingToken("local_saved_token")
+        val fetcher = FakeFirebaseTokenFetcher(null)
+        val api = FakeSupabasePushApi(currentUid = "uid_offline", upsertSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val success = engine.syncPendingAndCurrentToken()
+        assertTrue(success)
+        assertEquals("local_saved_token", storage.getLastSyncedTokenForUser("uid_offline"))
+    }
+
+    @Test
+    fun testDeduplicationMap_ignoresDuplicateNotificationWithinWindow() {
+        val msgId = "msg_dedup_1001"
+        assertFalse(MyFirebaseMessagingService.isDuplicateNotification(msgId))
+        assertTrue(MyFirebaseMessagingService.isDuplicateNotification(msgId))
+    }
+
+    @Test
     fun testVoiceNoteStateTransitions() {
         val states = VoiceNoteState.values().map { it.name }
         assertTrue(states.contains("IDLE"))

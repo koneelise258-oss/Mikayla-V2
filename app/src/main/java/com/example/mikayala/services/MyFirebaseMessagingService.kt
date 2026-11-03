@@ -28,18 +28,35 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         private const val KEY_PENDING_UNREG_SET = "pending_unregistrations_set"
         private const val PREFIX_LAST_SYNCED_TOKEN = "last_synced_token_"
 
+        private val processedMessageIds = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+        @Synchronized
+        fun isDuplicateNotification(messageId: String?): Boolean {
+            if (messageId.isNullOrBlank()) return false
+            val now = System.currentTimeMillis()
+            processedMessageIds.entries.removeIf { now - it.value > 60_000 }
+            val existingTime = processedMessageIds[messageId]
+            if (existingTime != null && now - existingTime < 60_000) {
+                return true
+            }
+            processedMessageIds[messageId] = now
+            return false
+        }
+
         fun getPendingToken(context: Context): String? {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .getString(KEY_PENDING_TOKEN, null)
         }
 
+        @Synchronized
         fun clearPendingToken(context: Context) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .remove(KEY_PENDING_TOKEN)
-                .apply()
+                .commit()
         }
 
+        @Synchronized
         fun savePendingToken(context: Context, token: String?) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             if (token.isNullOrEmpty()) {
@@ -47,12 +64,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             } else {
                 prefs.putString(KEY_PENDING_TOKEN, token)
             }
-            prefs.apply()
+            prefs.commit()
         }
 
+        @Synchronized
         fun getPendingUnregistrations(context: Context): List<Pair<String, String>> {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val set = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet()) ?: emptySet()
+            val set = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet())?.toSet() ?: emptySet()
             return set.mapNotNull { entry ->
                 val parts = entry.split("|", limit = 2)
                 if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
@@ -61,19 +79,21 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             }
         }
 
+        @Synchronized
         fun addPendingUnregistration(context: Context, token: String, ownerUid: String) {
             if (token.isBlank() || ownerUid.isBlank()) return
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val currentSet = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet())?.toMutableSet() ?: mutableSetOf()
+            val currentSet = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet())?.toSet()?.toMutableSet() ?: mutableSetOf()
             currentSet.add("$token|$ownerUid")
-            prefs.edit().putStringSet(KEY_PENDING_UNREG_SET, currentSet).apply()
+            prefs.edit().putStringSet(KEY_PENDING_UNREG_SET, currentSet).commit()
         }
 
+        @Synchronized
         fun removePendingUnregistration(context: Context, token: String, ownerUid: String) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val currentSet = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet())?.toMutableSet() ?: mutableSetOf()
+            val currentSet = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet())?.toSet()?.toMutableSet() ?: mutableSetOf()
             currentSet.remove("$token|$ownerUid")
-            prefs.edit().putStringSet(KEY_PENDING_UNREG_SET, currentSet).apply()
+            prefs.edit().putStringSet(KEY_PENDING_UNREG_SET, currentSet).commit()
         }
 
         fun getLastSyncedTokenForUser(context: Context, uid: String): String? {
@@ -82,6 +102,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 .getString("$PREFIX_LAST_SYNCED_TOKEN$uid", null)
         }
 
+        @Synchronized
         fun saveLastSyncedTokenForUser(context: Context, uid: String, token: String?) {
             if (uid.isBlank()) return
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
@@ -90,7 +111,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             } else {
                 prefs.putString("$PREFIX_LAST_SYNCED_TOKEN$uid", token)
             }
-            prefs.apply()
+            prefs.commit()
         }
 
         fun getPendingUnregistrationInfo(context: Context): Pair<String, String>? {
@@ -123,14 +144,14 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                             .addOnCompleteListener { task ->
                                 if (cont.isActive) {
                                     if (task.isSuccessful && !task.result.isNullOrBlank()) {
-                                        cont.resume(task.result, null)
+                                        cont.resumeWith(Result.success(task.result))
                                     } else {
-                                        cont.resume(null, null)
+                                        cont.resumeWith(Result.success(null))
                                     }
                                 }
                             }
                     } catch (t: Throwable) {
-                        if (cont.isActive) cont.resume(null, null)
+                        if (cont.isActive) cont.resumeWith(Result.success(null))
                     }
                 }
             }
@@ -239,6 +260,15 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 Log.d("FCM_MSG", "Notification ignorée : l'expéditeur est l'utilisateur courant")
                 return
             }
+
+            val messageIdKey = data["messageId"] ?: data["callId"] ?: data["id"]
+            if (!messageIdKey.isNullOrBlank() && isDuplicateNotification(messageIdKey)) {
+                Log.d("FCM_MSG", "Notification ignorée : message dédoublonné ID=$messageIdKey")
+                return
+            }
+
+            // S'assurer que les canaux de notification existent
+            NotificationHelper.createNotificationChannels(applicationContext)
 
             // Paramètres locaux de confidentialité et camouflage
             val prefs = applicationContext.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)

@@ -221,6 +221,7 @@ serve(async (req: Request) => {
           data: payloadData,
           android: {
             priority: "HIGH",
+            ttl: type === "call" ? "30s" : "86400s",
           },
         },
       };
@@ -239,13 +240,17 @@ serve(async (req: Request) => {
           deliveredCount++;
         } else {
           const respText = await resp.text();
+          // Supprimer UNIQUEMENT si l'invalidité du jeton est confirmée par Firebase (UNREGISTERED, token non enregistré ou 404)
+          // NE JAMAIS supprimer un jeton sur l'erreur INVALID_ARGUMENT qui indique un payload mal formé
           if (
             resp.status === 404 ||
             respText.includes("UNREGISTERED") ||
-            respText.includes("registration-token-not-registered") ||
-            respText.includes("INVALID_ARGUMENT")
+            respText.includes("registration-token-not-registered")
           ) {
             tokensToRemove.push(token);
+          } else {
+            const maskedToken = token.length > 10 ? `${token.substring(0, 6)}...${token.substring(token.length - 4)}` : "***";
+            console.warn(`FCM dispatch warning for token ${maskedToken} (status ${resp.status}): ${respText}`);
           }
         }
       } catch (sendError) {
@@ -253,12 +258,13 @@ serve(async (req: Request) => {
       }
     }
 
-    // 6. Clean up invalid tokens
+    // 6. Clean up invalid tokens strictly scoped to the recipient
     if (tokensToRemove.length > 0) {
       await adminClient
         .from("device_push_tokens")
         .delete()
-        .in("fcm_token", tokensToRemove);
+        .in("fcm_token", tokensToRemove)
+        .eq("user_id", recipientId);
     }
 
     return new Response(
