@@ -51,6 +51,10 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             processedMessageIds[messageId] = timestamp
         }
 
+        fun clearProcessedMessagesForTesting() {
+            processedMessageIds.clear()
+        }
+
         fun getProcessedMessagesCountForTesting(): Int {
             return processedMessageIds.size
         }

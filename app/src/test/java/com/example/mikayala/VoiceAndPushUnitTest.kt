@@ -8,6 +8,7 @@ import com.example.mikayala.services.SupabasePushApi
 import com.example.mikayala.services.TokenStorage
 import com.example.mikayala.ui.components.VoicePlaybackCoordinator
 import com.example.mikayala.utils.VoiceNoteState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -90,6 +91,7 @@ class VoiceAndPushUnitTest {
     @Before
     fun setUp() {
         FcmTokenSyncEngine.resetInstance()
+        MyFirebaseMessagingService.clearProcessedMessagesForTesting()
     }
 
     @Test
@@ -427,18 +429,46 @@ class VoiceAndPushUnitTest {
     fun testSimultaneousSyncAndLogout_serializedBySharedMutex() = runBlocking {
         val storage = FakeTokenStorage()
         val fetcher = FakeFirebaseTokenFetcher("shared_token_simultaneous")
-        val api = FakeSupabasePushApi(currentUid = "uid_simultaneous", upsertSuccess = true, deleteSuccess = true)
+        val syncEnteredBarrier = CompletableDeferred<Unit>()
+        val allowSyncProceed = CompletableDeferred<Unit>()
+
+        val api = object : SupabasePushApi {
+            val deletedTokens = mutableListOf<Pair<String, String>>()
+            override fun getCurrentSessionUid(): String? = "uid_simultaneous"
+            override suspend fun upsertDevicePushToken(fcmToken: String): Boolean {
+                syncEnteredBarrier.complete(Unit)
+                allowSyncProceed.await()
+                return true
+            }
+            override suspend fun deleteDevicePushToken(fcmToken: String): Boolean {
+                deletedTokens.add(Pair("uid_simultaneous", fcmToken))
+                return true
+            }
+        }
+
         val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
 
-        // Launch sync and logout concurrently
+        // Launch sync pass which holds syncMutex inside upsertDevicePushToken
         val syncJob = async { engine.syncPendingAndCurrentToken() }
+
+        // Wait until sync has acquired syncMutex and entered upsertDevicePushToken
+        syncEnteredBarrier.await()
+
+        // Launch unregisterDeviceTokenOnLogout while sync holds syncMutex lock
         val logoutJob = async { engine.unregisterDeviceTokenOnLogout() }
 
-        val syncRes = syncJob.await()
-        val logoutRes = logoutJob.await()
+        // Allow sync to complete and release syncMutex
+        allowSyncProceed.complete(Unit)
 
-        assertTrue(syncRes || logoutRes)
-        // Ensure no deadlock occurred and operations completed deterministically
+        val syncRes = syncJob.await()
+        assertTrue(syncRes)
+
+        val logoutRes = logoutJob.await()
+        assertTrue(logoutRes)
+
+        // Verify deterministic serialized execution: token was un-registered and last synced token cleared
+        assertNull(storage.getLastSyncedTokenForUser("uid_simultaneous"))
+        assertTrue(api.deletedTokens.any { it.second == "shared_token_simultaneous" })
     }
 
     @Test

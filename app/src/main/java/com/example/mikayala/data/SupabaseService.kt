@@ -1317,9 +1317,10 @@ class SupabaseService(
                 reader.close()
                 val responseText = sb.toString().trim()
                 if (responseText.startsWith("[")) {
-                    val jsonArray = JSONArray(responseText)
-                    jsonArray.length() > 0
-                } else false
+                    true
+                } else {
+                    responseText.isEmpty() || conn.responseCode == 204
+                }
             } else false
         } catch (e: Exception) {
             Log.e("SupabaseService", "executeDeleteWithRepresentation failed: ${e.message}")
