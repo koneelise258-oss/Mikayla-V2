@@ -52,7 +52,7 @@ BEGIN
         CREATE POLICY "Users can update their own push tokens"
             ON public.device_push_tokens
             FOR UPDATE
-            USING (auth.uid() = user_id OR auth.uid() IS NOT NULL)
+            USING (auth.uid() = user_id)
             WITH CHECK (auth.uid() = user_id);
     END IF;
 

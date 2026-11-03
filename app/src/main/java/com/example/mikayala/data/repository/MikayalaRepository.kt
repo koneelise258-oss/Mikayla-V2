@@ -23,16 +23,13 @@ class MikayalaRepository(private val context: Context) {
     val supabaseService = SupabaseService.getInstance()
 
     fun syncPendingPushToken() {
-        val pending = com.example.mikayala.services.MyFirebaseMessagingService.getPendingToken(context)
-        if (!pending.isNullOrEmpty()) {
-            repositoryScope.launch {
-                val ok = supabaseService.upsertDevicePushToken(pending)
-                if (ok) {
-                    com.example.mikayala.services.MyFirebaseMessagingService.clearPendingToken(context)
-                }
+        repositoryScope.launch {
+            try {
+                com.example.mikayala.services.MyFirebaseMessagingService.syncPendingAndCurrentToken(context)
+            } catch (e: Exception) {
+                Log.w("MikayalaRepo", "Erreur synchronisation jeton push: ${e.message}")
             }
         }
-        com.example.mikayala.services.MyFirebaseMessagingService.fetchAndSyncToken(context)
     }
 
     private fun notifyPartnerAfterInsert(type: String, previewText: String, messageId: String = "") {
@@ -2839,8 +2836,12 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
-    suspend fun signOut(): Boolean {
-        com.example.mikayala.services.MyFirebaseMessagingService.unregisterDeviceTokenOnLogout(context)
+    suspend fun signOut(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            com.example.mikayala.services.MyFirebaseMessagingService.unregisterDeviceTokenOnLogout(context)
+        } catch (e: Exception) {
+            Log.w("MikayalaAuth", "Erreur lors de la désinscription du jeton FCM avant déconnexion: ${e.message}")
+        }
         val success = supabaseService.signOut("")
         clearCoupleCache()
         prefs.edit().apply {
@@ -2850,6 +2851,6 @@ class MikayalaRepository(private val context: Context) {
             apply()
         }
         _userSettings.value = com.example.mikayala.data.model.UserSettingsEntity()
-        return success
+        return@withContext success
     }
 }

@@ -25,35 +25,10 @@ class MikayalaApplication : Application() {
         try {
             val fcm = com.google.firebase.messaging.FirebaseMessaging.getInstance()
             fcm.isAutoInitEnabled = true
-            fcm.token
-                .addOnCompleteListener { task ->
-                    if (task.isSuccessful) {
-                        val token = task.result
-                        if (!token.isNullOrEmpty()) {
-                            val masked = if (token.length > 10) "${token.take(6)}...${token.takeLast(4)}" else "***"
-                            Log.d("FCM_TOKEN", "Jeton FCM initial récupéré : $masked")
-                            MyFirebaseMessagingService.savePendingToken(applicationContext, token)
-
-                            // Synchronisation si session déjà active
-                            CoroutineScope(Dispatchers.IO).launch {
-                                try {
-                                    val supabase = SupabaseService.getInstance()
-                                    val uid = supabase.getCurrentSessionUid()
-                                    if (!uid.isNullOrEmpty()) {
-                                        val ok = supabase.upsertDevicePushToken(token)
-                                        if (ok) {
-                                            MyFirebaseMessagingService.clearPendingToken(applicationContext)
-                                        }
-                                    }
-                                } catch (ignored: Exception) {}
-                            }
-                        }
-                    } else {
-                        Log.w("FCM_TOKEN", "Échec de la récupération du jeton FCM (attendu si google-services.json non lié au projet ou hors-ligne) : ${task.exception?.message}")
-                    }
-                }
+            // Enregistrement et synchronisation centralisés avec garde d'anti-concurrence
+            MyFirebaseMessagingService.fetchAndSyncToken(applicationContext)
         } catch (e: Throwable) {
-            Log.w("FCM_INIT", "FCM non disponible ou désactivé temporairement : ${e.message}")
+            Log.w("MikayalaStartup", "FirebaseMessaging initialisation : ${e.message}")
         }
 
         Log.d("MikayalaStartup", "Application.onCreate finished")

@@ -1594,8 +1594,15 @@ class SupabaseService(
 
     suspend fun deleteDevicePushToken(fcmToken: String): Boolean = withContext(Dispatchers.IO) {
         if (fcmToken.isBlank()) return@withContext false
+        val uid = getCurrentSessionUid()
+        if (uid.isNullOrEmpty()) {
+            Log.w("FCM_TOKEN", "deleteDevicePushToken ignoré : aucune session active")
+            return@withContext false
+        }
+        val masked = if (fcmToken.length > 10) "${fcmToken.take(6)}...${fcmToken.takeLast(4)}" else "***"
+        Log.d("FCM_TOKEN", "deleteDevicePushToken : suppression sécurisée pour UID=$uid ($masked)")
         try {
-            executeDelete("/rest/v1/device_push_tokens?fcm_token=eq.${fcmToken.trim()}")
+            executeDelete("/rest/v1/device_push_tokens?fcm_token=eq.${fcmToken.trim()}&user_id=eq.$uid")
         } catch (e: Exception) {
             Log.e("FCM_TOKEN", "deleteDevicePushToken error: ${e.message}")
             false
