@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Android 12+ : écran de démarrage système = même fond + icône de l'application -->
+    <style name="Theme.Mikayala" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/mikayala_splash_background</item>
+        <item name="android:statusBarColor">@color/mikayala_splash_background</item>
+        <item name="android:navigationBarColor">@color/mikayala_splash_background</item>
+        <item name="android:windowSplashScreenBackground">@color/mikayala_splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#FFC94FB8</item>
+    </style>
+</resources>

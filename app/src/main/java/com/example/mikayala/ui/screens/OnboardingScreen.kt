@@ -489,7 +489,7 @@ fun LandingView(
             contentAlignment = Alignment.Center
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_butterfly_logo),
+                painter = painterResource(id = R.drawable.ic_mikayala_logo),
                 contentDescription = "Mikayala Logo Papillon Liquid Glass",
                 modifier = Modifier
                     .size(100.dp)
@@ -1498,7 +1498,7 @@ fun InteractiveQRCodeCanvas(
             contentAlignment = Alignment.Center
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_butterfly_logo),
+                painter = painterResource(id = R.drawable.ic_mikayala_logo),
                 contentDescription = null,
                 modifier = Modifier
                     .size(30.dp)

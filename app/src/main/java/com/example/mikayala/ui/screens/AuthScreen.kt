@@ -135,7 +135,7 @@ fun AuthScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Image(
-                    painter = painterResource(id = R.drawable.ic_butterfly_logo),
+                    painter = painterResource(id = R.drawable.ic_mikayala_logo),
                     contentDescription = "Mikayala Logo Papillon Liquid Glass",
                     modifier = Modifier
                         .size(110.dp)

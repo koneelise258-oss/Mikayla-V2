@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="mikayala_logo_mark">#FFFFFFFF</color>
+    <!-- Fond de l'écran de démarrage (identique à l'écran Compose pour une transition sans saut) -->
+    <color name="mikayala_splash_background">#FF1E2128</color>
+</resources>
