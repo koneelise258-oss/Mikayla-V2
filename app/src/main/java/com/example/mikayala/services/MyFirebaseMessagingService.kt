@@ -25,10 +25,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     companion object {
         private const val PREFS_NAME = "mikayala_push_prefs"
         private const val KEY_PENDING_TOKEN = "pending_fcm_token"
-        private const val KEY_PENDING_UNREGISTER_TOKEN = "pending_unregister_fcm_token"
-        private const val KEY_PENDING_UNREGISTER_UID = "pending_unregister_user_id"
-        private const val KEY_LAST_SYNCED_TOKEN = "last_synced_fcm_token"
-        private const val KEY_LAST_SYNCED_UID = "last_synced_user_id"
+        private const val KEY_PENDING_UNREG_SET = "pending_unregistrations_set"
+        private const val PREFIX_LAST_SYNCED_TOKEN = "last_synced_token_"
 
         fun getPendingToken(context: Context): String? {
             return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -52,44 +50,57 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             prefs.apply()
         }
 
+        fun getPendingUnregistrations(context: Context): List<Pair<String, String>> {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val set = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet()) ?: emptySet()
+            return set.mapNotNull { entry ->
+                val parts = entry.split("|", limit = 2)
+                if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+                    Pair(parts[0], parts[1])
+                } else null
+            }
+        }
+
+        fun addPendingUnregistration(context: Context, token: String, ownerUid: String) {
+            if (token.isBlank() || ownerUid.isBlank()) return
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val currentSet = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet())?.toMutableSet() ?: mutableSetOf()
+            currentSet.add("$token|$ownerUid")
+            prefs.edit().putStringSet(KEY_PENDING_UNREG_SET, currentSet).apply()
+        }
+
+        fun removePendingUnregistration(context: Context, token: String, ownerUid: String) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val currentSet = prefs.getStringSet(KEY_PENDING_UNREG_SET, emptySet())?.toMutableSet() ?: mutableSetOf()
+            currentSet.remove("$token|$ownerUid")
+            prefs.edit().putStringSet(KEY_PENDING_UNREG_SET, currentSet).apply()
+        }
+
+        fun getLastSyncedTokenForUser(context: Context, uid: String): String? {
+            if (uid.isBlank()) return null
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString("$PREFIX_LAST_SYNCED_TOKEN$uid", null)
+        }
+
+        fun saveLastSyncedTokenForUser(context: Context, uid: String, token: String?) {
+            if (uid.isBlank()) return
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            if (token.isNullOrEmpty()) {
+                prefs.remove("$PREFIX_LAST_SYNCED_TOKEN$uid")
+            } else {
+                prefs.putString("$PREFIX_LAST_SYNCED_TOKEN$uid", token)
+            }
+            prefs.apply()
+        }
+
         fun getPendingUnregistrationInfo(context: Context): Pair<String, String>? {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val token = prefs.getString(KEY_PENDING_UNREGISTER_TOKEN, null)
-            val uid = prefs.getString(KEY_PENDING_UNREGISTER_UID, null)
-            if (token.isNullOrEmpty() || uid.isNullOrEmpty()) return null
-            return Pair(token, uid)
-        }
-
-        fun savePendingUnregistrationInfo(context: Context, token: String?, ownerUid: String?) {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            if (token.isNullOrEmpty() || ownerUid.isNullOrEmpty()) {
-                prefs.remove(KEY_PENDING_UNREGISTER_TOKEN)
-                prefs.remove(KEY_PENDING_UNREGISTER_UID)
-            } else {
-                prefs.putString(KEY_PENDING_UNREGISTER_TOKEN, token)
-                prefs.putString(KEY_PENDING_UNREGISTER_UID, ownerUid)
+            val uid = SupabaseService.getInstance().getCurrentSessionUid()
+            val list = getPendingUnregistrations(context)
+            if (!uid.isNullOrBlank()) {
+                val match = list.firstOrNull { it.second == uid }
+                if (match != null) return match
             }
-            prefs.apply()
-        }
-
-        fun getLastSyncedTokenInfo(context: Context): Pair<String, String>? {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val token = prefs.getString(KEY_LAST_SYNCED_TOKEN, null)
-            val uid = prefs.getString(KEY_LAST_SYNCED_UID, null)
-            if (token.isNullOrEmpty() || uid.isNullOrEmpty()) return null
-            return Pair(token, uid)
-        }
-
-        fun saveLastSyncedTokenInfo(context: Context, token: String?, uid: String?) {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            if (token.isNullOrEmpty() || uid.isNullOrEmpty()) {
-                prefs.remove(KEY_LAST_SYNCED_TOKEN)
-                prefs.remove(KEY_LAST_SYNCED_UID)
-            } else {
-                prefs.putString(KEY_LAST_SYNCED_TOKEN, token)
-                prefs.putString(KEY_LAST_SYNCED_UID, uid)
-            }
-            prefs.apply()
+            return list.lastOrNull()
         }
 
         fun getSyncEngine(context: Context): FcmTokenSyncEngine {
@@ -97,10 +108,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             val storage = object : TokenStorage {
                 override fun getPendingToken(): String? = getPendingToken(appContext)
                 override fun savePendingToken(token: String?) = savePendingToken(appContext, token)
-                override fun getPendingUnregistrationInfo(): Pair<String, String>? = getPendingUnregistrationInfo(appContext)
-                override fun savePendingUnregistrationInfo(token: String?, ownerUid: String?) = savePendingUnregistrationInfo(appContext, token, ownerUid)
-                override fun getLastSyncedTokenInfo(): Pair<String, String>? = getLastSyncedTokenInfo(appContext)
-                override fun saveLastSyncedTokenInfo(token: String?, uid: String?) = saveLastSyncedTokenInfo(appContext, token, uid)
+
+                override fun getPendingUnregistrations(): List<Pair<String, String>> = getPendingUnregistrations(appContext)
+                override fun addPendingUnregistration(token: String, ownerUid: String) = addPendingUnregistration(appContext, token, ownerUid)
+                override fun removePendingUnregistration(token: String, ownerUid: String) = removePendingUnregistration(appContext, token, ownerUid)
+
+                override fun getLastSyncedTokenForUser(uid: String): String? = getLastSyncedTokenForUser(appContext, uid)
+                override fun saveLastSyncedTokenForUser(uid: String, token: String?) = saveLastSyncedTokenForUser(appContext, uid, token)
             }
             val fetcher = object : FirebaseTokenFetcher {
                 override suspend fun fetchToken(): String? = suspendCancellableCoroutine<String?> { cont ->

@@ -9,11 +9,14 @@ interface TokenStorage {
     fun getPendingToken(): String?
     fun savePendingToken(token: String?)
 
-    fun getPendingUnregistrationInfo(): Pair<String, String>? // Pair(token, ownerUid)
-    fun savePendingUnregistrationInfo(token: String?, ownerUid: String?)
+    // Support multi-comptes pour les désinscriptions en attente
+    fun getPendingUnregistrations(): List<Pair<String, String>> // Liste de Pair(token, ownerUid)
+    fun addPendingUnregistration(token: String, ownerUid: String)
+    fun removePendingUnregistration(token: String, ownerUid: String)
 
-    fun getLastSyncedTokenInfo(): Pair<String, String>? // Pair(token, uid)
-    fun saveLastSyncedTokenInfo(token: String?, uid: String?)
+    // Stockage persistant par utilisateur pour le dernier jeton synchronisé
+    fun getLastSyncedTokenForUser(uid: String): String?
+    fun saveLastSyncedTokenForUser(uid: String, token: String?)
 }
 
 interface FirebaseTokenFetcher {
@@ -76,18 +79,19 @@ class FcmTokenSyncEngine(
         pendingSyncRequested.set(true)
 
         if (!isSyncing.compareAndSet(false, true)) {
-            // Synchronisation déjà en cours. Attente de la fin de la boucle active pour ne pas perdre la demande.
+            // Attente que la boucle active traite les demandes en attente sans perte
             while (isSyncing.get()) {
                 delay(50)
             }
-            return@withContext storage.getPendingToken().isNullOrBlank()
+            val uid = api.getCurrentSessionUid()
+            if (uid.isNullOrBlank()) return@withContext false
+            val hasPendingUnregForUser = storage.getPendingUnregistrations().any { it.second == uid }
+            return@withContext storage.getPendingToken().isNullOrBlank() && !hasPendingUnregForUser
         }
 
         var lastSuccess = false
         try {
-            var passCount = 0
-            while (pendingSyncRequested.getAndSet(false) && passCount < 5) {
-                passCount++
+            while (pendingSyncRequested.getAndSet(false)) {
                 lastSuccess = executeSyncPass()
             }
         } finally {
@@ -99,23 +103,17 @@ class FcmTokenSyncEngine(
     private suspend fun executeSyncPass(): Boolean {
         val currentUid = api.getCurrentSessionUid()
 
-        // 1. Traitement des désinscriptions en attente
-        val unregInfo = storage.getPendingUnregistrationInfo()
-        if (unregInfo != null) {
-            val (unregToken, ownerUid) = unregInfo
-            if (currentUid == ownerUid) {
-                // L'utilisateur actuellement authentifié est le propriétaire légitime de la désinscription
+        // 1. Traitement des désinscriptions en attente UNIQUEMENT pour le compte actuellement authentifié
+        if (!currentUid.isNullOrBlank()) {
+            val pendingUnregsForUser = storage.getPendingUnregistrations().filter { it.second == currentUid }
+            for ((unregToken, ownerUid) in pendingUnregsForUser) {
                 val deleted = api.deleteDevicePushToken(unregToken)
                 if (deleted) {
-                    storage.savePendingUnregistrationInfo(null, null)
+                    storage.removePendingUnregistration(unregToken, ownerUid)
                 } else {
-                    // Échec de désinscription. Ne pas tenter d'inscrire à nouveau ce jeton dans la même passe.
+                    // Échec de désinscription pour l'utilisateur courant : suspendre la passe, ne pas ré-inscrire ce jeton
                     return false
                 }
-            } else {
-                // Le compte actif est différent (ex: Utilisateur B connecté alors que la désinscription de l'Utilisateur A est en attente).
-                // Ne JAMAIS supprimer ni attribuer le jeton de l'Utilisateur A sous la session de l'Utilisateur B !
-                // Conserver les données de désinscription de l'Utilisateur A intactes pour lorsqu'il se reconnectera.
             }
         }
 
@@ -133,26 +131,23 @@ class FcmTokenSyncEngine(
             return false
         }
 
-        // 2. Gestion du renouvellement ou vérification si déjà synchronisé pour currentUid
-        val lastSynced = storage.getLastSyncedTokenInfo()
-        if (lastSynced != null) {
-            val (oldToken, oldUid) = lastSynced
-            if (oldUid == currentUid) {
-                if (oldToken != currentToken) {
-                    // Renouvellement de jeton détecté pour cet utilisateur : supprimer l'ancien jeton
-                    api.deleteDevicePushToken(oldToken)
-                } else if (storage.getPendingToken().isNullOrBlank()) {
-                    // Jeton déjà synchronisé avec succès pour l'utilisateur courant : pas besoin de ré-émettre une requête inutile
-                    return true
-                }
+        // 2. Gestion du renouvellement de jeton par utilisateur
+        val oldSyncedToken = storage.getLastSyncedTokenForUser(currentUid)
+        if (!oldSyncedToken.isNullOrBlank()) {
+            if (oldSyncedToken != currentToken) {
+                // Renouvellement de jeton pour le compte actif : désinscrire l'ancien jeton
+                api.deleteDevicePushToken(oldSyncedToken)
+            } else if (storage.getPendingToken().isNullOrBlank()) {
+                // Jeton déjà synchronisé et confirmé pour le compte actif
+                return true
             }
         }
 
-        // 3. Enregistrement / Upsert du jeton actuel pour currentUid
+        // 3. Inscription / Upsert du jeton actuel pour le compte actif
         val ok = api.upsertDevicePushToken(currentToken)
         if (ok) {
             storage.savePendingToken(null)
-            storage.saveLastSyncedTokenInfo(currentToken, currentUid)
+            storage.saveLastSyncedTokenForUser(currentUid, currentToken)
             return true
         } else {
             // Échec réseau/serveur : conserver le jeton localement en attente
@@ -164,28 +159,25 @@ class FcmTokenSyncEngine(
     suspend fun unregisterDeviceTokenOnLogout(): Boolean = withContext(Dispatchers.IO) {
         val currentUid = api.getCurrentSessionUid()
         if (currentUid.isNullOrBlank()) {
-            storage.savePendingToken(null)
-            storage.savePendingUnregistrationInfo(null, null)
-            return@withContext true
+            // Aucune session active : NE JAMAIS effacer les désinscriptions en attente des autres comptes !
+            return@withContext false
         }
 
         val token = getOrFetchFcmToken()
         if (token.isNullOrBlank()) {
-            storage.savePendingToken(null)
-            storage.savePendingUnregistrationInfo(null, null)
             return@withContext true
         }
 
-        // Tentative de suppression du jeton auprès de Supabase avec filtrage par user_id
         val success = api.deleteDevicePushToken(token)
         if (success) {
             storage.savePendingToken(null)
-            storage.savePendingUnregistrationInfo(null, null)
-            storage.saveLastSyncedTokenInfo(null, null)
+            storage.removePendingUnregistration(token, currentUid)
+            storage.saveLastSyncedTokenForUser(currentUid, null)
+            return@withContext true
         } else {
-            // Échec : conserver de manière persistante (token, currentUid) pour ré-essayer lors de la reconnection de currentUid
-            storage.savePendingUnregistrationInfo(token, currentUid)
+            // Conserver la désinscription en attente associée explicitement à currentUid
+            storage.addPendingUnregistration(token, currentUid)
+            return@withContext false
         }
-        return@withContext success
     }
 }

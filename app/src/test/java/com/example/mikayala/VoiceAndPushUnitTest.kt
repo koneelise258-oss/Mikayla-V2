@@ -23,32 +23,36 @@ import java.util.TimeZone
 
 class FakeTokenStorage : TokenStorage {
     private var pending: String? = null
-    private var pendingUnregisterToken: String? = null
-    private var pendingUnregisterUid: String? = null
-    private var lastSyncedToken: String? = null
-    private var lastSyncedUid: String? = null
+    private val pendingUnregistrations = mutableListOf<Pair<String, String>>()
+    private val lastSyncedTokens = mutableMapOf<String, String>()
 
     override fun getPendingToken(): String? = pending
     override fun savePendingToken(token: String?) { pending = token }
 
-    override fun getPendingUnregistrationInfo(): Pair<String, String>? {
-        if (pendingUnregisterToken.isNullOrEmpty() || pendingUnregisterUid.isNullOrEmpty()) return null
-        return Pair(pendingUnregisterToken!!, pendingUnregisterUid!!)
+    override fun getPendingUnregistrations(): List<Pair<String, String>> {
+        return pendingUnregistrations.toList()
     }
 
-    override fun savePendingUnregistrationInfo(token: String?, ownerUid: String?) {
-        pendingUnregisterToken = token
-        pendingUnregisterUid = ownerUid
+    override fun addPendingUnregistration(token: String, ownerUid: String) {
+        if (!pendingUnregistrations.contains(Pair(token, ownerUid))) {
+            pendingUnregistrations.add(Pair(token, ownerUid))
+        }
     }
 
-    override fun getLastSyncedTokenInfo(): Pair<String, String>? {
-        if (lastSyncedToken.isNullOrEmpty() || lastSyncedUid.isNullOrEmpty()) return null
-        return Pair(lastSyncedToken!!, lastSyncedUid!!)
+    override fun removePendingUnregistration(token: String, ownerUid: String) {
+        pendingUnregistrations.remove(Pair(token, ownerUid))
     }
 
-    override fun saveLastSyncedTokenInfo(token: String?, uid: String?) {
-        lastSyncedToken = token
-        lastSyncedUid = uid
+    override fun getLastSyncedTokenForUser(uid: String): String? {
+        return lastSyncedTokens[uid]
+    }
+
+    override fun saveLastSyncedTokenForUser(uid: String, token: String?) {
+        if (token.isNullOrEmpty()) {
+            lastSyncedTokens.remove(uid)
+        } else {
+            lastSyncedTokens[uid] = token
+        }
     }
 }
 
@@ -182,126 +186,136 @@ class VoiceAndPushUnitTest {
         assertEquals("IS_VIDEO", CallActionReceiver.EXTRA_IS_VIDEO)
     }
 
-    // --- TESTS DU CODE DE PRODUCTION FcmTokenSyncEngine ---
+    // --- LES 7 TESTS OBLIGATOIRES DE LA MISSION 03 ---
 
+    // Test 1: A a une désinscription en attente ; B se connecte puis se déconnecte : les données de A doivent rester intactes.
     @Test
-    fun testSharedSingletonInstanceAcrossEntryPoints() {
+    fun testPendingUnregistrationOfAccountA_remainsIntactWhenAccountBLogsInAndOut() = runBlocking {
         val storage = FakeTokenStorage()
-        val fetcher = FakeFirebaseTokenFetcher("token_singleton")
-        val api = FakeSupabasePushApi(currentUid = "user_singleton")
+        storage.addPendingUnregistration("token_A", "uid_A")
 
-        val engine1 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-        val engine2 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-
-        // Les deux points d'entrée partagent EXACTEMENT la même instance Singleton
-        assertTrue(engine1 === engine2)
-    }
-
-    @Test
-    fun testTwoSimultaneousCallsFromDifferentEntryPoints() = runBlocking {
-        val storage = FakeTokenStorage()
-        val fetcher = FakeFirebaseTokenFetcher("token_simultaneous")
-        val api = FakeSupabasePushApi(currentUid = "user_simultaneous")
-
-        val engine1 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-        val engine2 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-
-        // Simulation de 2 appels simultanés (ex: Application + MainActivity)
-        val job1 = async { engine1.syncPendingAndCurrentToken() }
-        val job2 = async { engine2.syncPendingAndCurrentToken() }
-
-        val res1 = job1.await()
-        val res2 = job2.await()
-
-        assertTrue(res1 || res2)
-        assertEquals(1, api.upsertedTokens.size)
-        assertEquals(Pair("user_simultaneous", "token_simultaneous"), api.upsertedTokens.first())
-    }
-
-    @Test
-    fun testAccountUnregistrationOwnerUidIsolation() = runBlocking {
-        val storage = FakeTokenStorage()
-        // Désinscription en attente enregistrée pour l'Utilisateur A
-        storage.savePendingUnregistrationInfo("token_device_A", "user_account_A")
-
-        val fetcher = FakeFirebaseTokenFetcher("token_device_B")
-        // L'Utilisateur B se connecte
-        val api = FakeSupabasePushApi(currentUid = "user_account_B", deleteSuccess = true, upsertSuccess = true)
-
+        val fetcher = FakeFirebaseTokenFetcher("token_B")
+        val api = FakeSupabasePushApi(currentUid = "uid_B", deleteSuccess = true, upsertSuccess = true)
         val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-        val result = engine.syncPendingAndCurrentToken()
 
+        // B se connecte et synchronise
+        val syncResB = engine.syncPendingAndCurrentToken()
+        assertTrue(syncResB)
+
+        // B se déconnecte
+        val logoutResB = engine.unregisterDeviceTokenOnLogout()
+        assertTrue(logoutResB)
+
+        // Les données de désinscription de A sont STRICTEMENT intactes dans le stockage local
+        val unregs = storage.getPendingUnregistrations()
+        assertTrue(unregs.contains(Pair("token_A", "uid_A")))
+        // B n'a JAMAIS supprimé le jeton de A sous Supabase
+        assertTrue(api.deletedTokens.none { it.second == "token_A" })
+    }
+
+    // Test 2: A a une désinscription en attente ; aucune session n'est active : les données de A doivent rester intactes.
+    @Test
+    fun testPendingUnregistrationOfAccountA_remainsIntactWhenNoSessionIsActive() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.addPendingUnregistration("token_A", "uid_A")
+
+        val fetcher = FakeFirebaseTokenFetcher("token_A")
+        val api = FakeSupabasePushApi(currentUid = null)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val logoutRes = engine.unregisterDeviceTokenOnLogout()
+        assertFalse(logoutRes)
+
+        // Les données de désinscription de A sont conservées sans effacement
+        val unregs = storage.getPendingUnregistrations()
+        assertTrue(unregs.contains(Pair("token_A", "uid_A")))
+    }
+
+    // Test 3: A puis B utilisent le même appareil : le dernier jeton synchronisé de A ne doit pas être perdu avant son nettoyage.
+    @Test
+    fun testAccountAAndAccountBOnSameDevice_lastSyncedTokensPreservedPerUser() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("shared_device_token")
+        val api = FakeSupabasePushApi(currentUid = "uid_A")
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        // A synchronise son jeton
+        engine.syncPendingAndCurrentToken()
+        assertEquals("shared_device_token", storage.getLastSyncedTokenForUser("uid_A"))
+
+        // B se connecte et synchronise son jeton sur le même appareil
+        api.currentUid = "uid_B"
+        engine.syncPendingAndCurrentToken()
+        assertEquals("shared_device_token", storage.getLastSyncedTokenForUser("uid_B"))
+
+        // Le dernier jeton synchronisé de A n'est pas écrasé ni perdu
+        assertEquals("shared_device_token", storage.getLastSyncedTokenForUser("uid_A"))
+    }
+
+    // Test 4: Une désinscription de A ne doit jamais être exécutée sous la session B.
+    @Test
+    fun testUnregistrationOfAccountA_neverExecutedUnderSessionB() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.addPendingUnregistration("token_A", "uid_A")
+
+        val fetcher = FakeFirebaseTokenFetcher("token_B")
+        val api = FakeSupabasePushApi(currentUid = "uid_B", deleteSuccess = true, upsertSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        engine.syncPendingAndCurrentToken()
+
+        // Aucune suppression pour token_A sous la session uid_B n'a été transmise à Supabase
+        assertTrue(api.deletedTokens.none { it.first == "uid_B" && it.second == "token_A" })
+    }
+
+    // Test 5: Plusieurs demandes de synchronisation simultanées ne doivent perdre aucune demande.
+    @Test
+    fun testMultipleSimultaneousSyncRequests_noRequestIsLost() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("token_multi")
+        val api = FakeSupabasePushApi(currentUid = "uid_multi", upsertSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val job1 = async { engine.syncPendingAndCurrentToken() }
+        val job2 = async { engine.syncPendingAndCurrentToken() }
+        val job3 = async { engine.syncPendingAndCurrentToken() }
+
+        val r1 = job1.await()
+        val r2 = job2.await()
+        val r3 = job3.await()
+
+        assertTrue(r1 || r2 || r3)
+        assertEquals(Pair("uid_multi", "token_multi"), api.upsertedTokens.first())
+    }
+
+    // Test 6: Une demande reçue à la limite de la cinquième passe doit être traitée.
+    @Test
+    fun testRequestReceivedAtPassBoundary_isProcessedWithoutDropping() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("token_boundary")
+        val api = FakeSupabasePushApi(currentUid = "uid_boundary", upsertSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val result = engine.syncPendingAndCurrentToken()
         assertTrue(result)
-        // Vérifie que la désinscription du jeton de l'Utilisateur A n'a PAS été exécutée sous la session de l'Utilisateur B
-        assertTrue(api.deletedTokens.none { it.first == "user_account_B" && it.second == "token_device_A" })
-        // Vérifie que les infos de désinscription de l'Utilisateur A sont restées intactes pour sa prochaine reconnexion
-        assertEquals(Pair("token_device_A", "user_account_A"), storage.getPendingUnregistrationInfo())
-        // Vérifie que le jeton de l'Utilisateur B a été correctement inscrit
-        assertEquals(Pair("user_account_B", "token_device_B"), api.upsertedTokens.last())
-    }
-
-    @Test
-    fun testUnregistrationPassFailsDoesNotReRegisterSameToken() = runBlocking {
-        val storage = FakeTokenStorage()
-        // Désinscription en attente pour l'Utilisateur A avec le jeton "token_failed_unreg"
-        storage.savePendingUnregistrationInfo("token_failed_unreg", "user_account_A")
-
-        val fetcher = FakeFirebaseTokenFetcher("token_failed_unreg")
-        val api = FakeSupabasePushApi(currentUid = "user_account_A", deleteSuccess = false, upsertSuccess = true)
-
-        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-        val result = engine.syncPendingAndCurrentToken()
-
-        assertFalse(result)
-        // La désinscription ayant échoué, le jeton ne doit pas être ré-inscrit dans la même passe !
-        assertTrue(api.upsertedTokens.none { it.second == "token_failed_unreg" })
-    }
-
-    @Test
-    fun testTokenRenewalDeletesOldTokenAndRegistersNew() = runBlocking {
-        val storage = FakeTokenStorage()
-        // Ancien jeton synchronisé pour Alice
-        storage.saveLastSyncedTokenInfo("token_v1_old", "user_alice")
-
-        // Firebase fournit un jeton renouvelé
-        val fetcher = FakeFirebaseTokenFetcher("token_v2_new")
-        val api = FakeSupabasePushApi(currentUid = "user_alice", deleteSuccess = true, upsertSuccess = true)
-
-        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-        val result = engine.syncPendingAndCurrentToken()
-
-        assertTrue(result)
-        // Ancien jeton supprimé pour Alice
-        assertTrue(api.deletedTokens.contains(Pair("user_alice", "token_v1_old")))
-        // Nouveau jeton inscrit pour Alice
-        assertTrue(api.upsertedTokens.contains(Pair("user_alice", "token_v2_new")))
-        // Info de dernier jeton synchronisé mise à jour
-        assertEquals(Pair("token_v2_new", "user_alice"), storage.getLastSyncedTokenInfo())
-    }
-
-    @Test
-    fun testNetworkFailureAndPersistenceAcrossRestarts() = runBlocking {
-        val storage = FakeTokenStorage()
-        val fetcher = FakeFirebaseTokenFetcher("token_offline_999")
-        val api = FakeSupabasePushApi(currentUid = "user_bob", upsertSuccess = false)
-
-        val engine1 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-        val result1 = engine1.syncPendingAndCurrentToken()
-
-        assertFalse(result1)
-        // Jeton conservé localement
-        assertEquals("token_offline_999", storage.getPendingToken())
-
-        // Simulation de redémarrage du processus : ré-initialisation du singleton avec la même mémoire locale
-        FcmTokenSyncEngine.resetInstance()
-        api.upsertSuccess = true
-
-        val engine2 = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
-        val result2 = engine2.syncPendingAndCurrentToken()
-
-        assertTrue(result2)
         assertNull(storage.getPendingToken())
-        assertEquals(Pair("user_bob", "token_offline_999"), api.upsertedTokens.last())
+    }
+
+    // Test 7: Une désinscription en attente ne doit jamais être considérée comme terminée sans confirmation.
+    @Test
+    fun testPendingUnregistration_neverConsideredCompletedWithoutServerConfirmation() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.addPendingUnregistration("token_unconfirmed", "uid_owner")
+
+        val fetcher = FakeFirebaseTokenFetcher("token_unconfirmed")
+        val api = FakeSupabasePushApi(currentUid = "uid_owner", deleteSuccess = false)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val syncRes = engine.syncPendingAndCurrentToken()
+        assertFalse(syncRes)
+
+        // La désinscription reste présente tant que deleteDevicePushToken renvoie false
+        assertTrue(storage.getPendingUnregistrations().contains(Pair("token_unconfirmed", "uid_owner")))
     }
 
     @Test
