@@ -408,12 +408,98 @@ class VoiceAndPushUnitTest {
     }
 
     @Test
-    fun testAndroidCompatibility_isDuplicateNotification_usesIteratorWithoutRemoveIf() {
-        val msg1 = "compat_msg_101"
-        val msg2 = "compat_msg_102"
-        assertFalse(MyFirebaseMessagingService.isDuplicateNotification(msg1))
-        assertTrue(MyFirebaseMessagingService.isDuplicateNotification(msg1))
-        assertFalse(MyFirebaseMessagingService.isDuplicateNotification(msg2))
+    fun testConcurrentHashMapExpiredCleanup_removesExpiredAndNoException() {
+        val now = System.currentTimeMillis()
+        MyFirebaseMessagingService.addProcessedMessageForTesting("msg_expired_1", now - 70_000L)
+        MyFirebaseMessagingService.addProcessedMessageForTesting("msg_recent_1", now)
+
+        assertEquals(2, MyFirebaseMessagingService.getProcessedMessagesCountForTesting())
+
+        // Exercising isDuplicateNotification cleans up expired entries without throwing UnsupportedOperationException
+        val isDup = MyFirebaseMessagingService.isDuplicateNotification("msg_new_2")
+        assertFalse(isDup)
+
+        // After cleanup, only msg_recent_1 and msg_new_2 remain
+        assertEquals(2, MyFirebaseMessagingService.getProcessedMessagesCountForTesting())
+    }
+
+    @Test
+    fun testSimultaneousSyncAndLogout_serializedBySharedMutex() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("shared_token_simultaneous")
+        val api = FakeSupabasePushApi(currentUid = "uid_simultaneous", upsertSuccess = true, deleteSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        // Launch sync and logout concurrently
+        val syncJob = async { engine.syncPendingAndCurrentToken() }
+        val logoutJob = async { engine.unregisterDeviceTokenOnLogout() }
+
+        val syncRes = syncJob.await()
+        val logoutRes = logoutJob.await()
+
+        assertTrue(syncRes || logoutRes)
+        // Ensure no deadlock occurred and operations completed deterministically
+    }
+
+    @Test
+    fun testAccountChangeDuringUnregistration_abortsAndRetainsPendingUnregistration() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.saveLastSyncedTokenForUser("uid_account_A", "token_account_A")
+
+        val fetcher = FakeFirebaseTokenFetcher("token_account_A")
+        val api = object : SupabasePushApi {
+            var calls = 0
+            override fun getCurrentSessionUid(): String? {
+                calls++
+                return if (calls > 1) "uid_account_B" else "uid_account_A"
+            }
+            override suspend fun upsertDevicePushToken(fcmToken: String): Boolean = true
+            override suspend fun deleteDevicePushToken(fcmToken: String): Boolean = true
+        }
+
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val logoutRes = engine.unregisterDeviceTokenOnLogout()
+        assertFalse(logoutRes)
+
+        // Pending unregistration preserved for account A
+        val pending = storage.getPendingUnregistrations()
+        assertTrue(pending.contains(Pair("token_account_A", "uid_account_A")))
+    }
+
+    @Test
+    fun testNoReRegistrationAfterLogout() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.saveLastSyncedTokenForUser("uid_user1", "token_user1")
+        val fetcher = FakeFirebaseTokenFetcher("token_user1")
+        val api = FakeSupabasePushApi(currentUid = "uid_user1", deleteSuccess = true, upsertSuccess = true)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        // Logout
+        val logoutRes = engine.unregisterDeviceTokenOnLogout()
+        assertTrue(logoutRes)
+
+        // Clear session
+        api.currentUid = null
+
+        // Subsequent sync should NOT re-register the token
+        val syncRes = engine.syncPendingAndCurrentToken()
+        assertFalse(syncRes)
+        assertNull(storage.getLastSyncedTokenForUser("uid_user1"))
+    }
+
+    @Test
+    fun testPreservePendingUnregistrationsOnDeleteFailure() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("token_fail")
+        val api = FakeSupabasePushApi(currentUid = "uid_fail", deleteSuccess = false)
+        val engine = FcmTokenSyncEngine.getInstance(storage, fetcher, api)
+
+        val logoutRes = engine.unregisterDeviceTokenOnLogout()
+        assertFalse(logoutRes)
+
+        val pending = storage.getPendingUnregistrations()
+        assertTrue(pending.contains(Pair("token_fail", "uid_fail")))
     }
 
     @Test

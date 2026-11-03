@@ -34,11 +34,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         fun isDuplicateNotification(messageId: String?): Boolean {
             if (messageId.isNullOrBlank()) return false
             val now = System.currentTimeMillis()
-            val iterator = processedMessageIds.entries.iterator()
-            while (iterator.hasNext()) {
-                val entry = iterator.next()
+            for (entry in processedMessageIds.entries) {
                 if (now - entry.value > 60_000) {
-                    iterator.remove()
+                    processedMessageIds.remove(entry.key, entry.value)
                 }
             }
             val existingTime = processedMessageIds[messageId]
@@ -47,6 +45,14 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             }
             processedMessageIds[messageId] = now
             return false
+        }
+
+        fun addProcessedMessageForTesting(messageId: String, timestamp: Long) {
+            processedMessageIds[messageId] = timestamp
+        }
+
+        fun getProcessedMessagesCountForTesting(): Int {
+            return processedMessageIds.size
         }
 
         fun getPendingToken(context: Context): String? {
