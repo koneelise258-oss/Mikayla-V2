@@ -1158,6 +1158,32 @@ fun SettingsScreen(
                     }
 
                     item {
+                        Text(text = "Catégories de notifications :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text(text = "Appliqué immédiatement, même application fermée.", fontSize = 10.sp, color = TextSecondary)
+                    }
+
+                    items(com.example.mikayala.util.NotificationPrefs.Category.values().toList()) { category ->
+                        var enabled by remember(category) {
+                            mutableStateOf(com.example.mikayala.util.NotificationPrefs.isEnabled(context, category))
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = category.label, fontSize = 13.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                            Switch(
+                                checked = enabled,
+                                onCheckedChange = {
+                                    enabled = it
+                                    com.example.mikayala.util.NotificationPrefs.setEnabled(context, category, it)
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
+                            )
+                        }
+                    }
+
+                    item {
                         // Cycle Partner Alerts
                         Row(
                             modifier = Modifier.fillMaxWidth(),

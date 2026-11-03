@@ -8,7 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 interface SendFcmRequest {
   coupleId: string;
   recipientId: string;
-  type: "chat_message" | "call" | "missed_call" | "audio" | "image" | "video" | "vault_add" | "game" | "game_turn" | "anniversary" | "mood_update" | "poll_created" | "love_bomb";
+  type: "chat_message" | "call" | "missed_call" | "audio" | "image" | "video" | "vault_add" | "game" | "game_turn" | "anniversary" | "mood_update" | "poll_created" | "love_bomb" | "calendar_event" | "cycle";
   title?: string;
   body?: string;
   data?: Record<string, string>;
@@ -140,7 +140,8 @@ serve(async (req: Request) => {
     const body: SendFcmRequest = await req.json();
     const { coupleId, recipientId, type, title, hidePreview } = body;
 
-    if (!recipientId || !type) {
+    const ALLOWED_TYPES = ["chat_message","call","missed_call","audio","image","video","vault_add","game","game_turn","anniversary","mood_update","poll_created","love_bomb","calendar_event","cycle"];
+    if (!recipientId || !type || !ALLOWED_TYPES.includes(type)) {
       return new Response(JSON.stringify({ error: "Missing recipientId or type parameter" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -194,6 +195,10 @@ serve(async (req: Request) => {
 
     // 4. Format payload according to privacy settings
     let messageText = body.body || "";
+    // Données de cycle : jamais de détail dans une notification push
+    if (type === "cycle") {
+      messageText = "";
+    }
     if (hidePreview) {
       messageText = "Nouveau message reçu 🔒";
     }

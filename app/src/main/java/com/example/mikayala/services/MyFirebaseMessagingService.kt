@@ -283,12 +283,23 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 return
             }
 
+            // Aucune notification sans session active (déconnexion / changement de compte)
+            if (currentUid.isNullOrEmpty()) {
+                Log.d("FCM_MSG", "Notification ignorée : aucune session active")
+                return
+            }
+
+            // Catégorie désactivée par l'utilisateur dans Paramètres > Notifications
+            if (!com.example.mikayala.util.NotificationPrefs.isTypeEnabled(applicationContext, type)) {
+                Log.d("FCM_MSG", "Notification ignorée : catégorie désactivée ($type)")
+                return
+            }
+
             // S'assurer que les canaux de notification existent
             NotificationHelper.createNotificationChannels(applicationContext)
 
-            // Paramètres locaux de confidentialité et camouflage
-            val prefs = applicationContext.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
-            val privacyMode = prefs.getString("notification_privacy_mode", "discreet") ?: "discreet"
+            // Mode d'affichage choisi par le DESTINATAIRE (le serveur envoie toujours le contenu)
+            val privacyMode = com.example.mikayala.util.NotificationPrefs.privacyMode(applicationContext)
 
             when (type) {
                 "call" -> {
@@ -379,6 +390,14 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     NotificationHelper.showAnniversaryNotification(
                         context = applicationContext,
                         anniversaryText = text
+                    )
+                }
+                "calendar_event" -> {
+                    NotificationHelper.showCalendarEventNotification(
+                        context = applicationContext,
+                        eventTitle = data["eventTitle"] ?: "Événement du couple",
+                        eventDate = data["eventDate"] ?: "",
+                        location = data["location"] ?: ""
                     )
                 }
                 "cycle" -> {

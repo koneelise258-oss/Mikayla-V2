@@ -224,7 +224,7 @@ data class UserSettingsEntity(
     val fontSizeScale: String = "medium", // "small", "medium", "large", "xlarge"
     val proximityP2PEnabled: Boolean = true,
     val autoSendOfflineQueue: Boolean = true,
-    val notificationPrivacyMode: String = "discreet", // "discreet", "weather_camouflage", "system_camouflage", "romantic"
+    val notificationPrivacyMode: String = "romantic", // "discreet", "weather_camouflage", "system_camouflage", "romantic"
     val notificationSound: String = "heartbeat", // "heartbeat", "soft_chime", "whisper", "silent"
     val heartHapticEnabled: Boolean = true,
     val cyclePartnerAlertsEnabled: Boolean = true,

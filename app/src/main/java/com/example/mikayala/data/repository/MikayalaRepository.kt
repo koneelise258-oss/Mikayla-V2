@@ -36,7 +36,8 @@ class MikayalaRepository(private val context: Context) {
         val couple = _coupleSpace.value
         val (myUserId, partnerId) = resolveCoupleMembers()
         if (couple.id.isNotBlank() && partnerId.isNotBlank() && myUserId != partnerId) {
-            val hidePreview = _userSettings.value.notificationPrivacyMode != "romantic"
+            // Le destinataire choisit localement le camouflage ; l'expéditeur n'impose rien.
+            val hidePreview = false
             val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
             repositoryScope.launch {
                 supabaseService.sendFcmPush(
@@ -139,7 +140,7 @@ class MikayalaRepository(private val context: Context) {
             com.example.mikayala.data.model.ConnectionMode.ONLINE
         }
 
-        val storedNotifPrivacyMode = prefs.getString("notification_privacy_mode", "discreet") ?: "discreet"
+        val storedNotifPrivacyMode = prefs.getString("notification_privacy_mode", "romantic") ?: "romantic"
         if (storedUserId.isNotEmpty()) {
             _userSettings.value = _userSettings.value.copy(
                 userId = storedUserId,
@@ -149,7 +150,11 @@ class MikayalaRepository(private val context: Context) {
                 hasLocalPassword = storedHasPassword,
                 hasCompletedPairingSetup = storedPairingSetupCompleted,
                 connectionMode = storedConnMode,
-                notificationPrivacyMode = storedNotifPrivacyMode
+                notificationPrivacyMode = storedNotifPrivacyMode,
+                notificationSound = prefs.getString("notification_sound", "heartbeat") ?: "heartbeat",
+                heartHapticEnabled = prefs.getBoolean("heart_haptic_enabled", true),
+                cyclePartnerAlertsEnabled = prefs.getBoolean("cycle_partner_alerts_enabled", true),
+                loveWidgetEnabled = prefs.getBoolean("love_widget_enabled", true)
             )
             // Stored state is loaded purely as cache, status starts unverified until Supabase sync
             if (storedPairingCode.isNotEmpty()) {
@@ -1990,7 +1995,13 @@ class MikayalaRepository(private val context: Context) {
         cyclePartnerAlertsEnabled: Boolean,
         loveWidgetEnabled: Boolean
     ) {
-        prefs.edit().putString("notification_privacy_mode", notificationPrivacyMode).apply()
+        prefs.edit()
+            .putString("notification_privacy_mode", notificationPrivacyMode)
+            .putString("notification_sound", notificationSound)
+            .putBoolean("heart_haptic_enabled", heartHapticEnabled)
+            .putBoolean("cycle_partner_alerts_enabled", cyclePartnerAlertsEnabled)
+            .putBoolean("love_widget_enabled", loveWidgetEnabled)
+            .apply()
         _userSettings.value = _userSettings.value.copy(
             notificationPrivacyMode = notificationPrivacyMode,
             notificationSound = notificationSound,
@@ -2857,6 +2868,10 @@ class MikayalaRepository(private val context: Context) {
             return@withContext false
         }
 
+        // Plus aucune notification résiduelle après déconnexion
+        try {
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).cancelAll()
+        } catch (_: Exception) {}
         clearCoupleCache()
         prefs.edit().apply {
             remove("user_id")
