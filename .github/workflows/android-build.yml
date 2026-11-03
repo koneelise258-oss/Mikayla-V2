@@ -26,7 +26,9 @@ jobs:
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            echo "Firebase : fichier RÉEL (secret GOOGLE_SERVICES_JSON)"
           else
+            echo "Firebase : fichier FACTICE (aucun secret) - APK sans notifications réelles"
             cat > app/google-services.json <<'JSON'
           {
             "project_info": { "project_number": "000000000000", "project_id": "ci-placeholder", "storage_bucket": "ci-placeholder.appspot.com" },
@@ -53,7 +55,10 @@ jobs:
           ./gradlew --no-daemon --stacktrace assembleDebug
 
       - name: Unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest
+        run: |
+          ./gradlew --no-daemon testDebugUnitTest
+          echo "Résumé des tests :"
+          for f in app/build/test-results/testDebugUnitTest/*.xml; do grep -o 'testsuite name="[^"]*" tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' "$f"; done
 
       - uses: actions/upload-artifact@v4
         if: always()
