@@ -9,7 +9,7 @@ android {
     namespace = "com.example.mikayala"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.aistudio.mikayala.mkyzlv"
+        applicationId = "com.mikayla.app"
         minSdk = 23
         targetSdk = 36
         versionCode = 2
