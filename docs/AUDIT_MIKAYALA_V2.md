@@ -34,6 +34,7 @@ Limite honnête : après « Forcer l'arrêt » ou sur certaines surcouches (Xiao
 - **Stockage** : `chat_media` utilise `publicUrl` → fichiers de conversation lisibles par quiconque a l'URL. Le coffre devrait passer en bucket privé + URLs signées.
 - **Sécurité Supabase (à vérifier sur le projet réel, non vérifiable ici)** : buckets publics, `search_path` mutable, fonctions `SECURITY DEFINER` exécutables par `anon`, `device_authorizations` sans politique. Aucune modification faite en production.
 - **Paramètres** : `SettingsScreen` = une liste de boîtes de dialogue modales ; plusieurs préférences n'étaient pas persistées (N4). Réorganisation en catégories (compte / notifications / confidentialité / discussions / appels / stockage / apparence) à faire.
+- Compatibilité visée : Android 7 (API 24) à Android 16 ; les téléphones réels sont sous Android 7 et 10. Pas de canaux avant Android 8 : son/vibration posés par notification (corrigé pour messages et appels).
 - Tests : 2 tests unitaires présents ; non exécutés.
 
 ## 4. Plan recommandé (ordre)

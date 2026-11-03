@@ -108,6 +108,7 @@ object NotificationHelper {
             .setContentText("$callerName vous appelle...")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setOngoing(true)
             .setAutoCancel(true)
             .setFullScreenIntent(fullScreenPendingIntent, true)
@@ -273,6 +274,7 @@ object NotificationHelper {
             .setContentText(messageText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(messageText))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL) // Android 7 : pas de canaux, son/vibration par notification
             .setAutoCancel(true)
             .setGroup("com.example.mikayala.CHAT_GROUP")
             .setContentIntent(openAppPendingIntent)

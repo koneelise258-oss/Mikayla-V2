@@ -11,3 +11,4 @@ Déjà fait (non compilé) : défaut de notification « romantic », réglages p
 4. Refaire l'UI/UX (inspiration Pinterest, cartes, navigation claire), supprimer les éléments inutiles.
 5. Ensuite seulement : WebRTC, P2P Wi-Fi Direct, durcissement Supabase (buckets privés, RLS), jeux/calendrier/cycle.
 Après chaque étape : rapport de ce qui est vérifié et de ce qui exige un test sur les deux téléphones.
+Contrainte : appareils réels Android 7 et Android 10 ; compatibilité API 24 → 36 obligatoire (pas d'API récente sans garde Build.VERSION).
