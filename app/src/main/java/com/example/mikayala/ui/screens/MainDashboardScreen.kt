@@ -1,5 +1,6 @@
 package com.example.mikayala.ui.screens
 
+import kotlinx.coroutines.launch
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -655,6 +656,9 @@ fun MainDashboardScreen(
                 onEndCall = { duration ->
                     repository.addCallLog(isVideo = isVideo, durationSeconds = duration)
                     activeCallState = null
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        repository.endOutgoingCall(duration)
+                    }
                 }
             )
         }

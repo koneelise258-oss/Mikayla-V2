@@ -2760,6 +2760,30 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
+    @Volatile private var lastOutgoingCallId: String = ""
+
+    /** Termine l'appel sortant : "cancelled" (+ push d'annulation) si personne n'a décroché, sinon "ended". */
+    suspend fun endOutgoingCall(durationSeconds: Int) {
+        val callId = lastOutgoingCallId
+        if (callId.isBlank()) return
+        lastOutgoingCallId = ""
+        val answered = durationSeconds > 0
+        supabaseService.updateCallStatus(callId, if (answered) "ended" else "cancelled")
+        val couple = _coupleSpace.value
+        val (_, partnerId) = resolveCoupleMembers()
+        if (!answered && partnerId.isNotBlank() && couple.id.isNotBlank()) {
+            supabaseService.sendFcmPush(
+                coupleId = couple.id,
+                recipientId = partnerId,
+                type = "call_cancelled",
+                title = "Mikayala",
+                body = "",
+                extraData = mapOf("callId" to callId, "coupleId" to couple.id),
+                hidePreview = false
+            )
+        }
+    }
+
     suspend fun initiateSupabaseCall(isVideo: Boolean): JSONObject? {
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return null
@@ -2770,6 +2794,7 @@ class MikayalaRepository(private val context: Context) {
         val res = supabaseService.initiateCall(coupleId, myName, if (isVideo) "video" else "voice", pairingCode)
         if (res != null) {
             val callId = res.optString("id")
+            lastOutgoingCallId = callId
             val (_, partnerId) = resolveCoupleMembers()
             if (partnerId.isNotBlank()) {
                 repositoryScope.launch {
@@ -2833,7 +2858,7 @@ class MikayalaRepository(private val context: Context) {
                     supabaseService.sendFcmPush(
                         coupleId = couple.id,
                         recipientId = partnerId,
-                        type = "missed_call",
+                        type = "call_declined",
                         title = "Mikayala",
                         body = "Appel refusé par $myName",
                         extraData = mapOf(

@@ -314,6 +314,16 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         callId = callId
                     )
                 }
+                "call_cancelled" -> {
+                    // L'appelant a raccroché avant réponse : retirer la sonnerie
+                    NotificationHelper.dismissIncomingCallNotification(applicationContext)
+                }
+                "call_declined" -> {
+                    NotificationHelper.showCallDeclinedNotification(
+                        context = applicationContext,
+                        partnerName = resolveCallerName(privacyMode, data["callerName"] ?: "Mon Amour")
+                    )
+                }
                 "missed_call" -> {
                     val rawCaller = data["callerName"] ?: "Mon Amour"
                     val isVideo = data["callType"] == "video"

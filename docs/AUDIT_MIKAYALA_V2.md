@@ -19,9 +19,9 @@
 | N4 | `notificationSound`, vibration, alertes cycle, widget : **non persistés** (perdus à la fermeture). | **Corrigé** (SharedPreferences, rechargés au démarrage) |
 | N5 | Push reçu sans session active (après déconnexion) affiché quand même. | **Corrigé** (ignoré) ; `cancelAll()` à la déconnexion |
 | N6 | Type `calendar_event` absent côté service ; `cycle` non déclaré côté Edge Function. | **Corrigé** (liste blanche de types, `cycle` sans corps) |
-| N7 | Un seul canal Android pour tout ; le choix du son n'est pas appliqué aux canaux. | **À faire** (canaux par catégorie : messages, appels, jeux, calendrier) |
-| N8 | Refus d'appel envoyé comme `missed_call` (« Appel manqué » trompeur). | **À faire** (type `call_declined`) |
-| N9 | Pas de suppression de la notification d'appel si l'appelant raccroche avant réponse. | **À faire** (push `call_cancelled`) |
+| N7 | Un seul canal Android pour tout. | **Corrigé** (canaux Messages, Jeux, Calendrier, Appels ; sélecteur de son par canal reste à faire) |
+| N8 | Refus d'appel envoyé comme `missed_call`. | **Corrigé** (`call_declined`) |
+| N9 | Sonnerie non retirée si l'appelant raccroche. | **Corrigé** (`call_cancelled`, câblé sur la fin d'appel) |
 | N10 | Permission `POST_NOTIFICATIONS` demandée dans `MainActivity` mais sans écran d'explication ni lien vers réglages si refusée ; `SCHEDULE_EXACT_ALARM` sans gestion de refus. | **À faire** |
 | N11 | Appel entrant : `fullScreenIntent` ok, mais pas de service de premier plan ni `USE_FULL_SCREEN_INTENT` (Android 14+ à vérifier). | **À tester** |
 Edge Function : authentifie l'appelant, vérifie l'appartenance au couple, ne supprime un token que sur `UNREGISTERED`/404, TTL 30 s pour les appels : **correct**. Pas de redéploiement fait (à valider par vous : `supabase functions deploy send-fcm`).

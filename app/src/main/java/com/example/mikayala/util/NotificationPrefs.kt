@@ -22,7 +22,7 @@ object NotificationPrefs {
     /** Catégorie associée à un type de push FCM. */
     fun categoryFor(type: String): Category = when (type) {
         "chat_message", "audio", "image", "video" -> Category.MESSAGES
-        "call", "missed_call" -> Category.CALLS
+        "call", "missed_call", "call_declined", "call_cancelled" -> Category.CALLS
         "game", "game_turn" -> Category.GAMES
         "anniversary", "calendar_event" -> Category.CALENDAR
         "cycle" -> Category.CYCLE

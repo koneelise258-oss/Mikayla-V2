@@ -8,7 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 interface SendFcmRequest {
   coupleId: string;
   recipientId: string;
-  type: "chat_message" | "call" | "missed_call" | "audio" | "image" | "video" | "vault_add" | "game" | "game_turn" | "anniversary" | "mood_update" | "poll_created" | "love_bomb" | "calendar_event" | "cycle";
+  type: "chat_message" | "call" | "missed_call" | "audio" | "image" | "video" | "vault_add" | "game" | "game_turn" | "anniversary" | "mood_update" | "poll_created" | "love_bomb" | "calendar_event" | "cycle" | "call_declined" | "call_cancelled";
   title?: string;
   body?: string;
   data?: Record<string, string>;
@@ -140,7 +140,7 @@ serve(async (req: Request) => {
     const body: SendFcmRequest = await req.json();
     const { coupleId, recipientId, type, title, hidePreview } = body;
 
-    const ALLOWED_TYPES = ["chat_message","call","missed_call","audio","image","video","vault_add","game","game_turn","anniversary","mood_update","poll_created","love_bomb","calendar_event","cycle"];
+    const ALLOWED_TYPES = ["chat_message","call","missed_call","audio","image","video","vault_add","game","game_turn","anniversary","mood_update","poll_created","love_bomb","calendar_event","cycle","call_declined","call_cancelled"];
     if (!recipientId || !type || !ALLOWED_TYPES.includes(type)) {
       return new Response(JSON.stringify({ error: "Missing recipientId or type parameter" }), {
         status: 400,
@@ -226,7 +226,7 @@ serve(async (req: Request) => {
           data: payloadData,
           android: {
             priority: "HIGH",
-            ttl: type === "call" ? "30s" : "86400s",
+            ttl: (type === "call" || type === "call_cancelled") ? "30s" : "86400s",
           },
         },
       };

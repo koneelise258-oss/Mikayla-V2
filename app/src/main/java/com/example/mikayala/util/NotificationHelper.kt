@@ -17,6 +17,10 @@ object NotificationHelper {
     private const val CHANNEL_CALLS_ID = "mikayala_incoming_calls"
     private const val CHANNEL_LOVE_TIME_ID = "mikayala_love_time_pinned"
     private const val CHANNEL_NOTIFS_ID = "mikayala_general_notifs"
+    // Canaux par catégorie (nouveaux IDs : un canal existant ne peut plus être modifié par l'app)
+    private const val CHANNEL_MESSAGES_ID = "mikayala_messages_v2"
+    private const val CHANNEL_GAMES_ID = "mikayala_games_v2"
+    private const val CHANNEL_CALENDAR_ID = "mikayala_calendar_v2"
 
     private const val NOTIF_ID_CALL = 1001
     private const val NOTIF_ID_LOVE_TIME = 1002
@@ -59,6 +63,20 @@ object NotificationHelper {
                 vibrationPattern = longArrayOf(0, 250, 250, 250)
             }
 
+            val messagesChannel = NotificationChannel(CHANNEL_MESSAGES_ID, "Messages", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Messages, vocaux, photos et vidéos du partenaire"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 250, 250, 250)
+            }
+            val gamesChannel = NotificationChannel(CHANNEL_GAMES_ID, "Jeux", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Invitations et tours de jeu"
+            }
+            val calendarChannel = NotificationChannel(CHANNEL_CALENDAR_ID, "Calendrier", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Événements, rappels et anniversaires"
+            }
+            manager.createNotificationChannel(messagesChannel)
+            manager.createNotificationChannel(gamesChannel)
+            manager.createNotificationChannel(calendarChannel)
             manager.createNotificationChannel(callChannel)
             manager.createNotificationChannel(loveTimeChannel)
             manager.createNotificationChannel(generalChannel)
@@ -123,6 +141,25 @@ object NotificationHelper {
     fun dismissIncomingCallNotification(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.cancel(NOTIF_ID_CALL)
+    }
+
+    fun showCallDeclinedNotification(context: Context, partnerName: String) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 4, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(context, CHANNEL_CALLS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Appel refusé")
+            .setContentText("$partnerName a refusé votre appel")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIF_ID_CALL + 2, builder.build())
     }
 
     fun showMissedCallNotification(context: Context, callerName: String, isVideo: Boolean, callId: String = "") {
@@ -197,7 +234,7 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_CALENDAR_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("🎉 Joyeux Anniversaire de Couple ! 🎉")
             .setContentText(anniversaryText)
@@ -217,7 +254,7 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_GAMES_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("🎮 Jeu de Couple • $partnerName")
             .setContentText("$partnerName vient de jouer à « $gameTitle » ! Découvrez son score 🔥")
@@ -268,7 +305,7 @@ object NotificationHelper {
             replyPendingIntent
         ).addRemoteInput(remoteInput).build()
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(senderName)
             .setContentText(messageText)
@@ -284,7 +321,7 @@ object NotificationHelper {
         manager.notify(notifId, builder.build())
 
         // Notification récapitulative pour regroupement intelligent sous Android
-        val summaryBuilder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+        val summaryBuilder = NotificationCompat.Builder(context, CHANNEL_MESSAGES_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setStyle(NotificationCompat.InboxStyle().setSummaryText("Mikayala"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -308,7 +345,7 @@ object NotificationHelper {
 
         val text = if (location.isNotBlank()) "À $eventDate • Lieu: $location" else "À $eventDate"
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_CALENDAR_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("📅 Rappel d'Événement : $eventTitle")
             .setContentText(text)
@@ -331,7 +368,7 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_GAMES_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("🎮 C'est à ton tour de jouer !")
             .setContentText("$partnerName a validé son coup dans « $gameTitle ». À toi de jouer ! 🔥")
@@ -391,7 +428,7 @@ object NotificationHelper {
 
         val displayText = if (isFile) "📁 Fichier reçu en mode Proximité : $content" else "⚡ [Mode Proximité] $content"
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("📡 Proximité • $senderName")
             .setContentText(displayText)
