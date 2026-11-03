@@ -75,6 +75,10 @@ class SupabaseService(
     val supabaseKey: String
         get() = customKey?.ifEmpty { null } ?: BuildConfig.SUPABASE_ANON_KEY
 
+    /** Dernière cause d'échec d'authentification, lisible par l'utilisateur (aucune donnée secrète). */
+    @Volatile var lastAuthError: String? = null
+        private set
+
     suspend fun ensureAnonymousSession(): Boolean {
         try {
             val session = supabase.auth.currentSessionOrNull()
@@ -87,9 +91,11 @@ class SupabaseService(
             supabase.auth.signInAnonymously()
             val newSession = supabase.auth.currentSessionOrNull()
             Log.d("MikayalaAuth", "[AUTH] Session anonyme créée avec succès. UID: ${newSession?.user?.id}")
+            lastAuthError = null
             return true
         } catch (e: Exception) {
             Log.e("MikayalaAuth", "[AUTH] ensureAnonymousSession a échoué: ${e.message}")
+            lastAuthError = AuthErrorExplainer.explain(e.message, isConfigured())
             return false
         }
     }

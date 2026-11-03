@@ -38,6 +38,23 @@ jobs:
           check ANDROID_KEYSTORE_PASSWORD "$S5"
           check ANDROID_KEY_ALIAS "$S6"
           check ANDROID_KEY_PASSWORD "$S7"
+          # Format Supabase (jamais la valeur) : URL du projet attendu, type et rôle de la clé
+          URL_CLEAN=$(printf '%s' "$S2" | tr -d '[:space:]' | sed 's#/*$##')
+          if [ "$URL_CLEAN" = "https://yrcnneyejqlkumjbetfh.supabase.co" ]; then echo "SUPABASE_URL : conforme au projet yrcnneyejqlkumjbetfh"; else echo "::error::SUPABASE_URL ne correspond pas à https://yrcnneyejqlkumjbetfh.supabase.co (espace, guillemet, faute ou autre projet)"; fi
+          if [ "$(printf '%s' "$S2" | tr -d '[:space:]')" != "$S2" ]; then echo "::warning::SUPABASE_URL contient des espaces ou un retour à la ligne"; fi
+          KEY=$(printf '%s' "$S3" | tr -d '[:space:]')
+          case "$KEY" in
+            sb_publishable_*) echo "SUPABASE_ANON_KEY : clé publishable (nouveau format)";;
+            sb_secret_*) echo "::error::SUPABASE_ANON_KEY est une clé SECRÈTE : ne jamais la mettre dans l'APK. Utiliser la clé anon/publishable."; exit 1;;
+            eyJ*.*.*)
+              PAYLOAD=$(printf '%s' "$KEY" | cut -d. -f2 | tr '_-' '/+')
+              while [ $(( ${#PAYLOAD} % 4 )) -ne 0 ]; do PAYLOAD="$PAYLOAD="; done
+              ROLE=$(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.role // "?"' 2>/dev/null)
+              REF=$(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.ref // "?"' 2>/dev/null)
+              echo "SUPABASE_ANON_KEY : JWT, rôle=$ROLE, projet conforme=$([ "$REF" = yrcnneyejqlkumjbetfh ] && echo oui || echo NON)"
+              if [ "$ROLE" = "service_role" ]; then echo "::error::SUPABASE_ANON_KEY est la clé service_role : interdit dans un APK."; exit 1; fi;;
+            *) echo "::error::SUPABASE_ANON_KEY n'a pas un format de clé Supabase reconnu";;
+          esac
 
       # Firebase : vrai fichier obligatoire pour un APK de test FCM.
       # Sans secret, on compile seulement (contrôle du code) et AUCUN APK n'est publié.

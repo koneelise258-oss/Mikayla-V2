@@ -173,7 +173,7 @@ fun AuthScreen(
                             onAuthSuccess()
                         } else {
                             isLoading = false
-                            Toast.makeText(context, "Erreur de connexion Supabase.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, repository.supabaseService.lastAuthError ?: "Erreur de connexion Supabase.", Toast.LENGTH_LONG).show()
                         }
                     }
                 },
@@ -237,7 +237,7 @@ fun AuthScreen(
                             onAuthSuccess()
                         } else {
                             isLoading = false
-                            Toast.makeText(context, "Erreur de connexion Supabase.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, repository.supabaseService.lastAuthError ?: "Erreur de connexion Supabase.", Toast.LENGTH_LONG).show()
                         }
                     }
                 },

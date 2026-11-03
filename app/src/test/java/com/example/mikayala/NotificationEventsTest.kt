@@ -197,3 +197,20 @@ class NotificationEventsTest {
         assertFalse(svc.isForAnotherAccount("userA", ""))
     }
 }
+
+class AuthErrorExplainerTest {
+    private val e = com.example.mikayala.data.AuthErrorExplainer
+
+    @Test fun anonymeDesactive() {
+        assertTrue(e.explain("Anonymous sign-ins are disabled", true).contains("Anonymous sign-ins"))
+    }
+    @Test fun cleInvalide() {
+        assertTrue(e.explain("Invalid API key", true).contains("SUPABASE_ANON_KEY"))
+    }
+    @Test fun reseau() {
+        assertTrue(e.explain("Unable to resolve host \"x.supabase.co\"", true).contains("injoignable"))
+    }
+    @Test fun nonConfigure() {
+        assertTrue(e.explain("whatever", false).contains("mal configurée"))
+    }
+}
