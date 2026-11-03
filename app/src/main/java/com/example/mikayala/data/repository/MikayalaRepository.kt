@@ -2001,7 +2001,7 @@ class MikayalaRepository(private val context: Context) {
         np.setPrivacyMode(context, notificationPrivacyMode)
         np.setSound(context, normalizedSound)
         np.setVibration(context, heartHapticEnabled)
-        np.setEnabled(context, np.Category.CYCLE, cyclePartnerAlertsEnabled)
+        np.setEnabled(context, com.example.mikayala.util.NotificationPrefs.Category.CYCLE, cyclePartnerAlertsEnabled)
         prefs.edit().putBoolean("love_widget_enabled", loveWidgetEnabled).apply()
         _userSettings.value = _userSettings.value.copy(
             notificationPrivacyMode = notificationPrivacyMode,
