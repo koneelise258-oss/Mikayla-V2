@@ -32,6 +32,7 @@ class MikayalaRepository(private val context: Context) {
                 }
             }
         }
+        com.example.mikayala.services.MyFirebaseMessagingService.fetchAndSyncToken(context)
     }
 
     private fun notifyPartnerAfterInsert(type: String, previewText: String, messageId: String = "") {
@@ -400,6 +401,7 @@ class MikayalaRepository(private val context: Context) {
                     prefs.edit().putString("display_name", disp).apply()
                     _userSettings.value = _userSettings.value.copy(displayName = disp)
                 }
+                syncPendingPushToken()
             }
         }
         return result
@@ -415,6 +417,7 @@ class MikayalaRepository(private val context: Context) {
                     .putString("display_name", displayName)
                     .apply()
                 _userSettings.value = _userSettings.value.copy(userId = uid, displayName = displayName)
+                syncPendingPushToken()
             }
         }
         return result
@@ -2795,37 +2798,58 @@ class MikayalaRepository(private val context: Context) {
             val isVideo = callType == "video"
 
             if (status == "ringing") {
-                com.example.mikayala.util.NotificationHelper.showIncomingCallNotification(context, callerName, isVideo)
+                val callId = activeCall.optString("id")
+                com.example.mikayala.util.NotificationHelper.showIncomingCallNotification(context, callerName, isVideo, callId)
                 return Pair(true, isVideo)
             }
         }
         return null
     }
 
-    suspend fun declineIncomingCall() {
+    suspend fun declineIncomingCall(explicitCallId: String = "") {
         val couple = _coupleSpace.value
-        if (!couple.isPaired || couple.id.isBlank()) return
-        val activeCall = supabaseService.fetchActiveCall(couple.id, couple.pairingCode)
-        if (activeCall != null) {
-            val callId = activeCall.optString("id")
-            if (callId.isNotEmpty()) {
-                supabaseService.updateCallStatus(callId, "declined")
-                val (_, partnerId) = resolveCoupleMembers()
-                if (partnerId.isNotBlank()) {
-                    val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
-                    repositoryScope.launch {
-                        supabaseService.sendFcmPush(
-                            coupleId = couple.id,
-                            recipientId = partnerId,
-                            type = "missed_call",
-                            title = "Mikayala",
-                            body = "Appel refusé par $myName",
-                            extraData = mapOf("callerName" to myName),
-                            hidePreview = false
-                        )
-                    }
+        val targetCallId = if (explicitCallId.isNotBlank()) {
+            explicitCallId
+        } else {
+            if (!couple.isPaired || couple.id.isBlank()) return
+            val activeCall = supabaseService.fetchActiveCall(couple.id, couple.pairingCode)
+            activeCall?.optString("id") ?: ""
+        }
+
+        if (targetCallId.isNotEmpty()) {
+            supabaseService.updateCallStatus(targetCallId, "declined")
+            val (_, partnerId) = resolveCoupleMembers()
+            if (partnerId.isNotBlank() && couple.id.isNotBlank()) {
+                val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
+                repositoryScope.launch {
+                    supabaseService.sendFcmPush(
+                        coupleId = couple.id,
+                        recipientId = partnerId,
+                        type = "missed_call",
+                        title = "Mikayala",
+                        body = "Appel refusé par $myName",
+                        extraData = mapOf(
+                            "callerName" to myName,
+                            "callId" to targetCallId
+                        ),
+                        hidePreview = false
+                    )
                 }
             }
         }
+    }
+
+    suspend fun signOut(): Boolean {
+        com.example.mikayala.services.MyFirebaseMessagingService.unregisterDeviceTokenOnLogout(context)
+        val success = supabaseService.signOut("")
+        clearCoupleCache()
+        prefs.edit().apply {
+            remove("user_id")
+            remove("user_email")
+            remove("display_name")
+            apply()
+        }
+        _userSettings.value = com.example.mikayala.data.model.UserSettingsEntity()
+        return success
     }
 }

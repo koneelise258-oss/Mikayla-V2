@@ -64,6 +64,9 @@ class MainActivity : ComponentActivity() {
             com.example.mikayala.util.NotificationHelper.createNotificationChannels(applicationContext)
             Log.d("MikayalaStartup", "Notification channels created")
 
+            // Synchronisation systématique du jeton FCM au démarrage (fond / restauré)
+            repository.syncPendingPushToken()
+
             // Demande de permission pour les notifications sous Android 13+ (API 33+)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {

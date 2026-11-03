@@ -32,12 +32,13 @@ class CallActionReceiver : BroadcastReceiver() {
         when (action) {
             ACTION_DECLINE_CALL -> {
                 NotificationHelper.dismissIncomingCallNotification(context)
+                val callId = intent.getStringExtra("CALL_ID") ?: ""
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         val repository = MikayalaRepository(context.applicationContext)
-                        repository.declineIncomingCall()
-                        Log.d("CallActionReceiver", "Appel entrant refusé et rejet notifié")
+                        repository.declineIncomingCall(callId)
+                        Log.d("CallActionReceiver", "Appel entrant ($callId) refusé et rejet notifié")
                     } catch (e: Exception) {
                         Log.w("CallActionReceiver", "Erreur lors du rejet de l'appel : ${e.message}")
                     } finally {
@@ -49,6 +50,7 @@ class CallActionReceiver : BroadcastReceiver() {
                 NotificationHelper.dismissIncomingCallNotification(context)
                 val callerName = intent.getStringExtra(EXTRA_CALLER_NAME) ?: "Mon Amour"
                 val isVideo = intent.getBooleanExtra(EXTRA_IS_VIDEO, false)
+                val callId = intent.getStringExtra("CALL_ID") ?: ""
 
                 val launchIntent = Intent(context, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -56,6 +58,7 @@ class CallActionReceiver : BroadcastReceiver() {
                     putExtra("AUTO_ANSWER", true)
                     putExtra("CALLER_NAME", callerName)
                     putExtra("IS_VIDEO", isVideo)
+                    if (callId.isNotBlank()) putExtra("CALL_ID", callId)
                 }
                 context.startActivity(launchIntent)
             }

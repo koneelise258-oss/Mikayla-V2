@@ -66,12 +66,13 @@ object NotificationHelper {
     }
 
     // --- 1. NOTIFICATION D'APPEL ENTRANT (Style WhatsApp avec Décrocher / Refuser) ---
-    fun showIncomingCallNotification(context: Context, callerName: String, isVideo: Boolean) {
+    fun showIncomingCallNotification(context: Context, callerName: String, isVideo: Boolean, callId: String = "") {
         val fullScreenIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("OPEN_CALL", true)
             putExtra("CALLER_NAME", callerName)
             putExtra("IS_VIDEO", isVideo)
+            if (callId.isNotBlank()) putExtra("CALL_ID", callId)
         }
 
         val fullScreenPendingIntent = PendingIntent.getActivity(
@@ -84,6 +85,7 @@ object NotificationHelper {
             action = com.example.mikayala.services.CallActionReceiver.ACTION_ANSWER_CALL
             putExtra(com.example.mikayala.services.CallActionReceiver.EXTRA_CALLER_NAME, callerName)
             putExtra(com.example.mikayala.services.CallActionReceiver.EXTRA_IS_VIDEO, isVideo)
+            if (callId.isNotBlank()) putExtra("CALL_ID", callId)
         }
         val answerPendingIntent = PendingIntent.getBroadcast(
             context, 1, answerIntent,
@@ -93,6 +95,7 @@ object NotificationHelper {
         // Action Refuser ❌
         val declineIntent = Intent(context, com.example.mikayala.services.CallActionReceiver::class.java).apply {
             action = com.example.mikayala.services.CallActionReceiver.ACTION_DECLINE_CALL
+            if (callId.isNotBlank()) putExtra("CALL_ID", callId)
         }
         val declinePendingIntent = PendingIntent.getBroadcast(
             context, 2, declineIntent,
@@ -121,10 +124,11 @@ object NotificationHelper {
         manager.cancel(NOTIF_ID_CALL)
     }
 
-    fun showMissedCallNotification(context: Context, callerName: String, isVideo: Boolean) {
+    fun showMissedCallNotification(context: Context, callerName: String, isVideo: Boolean, callId: String = "") {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("OPEN_CALL", true)
+            if (callId.isNotBlank()) putExtra("CALL_ID", callId)
         }
         val pendingIntent = PendingIntent.getActivity(
             context, 3, intent,
@@ -266,11 +270,24 @@ object NotificationHelper {
             .setStyle(NotificationCompat.BigTextStyle().bigText(messageText))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .setGroup("com.example.mikayala.CHAT_GROUP")
             .setContentIntent(openAppPendingIntent)
             .addAction(replyAction)
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(notifId, builder.build())
+
+        // Notification récapitulative pour regroupement intelligent sous Android
+        val summaryBuilder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setStyle(NotificationCompat.InboxStyle().setSummaryText("Mikayala"))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setGroup("com.example.mikayala.CHAT_GROUP")
+            .setGroupSummary(true)
+            .setAutoCancel(true)
+            .setContentIntent(openAppPendingIntent)
+
+        manager.notify(2000, summaryBuilder.build())
     }
 
     // --- 7. NOTIFICATION DE RAPPEL DE CALENDRIER ---

@@ -41,6 +41,90 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 .putString(KEY_PENDING_TOKEN, token)
                 .apply()
         }
+
+        /**
+         * Récupère le jeton FCM actif via FirebaseMessaging.getInstance().token
+         * même si onNewToken() n'a pas été appelé, et le synchronise sur Supabase si une session est active.
+         */
+        fun fetchAndSyncToken(context: Context, onSynced: ((Boolean) -> Unit)? = null) {
+            try {
+                com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                    .addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            val token = task.result
+                            if (!token.isNullOrEmpty()) {
+                                val masked = if (token.length > 10) "${token.take(6)}...${token.takeLast(4)}" else "***"
+                                Log.d("FCM_TOKEN", "Jeton FCM actuel récupéré : $masked")
+                                savePendingToken(context, token)
+
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    try {
+                                        val supabase = SupabaseService.getInstance()
+                                        val uid = supabase.getCurrentSessionUid()
+                                        if (!uid.isNullOrEmpty()) {
+                                            val ok = supabase.upsertDevicePushToken(token)
+                                            if (ok) {
+                                                clearPendingToken(context)
+                                                Log.d("FCM_TOKEN", "Jeton FCM synchronisé pour UID=$uid")
+                                                onSynced?.invoke(true)
+                                            } else {
+                                                onSynced?.invoke(false)
+                                            }
+                                        } else {
+                                            Log.d("FCM_TOKEN", "Session absente : jeton conservé en attente")
+                                            onSynced?.invoke(false)
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w("FCM_TOKEN", "Erreur synchronisation jeton : ${e.message}")
+                                        onSynced?.invoke(false)
+                                    }
+                                }
+                            } else {
+                                onSynced?.invoke(false)
+                            }
+                        } else {
+                            Log.w("FCM_TOKEN", "Échec récupération jeton FCM: ${task.exception?.message}")
+                            onSynced?.invoke(false)
+                        }
+                    }
+            } catch (e: Throwable) {
+                Log.w("FCM_TOKEN", "FirebaseMessaging non disponible : ${e.message}")
+                onSynced?.invoke(false)
+            }
+        }
+
+        /**
+         * Supprime l'association du jeton sur Supabase lors d'une déconnexion ou d'un changement de compte
+         * pour éviter d'associer le jeton de l'ancien utilisateur au nouveau compte.
+         */
+        fun unregisterDeviceTokenOnLogout(context: Context) {
+            val pendingToken = getPendingToken(context)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val supabase = SupabaseService.getInstance()
+                    if (!pendingToken.isNullOrEmpty()) {
+                        supabase.deleteDevicePushToken(pendingToken)
+                    }
+                    try {
+                        com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                            .addOnCompleteListener { task ->
+                                if (task.isSuccessful) {
+                                    val currentToken = task.result
+                                    if (!currentToken.isNullOrEmpty()) {
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            supabase.deleteDevicePushToken(currentToken)
+                                        }
+                                    }
+                                }
+                            }
+                    } catch (_: Exception) {}
+                    clearPendingToken(context)
+                    Log.d("FCM_TOKEN", "Jeton désinscrit de Supabase suite à déconnexion")
+                } catch (e: Exception) {
+                    Log.w("FCM_TOKEN", "Erreur lors de la désinscription du jeton: ${e.message}")
+                }
+            }
+        }
     }
 
     override fun onNewToken(token: String) {
@@ -97,6 +181,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 "call" -> {
                     val rawCaller = data["callerName"] ?: "Mon Amour"
                     val isVideo = data["callType"] == "video"
+                    val callId = data["callId"] ?: data["call_id"] ?: ""
                     val callerName = when (privacyMode) {
                         "weather_camouflage" -> "Service Météo"
                         "system_camouflage" -> "Système"
@@ -106,12 +191,14 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     NotificationHelper.showIncomingCallNotification(
                         context = applicationContext,
                         callerName = callerName,
-                        isVideo = isVideo
+                        isVideo = isVideo,
+                        callId = callId
                     )
                 }
                 "missed_call" -> {
                     val rawCaller = data["callerName"] ?: "Mon Amour"
                     val isVideo = data["callType"] == "video"
+                    val callId = data["callId"] ?: data["call_id"] ?: ""
                     val callerName = when (privacyMode) {
                         "weather_camouflage" -> "Service Météo"
                         "system_camouflage" -> "Système"
@@ -121,7 +208,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     NotificationHelper.showMissedCallNotification(
                         context = applicationContext,
                         callerName = callerName,
-                        isVideo = isVideo
+                        isVideo = isVideo,
+                        callId = callId
                     )
                 }
                 "chat_message", "audio", "image", "video" -> {
