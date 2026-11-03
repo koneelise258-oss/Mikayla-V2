@@ -277,9 +277,23 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 return
             }
 
-            val messageIdKey = data["messageId"] ?: data["callId"] ?: data["id"]
-            if (!messageIdKey.isNullOrBlank() && isDuplicateNotification(messageIdKey)) {
-                Log.d("FCM_MSG", "Notification ignorée : message dédoublonné ID=$messageIdKey")
+            // Déduplication par ÉVÉNEMENT (type + id) : une annulation n'est jamais un doublon de l'appel
+            val eventKey = CallEventGate.eventKey(type, data)
+            if (CallEventGate.shared.isDuplicateEvent(eventKey)) {
+                Log.d("FCM_MSG", "Notification ignorée : événement déjà traité ($type)")
+                return
+            }
+
+            // Fin d'appel (annulé / refusé / terminé) : toujours retirer la sonnerie, quelle que soit
+            // la session ou la catégorie, et mémoriser l'appel pour ignorer un "call" arrivé en retard.
+            val callIdForEvent = data["callId"] ?: data["call_id"] ?: ""
+            if (type in CallEventGate.TERMINAL_CALL_TYPES) {
+                CallEventGate.shared.markCallTerminated(callIdForEvent)
+                NotificationHelper.dismissIncomingCallNotification(applicationContext)
+                if (type != "call_declined") return
+            }
+            if (type == "call" && !CallEventGate.shared.shouldRing(callIdForEvent)) {
+                Log.d("FCM_MSG", "Appel déjà terminé : sonnerie ignorée")
                 return
             }
 
@@ -313,10 +327,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         isVideo = isVideo,
                         callId = callId
                     )
-                }
-                "call_cancelled" -> {
-                    // L'appelant a raccroché avant réponse : retirer la sonnerie
-                    NotificationHelper.dismissIncomingCallNotification(applicationContext)
                 }
                 "call_declined" -> {
                     NotificationHelper.showCallDeclinedNotification(
@@ -411,13 +421,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     )
                 }
                 "cycle" -> {
-                    val phaseName = data["phaseName"] ?: "Nouvelle Phase"
-                    val partnerNickname = data["partnerNickname"] ?: "Mon Partenaire"
-                    NotificationHelper.showCycleReminderNotification(
-                        context = applicationContext,
-                        phaseName = phaseName,
-                        partnerNickname = partnerNickname
-                    )
+                    // Données de santé : on n'affiche JAMAIS le contenu du payload (phase, dates, surnom...)
+                    NotificationHelper.showCycleReminderNotification(applicationContext)
                 }
                 "mood_update" -> {
                     val partnerName = data["partnerName"] ?: "Mon Amour"

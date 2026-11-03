@@ -151,9 +151,9 @@ class MikayalaRepository(private val context: Context) {
                 hasCompletedPairingSetup = storedPairingSetupCompleted,
                 connectionMode = storedConnMode,
                 notificationPrivacyMode = storedNotifPrivacyMode,
-                notificationSound = prefs.getString("notification_sound", "heartbeat") ?: "heartbeat",
-                heartHapticEnabled = prefs.getBoolean("heart_haptic_enabled", true),
-                cyclePartnerAlertsEnabled = prefs.getBoolean("cycle_partner_alerts_enabled", true),
+                notificationSound = com.example.mikayala.util.NotificationPrefs.sound(context),
+                heartHapticEnabled = com.example.mikayala.util.NotificationPrefs.vibration(context),
+                cyclePartnerAlertsEnabled = com.example.mikayala.util.NotificationPrefs.isEnabled(context, com.example.mikayala.util.NotificationPrefs.Category.CYCLE),
                 loveWidgetEnabled = prefs.getBoolean("love_widget_enabled", true)
             )
             // Stored state is loaded purely as cache, status starts unverified until Supabase sync
@@ -1995,16 +1995,17 @@ class MikayalaRepository(private val context: Context) {
         cyclePartnerAlertsEnabled: Boolean,
         loveWidgetEnabled: Boolean
     ) {
-        prefs.edit()
-            .putString("notification_privacy_mode", notificationPrivacyMode)
-            .putString("notification_sound", notificationSound)
-            .putBoolean("heart_haptic_enabled", heartHapticEnabled)
-            .putBoolean("cycle_partner_alerts_enabled", cyclePartnerAlertsEnabled)
-            .putBoolean("love_widget_enabled", loveWidgetEnabled)
-            .apply()
+        // Persistance via NotificationPrefs (lu par le service FCM même application fermée)
+        val np = com.example.mikayala.util.NotificationPrefs
+        val normalizedSound = np.normalizeSound(notificationSound)
+        np.setPrivacyMode(context, notificationPrivacyMode)
+        np.setSound(context, normalizedSound)
+        np.setVibration(context, heartHapticEnabled)
+        np.setEnabled(context, np.Category.CYCLE, cyclePartnerAlertsEnabled)
+        prefs.edit().putBoolean("love_widget_enabled", loveWidgetEnabled).apply()
         _userSettings.value = _userSettings.value.copy(
             notificationPrivacyMode = notificationPrivacyMode,
-            notificationSound = notificationSound,
+            notificationSound = normalizedSound,
             heartHapticEnabled = heartHapticEnabled,
             cyclePartnerAlertsEnabled = cyclePartnerAlertsEnabled,
             loveWidgetEnabled = loveWidgetEnabled

@@ -65,7 +65,6 @@ fun SettingsScreen(
     var showBubbleStyleModal by remember { mutableStateOf(false) }
     var showPrivacyModal by remember { mutableStateOf(false) }
     var showChatPrefsModal by remember { mutableStateOf(false) }
-    var showNotificationsModal by remember { mutableStateOf(false) }
     var showStorageModal by remember { mutableStateOf(false) }
     var showPinDialog by remember { mutableStateOf(false) }
     var showDecoyPinDialog by remember { mutableStateOf(false) }
@@ -1077,150 +1076,6 @@ fun SettingsScreen(
         }
     }
 
-    // 8. Notifications Modal (Camouflage & Sounds)
-    if (showNotificationsModal) {
-        var notifMode by remember { mutableStateOf(settings.notificationPrivacyMode) }
-        var sound by remember { mutableStateOf(settings.notificationSound) }
-        var heartHaptic by remember { mutableStateOf(settings.heartHapticEnabled) }
-        var cycleAlerts by remember { mutableStateOf(settings.cyclePartnerAlertsEnabled) }
-        var loveWidget by remember { mutableStateOf(settings.loveWidgetEnabled) }
-
-        Dialog(onDismissRequest = { showNotificationsModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item {
-                        Text(text = "Notifications & Sons Romantiques 🔔", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = "Ajustez le camouflage et les alertes d'amour.", fontSize = 12.sp, color = TextSecondary)
-                    }
-
-                    item {
-                        Text(text = "Mode de Notification (Camouflage) :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        listOf(
-                            Triple("discreet", "Discret Neutre 🔒", "Affiche 'Nouveau message chiffré'"),
-                            Triple("weather_camouflage", "Camouflage Météo ☀️", "Affiche 'Météo : Ciel dégagé 21°C'"),
-                            Triple("system_camouflage", "Camouflage Système ⚙️", "Affiche 'Mise à jour système prête'"),
-                            Triple("romantic", "Romantique Complet ❤️", "Affiche le prénom et les petits cœurs")
-                        ).forEach { (id, title, desc) ->
-                            val isSelected = notifMode == id
-                            Surface(
-                                onClick = { notifMode = id },
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) CardDarkElevated else Color(0x22141C2B),
-                                border = BorderStroke(1.dp, if (isSelected) AccentGold else BorderSubtleWhite),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                        Text(text = desc, fontSize = 10.sp, color = TextSecondary)
-                                    }
-                                    if (isSelected) {
-                                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = AccentGold, modifier = Modifier.size(18.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-                        // Heartbeat Haptic Switch
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Vibreur Haptique Cardiaque 💓", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Double pulsation rythmée comme un battement de cœur", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = heartHaptic,
-                                onCheckedChange = { heartHaptic = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
-                        }
-                    }
-
-                    item {
-                        Text(text = "Catégories de notifications :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = "Appliqué immédiatement, même application fermée.", fontSize = 10.sp, color = TextSecondary)
-                    }
-
-                    items(com.example.mikayala.util.NotificationPrefs.Category.values().toList()) { category ->
-                        var enabled by remember(category) {
-                            mutableStateOf(com.example.mikayala.util.NotificationPrefs.isEnabled(context, category))
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = category.label, fontSize = 13.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                            Switch(
-                                checked = enabled,
-                                onCheckedChange = {
-                                    enabled = it
-                                    com.example.mikayala.util.NotificationPrefs.setEnabled(context, category, it)
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Cycle Partner Alerts
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Alertes & Conseils de Cycle 🌸", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Rappels bienveillants pour prendre soin d'elle", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = cycleAlerts,
-                                onCheckedChange = { cycleAlerts = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentViolet)
-                            )
-                        }
-                    }
-
-                    item {
-                        Button(
-                            onClick = {
-                                repository.updateNotificationSettings(notifMode, sound, heartHaptic, cycleAlerts, loveWidget)
-                                showNotificationsModal = false
-                                Toast.makeText(context, "Paramètres de notification mis à jour !", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentGold),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Enregistrer", fontWeight = FontWeight.Bold, color = Color.Black)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     // 9. Storage Manager Modal
     if (showStorageModal) {
         val totalMsgs = messages.size
@@ -1508,6 +1363,11 @@ fun SettingsScreen(
     }
 
     var section by remember { mutableStateOf<String?>(null) }
+    // Préférences de notification : source de vérité = NotificationPrefs (persistant, local à l'appareil)
+    var notifMode by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.privacyMode(context)) }
+    var notifSound by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.sound(context)) }
+    var notifVibration by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.vibration(context)) }
+    var notifCycle by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.isEnabled(context, com.example.mikayala.util.NotificationPrefs.Category.CYCLE)) }
     androidx.activity.compose.BackHandler(enabled = section != null) { section = null }
 
     // --- MAIN SETTINGS SCREEN LAYOUT ---
@@ -1530,16 +1390,123 @@ fun SettingsScreen(
                     }
                     Text(
                         text = when (section) {
-                            "couple" -> "Compte & couple"
-                            "appearance" -> "Apparence & discussions"
-                            "privacy" -> "Confidentialité & sécurité"
-                            else -> "Mode de connexion"
+                            "couple" -> "Mon compte"
+                            "privacy" -> "Confidentialité et sécurité"
+                            "notifications" -> "Notifications"
+                            "conversations" -> "Conversations"
+                            "calls" -> "Appels"
+                            "appearance" -> "Apparence"
+                            "calendar_cycle" -> "Calendrier et cycle"
+                            "games" -> "Jeux"
+                            else -> "P2P et connexion locale"
                         },
                         fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary
                     )
                 }
             }
         }
+        // --- Pages dédiées : Notifications, Appels, Jeux, Calendrier & cycle (réglages appliqués immédiatement) ---
+        if (section == "notifications") {
+            item { SettingsGroupTitle("Affichage") }
+            item {
+                Column {
+                    listOf(
+                        Triple("romantic", "Nom et aperçu", "Affiche le prénom de l'expéditeur et le début du message"),
+                        Triple("discreet", "Discret", "Affiche « Mikayala » et « Nouveau message chiffré »"),
+                        Triple("weather_camouflage", "Camouflage météo", "Affiche une fausse notification météo"),
+                        Triple("system_camouflage", "Camouflage système", "Affiche « Mise à jour système prête »")
+                    ).forEach { (id, title, desc) ->
+                        SettingsRadioRow(
+                            selected = notifMode == id,
+                            title = title,
+                            subtitle = desc,
+                            onClick = {
+                                notifMode = id
+                                repository.updateNotificationSettings(id, notifSound, notifVibration, notifCycle, settings.loveWidgetEnabled)
+                            }
+                        )
+                    }
+                }
+            }
+            item { SettingsGroupTitle("Son et vibration") }
+            item {
+                Column {
+                    com.example.mikayala.util.NotificationPrefs.AVAILABLE_SOUNDS.forEach { (id, label) ->
+                        SettingsRadioRow(
+                            selected = notifSound == id,
+                            title = label,
+                            subtitle = if (id == com.example.mikayala.util.NotificationPrefs.SOUND_SILENT) "Coupe aussi la vibration" else "Sonnerie choisie dans les réglages du téléphone",
+                            onClick = {
+                                notifSound = id
+                                repository.updateNotificationSettings(notifMode, id, notifVibration, notifCycle, settings.loveWidgetEnabled)
+                            }
+                        )
+                    }
+                    SettingsSwitchRow(
+                        title = "Vibration",
+                        subtitle = if (notifSound == com.example.mikayala.util.NotificationPrefs.SOUND_SILENT) "Indisponible en mode silencieux" else "Double pulsation façon battement de cœur",
+                        checked = notifVibration && notifSound != com.example.mikayala.util.NotificationPrefs.SOUND_SILENT,
+                        enabled = notifSound != com.example.mikayala.util.NotificationPrefs.SOUND_SILENT,
+                        onCheckedChange = {
+                            notifVibration = it
+                            repository.updateNotificationSettings(notifMode, notifSound, it, notifCycle, settings.loveWidgetEnabled)
+                        }
+                    )
+                    Text(
+                        text = "Android 8+ : si vous modifiez une catégorie dans les réglages du téléphone, ce choix système reste prioritaire.",
+                        fontSize = 11.sp, color = TextSecondary, modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                }
+            }
+            item { SettingsGroupTitle("Catégories") }
+            item {
+                Column {
+                    com.example.mikayala.util.NotificationPrefs.Category.values().forEach { category ->
+                        NotificationCategorySwitch(category, onChanged = { cat, on ->
+                            if (cat == com.example.mikayala.util.NotificationPrefs.Category.CYCLE) notifCycle = on
+                        })
+                    }
+                }
+            }
+            item {
+                SettingsCategoryRow(Icons.Rounded.Settings, TextSecondary, "Réglages système des notifications", "Autorisation, écran verrouillé, sons par catégorie") {
+                    openAppNotificationSettings(context)
+                }
+            }
+        }
+
+        if (section == "calls") {
+            item {
+                Column {
+                    NotificationCategorySwitch(com.example.mikayala.util.NotificationPrefs.Category.CALLS)
+                    SettingsCategoryRow(Icons.Rounded.Mic, VibrantCyan, "Autorisations micro et caméra", "Ouvre les autorisations de Mikayala dans Android") {
+                        openAppDetailsSettings(context)
+                    }
+                }
+            }
+        }
+
+        if (section == "games") {
+            item {
+                Column {
+                    NotificationCategorySwitch(com.example.mikayala.util.NotificationPrefs.Category.GAMES)
+                }
+            }
+        }
+
+        if (section == "calendar_cycle") {
+            item {
+                Column {
+                    NotificationCategorySwitch(com.example.mikayala.util.NotificationPrefs.Category.CALENDAR)
+                    NotificationCategorySwitch(com.example.mikayala.util.NotificationPrefs.Category.CYCLE, onChanged = { _, on -> notifCycle = on })
+                    Text(
+                        text = "Les rappels du cycle affichent uniquement « Vous avez une nouvelle notification » : aucune donnée de santé n'apparaît sur l'écran verrouillé.",
+                        fontSize = 11.sp, color = TextSecondary, modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                }
+            }
+        }
+
         if (section == null) {
             item {
                 Text(text = "Paramètres", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.padding(top = 4.dp))
@@ -1548,13 +1515,16 @@ fun SettingsScreen(
         if (section == null) {
             item {
                 Column {
-                    SettingsCategoryRow(Icons.Rounded.Person, AccentRose, "Compte & couple", "Profils, surnoms, anniversaire, jumelage, serveur") { section = "couple" }
-                    SettingsCategoryRow(Icons.Rounded.Palette, VibrantCyan, "Apparence & discussions", "Thème, fond d'écran, bulles, police, icône") { section = "appearance" }
-                    SettingsCategoryRow(Icons.Rounded.Chat, VibrantCyan, "Discussions", "Touche Entrée, galerie, qualité des photos") { showChatPrefsModal = true }
-                    SettingsCategoryRow(Icons.Rounded.Notifications, AccentGold, "Notifications", "Catégories, aperçus, sons et vibrations") { showNotificationsModal = true }
-                    SettingsCategoryRow(Icons.Rounded.Lock, AccentViolet, "Confidentialité & sécurité", "Présence, accusés de lecture, codes PIN, verrouillage") { section = "privacy" }
-                    SettingsCategoryRow(Icons.Rounded.Storage, TextSecondary, "Stockage & données", "Espace utilisé, cache, sauvegardes") { showStorageModal = true }
-                    SettingsCategoryRow(Icons.Rounded.WifiTethering, AccentViolet, "Mode de connexion", "En ligne ou hors-ligne (liaison directe)") { section = "connection" }
+                    SettingsCategoryRow(Icons.Rounded.Person, AccentRose, "Mon compte", "Profils, surnoms, jumelage, appareils, serveur") { section = "couple" }
+                    SettingsCategoryRow(Icons.Rounded.Lock, AccentViolet, "Confidentialité et sécurité", "Présence, accusés de lecture, codes PIN, verrouillage") { section = "privacy" }
+                    SettingsCategoryRow(Icons.Rounded.Notifications, AccentGold, "Notifications", "Aperçus, son, vibration, catégories") { section = "notifications" }
+                    SettingsCategoryRow(Icons.Rounded.Chat, VibrantCyan, "Conversations", "Fond d'écran, bulles, police, médias") { section = "conversations" }
+                    SettingsCategoryRow(Icons.Rounded.Call, VibrantCyan, "Appels", "Notifications d'appel, micro et caméra") { section = "calls" }
+                    SettingsCategoryRow(Icons.Rounded.Storage, TextSecondary, "Stockage et données", "Espace utilisé, cache, sauvegardes") { showStorageModal = true }
+                    SettingsCategoryRow(Icons.Rounded.Palette, AccentRose, "Apparence", "Thème sombre ou clair, icône de l'application") { section = "appearance" }
+                    SettingsCategoryRow(Icons.Rounded.CalendarMonth, AccentRose, "Calendrier et cycle", "Anniversaire, rappels, notifications du cycle") { section = "calendar_cycle" }
+                    SettingsCategoryRow(Icons.Rounded.SportsEsports, AccentGold, "Jeux", "Notifications d'invitation et de tour") { section = "games" }
+                    SettingsCategoryRow(Icons.Rounded.WifiTethering, AccentViolet, "P2P et connexion locale", "En ligne ou hors-ligne (liaison directe)") { section = "connection" }
                 }
             }
         }
@@ -1661,7 +1631,7 @@ fun SettingsScreen(
 
         // --- 2. SECTION: PERSONNALISATION VISUELLE & DESIGN ---
 
-        if (section == "appearance") {
+        if (section == "appearance" || section == "conversations") {
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -1670,6 +1640,16 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (section == "conversations") {
+                        SettingRow(
+                            icon = Icons.Rounded.Chat,
+                            iconTint = VibrantCyan,
+                            title = "Paramètres de discussion",
+                            subtitle = "Touche Entrée, visibilité galerie, téléchargement auto, qualité photo",
+                            onClick = { showChatPrefsModal = true }
+                        )
+                    }
+                    if (section == "conversations") {
                     SettingRow(
                         icon = Icons.Rounded.Wallpaper,
                         iconTint = VibrantCyan,
@@ -1677,7 +1657,9 @@ fun SettingsScreen(
                         subtitle = "Galerie de thèmes ou importer une photo personnalisée",
                         onClick = { showWallpaperModal = true }
                     )
+                    }
 
+                    if (section == "appearance") {
                     SettingRow(
                         icon = Icons.Rounded.AppShortcut,
                         iconTint = AccentGold,
@@ -1685,7 +1667,9 @@ fun SettingsScreen(
                         subtitle = "Camouflage (Calculatrice, Notes) ou image importée",
                         onClick = { showAppIconModal = true }
                     )
+                    }
 
+                    if (section == "conversations") {
                     SettingRow(
                         icon = Icons.Rounded.TextFields,
                         iconTint = AccentViolet,
@@ -1693,7 +1677,9 @@ fun SettingsScreen(
                         subtitle = "Moderne, Serif romantique, Cursive et taille de texte",
                         onClick = { showFontModal = true }
                     )
+                    }
 
+                    if (section == "conversations") {
                     SettingRow(
                         icon = Icons.Rounded.BubbleChart,
                         iconTint = AccentRose,
@@ -1701,8 +1687,10 @@ fun SettingsScreen(
                         subtitle = "Rose Rubis, Cyan Néon, Or Impérial, Verre Dépoli",
                         onClick = { showBubbleStyleModal = true }
                     )
+                    }
 
                     // App theme mode switch (Mode Sombre / Clair)
+                    if (section == "appearance") {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = Color.Transparent,
@@ -1740,6 +1728,7 @@ fun SettingsScreen(
                             )
                         }
                     }
+                    }
                 }
             }
         }
@@ -1747,7 +1736,7 @@ fun SettingsScreen(
 
         // --- 3. SECTION: ESPACE COUPLE & SURNOMS ---
 
-        if (section == "couple") {
+        if (section == "couple" || section == "calendar_cycle") {
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -1756,6 +1745,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.Loyalty,
                         iconTint = AccentRose,
@@ -1763,7 +1753,9 @@ fun SettingsScreen(
                         subtitle = "Personnaliser son surnom ('${settings.partnerNickname}') et avatar",
                         onClick = { showProfileModal = true }
                     )
+                    }
 
+                    if (section == "calendar_cycle") {
                     SettingRow(
                         icon = Icons.Rounded.FavoriteBorder,
                         iconTint = AccentRose,
@@ -1771,7 +1763,9 @@ fun SettingsScreen(
                         subtitle = "Compteur de relation et devise d'amour",
                         onClick = { showAnniversaryDialog = true }
                     )
+                    }
 
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.Vibration,
                         iconTint = VibrantCyan,
@@ -1781,7 +1775,9 @@ fun SettingsScreen(
                             Toast.makeText(context, "Pulsation d'amour envoyée à ${settings.partnerNickname} ! 💓✨", Toast.LENGTH_SHORT).show()
                         }
                     )
+                    }
 
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.QrCode,
                         iconTint = AccentViolet,
@@ -1789,7 +1785,9 @@ fun SettingsScreen(
                         subtitle = "Gérer la liaison ou scanner le QR code",
                         onClick = { showPairingDialog = true }
                     )
+                    }
 
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.AutoAwesome,
                         iconTint = VibrantCyan,
@@ -1797,7 +1795,9 @@ fun SettingsScreen(
                         subtitle = "Créer, rejoindre, lier une tablette ou restaurer l'espace",
                         onClick = { showOnboardingScreen = true }
                     )
+                    }
 
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.CloudSync,
                         iconTint = VibrantCyan,
@@ -1805,6 +1805,7 @@ fun SettingsScreen(
                         subtitle = "Configurer l'URL Supabase, la clé API & tester le serveur",
                         onClick = { showSupabaseDialog = true }
                     )
+                    }
                 }
             }
         }
@@ -2199,6 +2200,101 @@ fun SettingsScreen(
             shape = RoundedCornerShape(20.dp)
         )
     }
+}
+
+@Composable
+private fun SettingsGroupTitle(text: String) {
+    Text(
+        text = text.uppercase(),
+        fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = AccentRose,
+        modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+    )
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, color = if (enabled) TextPrimary else TextSecondary)
+            Text(text = subtitle, fontSize = 13.sp, color = TextSecondary)
+        }
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
+        )
+    }
+}
+
+@Composable
+private fun SettingsRadioRow(selected: Boolean, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onClick, colors = RadioButtonDefaults.colors(selectedColor = AccentRose))
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 15.sp, color = TextPrimary)
+            Text(text = subtitle, fontSize = 12.sp, color = TextSecondary)
+        }
+    }
+}
+
+/** Interrupteur d'une catégorie, lu et écrit directement dans NotificationPrefs (persistant, local). */
+@Composable
+private fun NotificationCategorySwitch(
+    category: com.example.mikayala.util.NotificationPrefs.Category,
+    onChanged: (com.example.mikayala.util.NotificationPrefs.Category, Boolean) -> Unit = { _, _ -> }
+) {
+    val context = LocalContext.current
+    var enabled by remember(category) {
+        mutableStateOf(com.example.mikayala.util.NotificationPrefs.isEnabled(context, category))
+    }
+    SettingsSwitchRow(
+        title = "Notifications : " + category.label.replaceFirstChar { it.lowercase() },
+        subtitle = if (enabled) "Activées" else "Désactivées : rien n'est affiché pour cette catégorie",
+        checked = enabled,
+        onCheckedChange = {
+            enabled = it
+            com.example.mikayala.util.NotificationPrefs.setEnabled(context, category, it)
+            onChanged(category, it)
+        }
+    )
+}
+
+private fun openAppNotificationSettings(context: Context) {
+    val intent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+    } else {
+        // Android 7 : écran des détails de l'application
+        android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName))
+    }
+    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    try { context.startActivity(intent) } catch (_: Exception) { openAppDetailsSettings(context) }
+}
+
+private fun openAppDetailsSettings(context: Context) {
+    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName))
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    try { context.startActivity(intent) } catch (_: Exception) {}
 }
 
 @Composable

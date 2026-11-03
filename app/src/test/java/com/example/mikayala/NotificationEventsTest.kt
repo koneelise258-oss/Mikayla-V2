@@ -1,0 +1,190 @@
+package com.example.mikayala
+
+import com.example.mikayala.services.CallEventGate
+import com.example.mikayala.util.NotificationPrefs
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Simule le flux de MyFirebaseMessagingService : dédoublonnage par événement, puis
+ * marquage de fin d'appel, puis décision de sonner. Retourne l'action effectuée.
+ */
+private class CallFlow(val gate: CallEventGate) {
+    var ringing = mutableSetOf<String>()
+    fun receive(type: String, callId: String, eventId: String? = null): String {
+        val data = mutableMapOf("callId" to callId)
+        if (eventId != null) data["eventId"] = eventId
+        if (gate.isDuplicateEvent(CallEventGate.eventKey(type, data))) return "duplicate"
+        if (type in CallEventGate.TERMINAL_CALL_TYPES) {
+            gate.markCallTerminated(callId)
+            ringing.remove(callId)
+            return "dismissed"
+        }
+        if (type == "call") {
+            if (!gate.shouldRing(callId)) return "ignored_terminated"
+            ringing.add(callId)
+            return "ring"
+        }
+        return "other"
+    }
+}
+
+class NotificationEventsTest {
+
+    private fun newFlow(now: () -> Long = { 1_000L }) = CallFlow(CallEventGate(clock = now))
+
+    @Test
+    fun `1 - appel entrant puis annulation avec le meme callId`() {
+        val f = newFlow()
+        assertEquals("ring", f.receive("call", "c1"))
+        assertEquals("dismissed", f.receive("call_cancelled", "c1"))
+        assertTrue(f.ringing.isEmpty())
+    }
+
+    @Test
+    fun `2 - appel entrant puis refus avec le meme callId`() {
+        val f = newFlow()
+        assertEquals("ring", f.receive("call", "c1"))
+        assertEquals("dismissed", f.receive("call_declined", "c1"))
+        assertTrue(f.ringing.isEmpty())
+    }
+
+    @Test
+    fun `3 - appel entrant puis fin d appel`() {
+        val f = newFlow()
+        assertEquals("ring", f.receive("call", "c1"))
+        assertEquals("dismissed", f.receive("call_ended", "c1"))
+        assertTrue(f.ringing.isEmpty())
+    }
+
+    @Test
+    fun `4 - reception repetee du meme evenement`() {
+        val f = newFlow()
+        assertEquals("ring", f.receive("call", "c1"))
+        assertEquals("duplicate", f.receive("call", "c1"))
+        assertEquals("dismissed", f.receive("call_cancelled", "c1"))
+        assertEquals("duplicate", f.receive("call_cancelled", "c1"))
+    }
+
+    @Test
+    fun `5 - deux evenements differents pour le meme appel ne sont pas des doublons`() {
+        assertNotEquals(
+            CallEventGate.eventKey("call", mapOf("callId" to "c1")),
+            CallEventGate.eventKey("call_cancelled", mapOf("callId" to "c1"))
+        )
+        val f = newFlow()
+        assertEquals("ring", f.receive("call", "c1"))
+        assertEquals("dismissed", f.receive("call_declined", "c1"))
+        // un "call" arrivé en retard après la fin ne refait pas sonner
+        assertEquals("ignored_terminated", f.receive("call", "c1", eventId = "late"))
+    }
+
+    @Test
+    fun `6 - plusieurs appels distincts`() {
+        val f = newFlow()
+        assertEquals("ring", f.receive("call", "c1"))
+        assertEquals("ring", f.receive("call", "c2"))
+        assertEquals("dismissed", f.receive("call_cancelled", "c1"))
+        assertEquals(setOf("c2"), f.ringing)
+        assertEquals("dismissed", f.receive("call_cancelled", "c2"))
+        assertTrue(f.ringing.isEmpty())
+    }
+
+    @Test
+    fun `annulation jamais bloquee meme recue avant l appel`() {
+        val f = newFlow()
+        assertEquals("dismissed", f.receive("call_cancelled", "c9"))
+        assertEquals("ignored_terminated", f.receive("call", "c9"))
+    }
+
+    @Test
+    fun `fenetre de dedoublonnage expire`() {
+        var now = 0L
+        val gate = CallEventGate(clock = { now }, dedupWindowMs = 60_000)
+        val key = CallEventGate.eventKey("chat_message", mapOf("messageId" to "m1"))
+        assertFalse(gate.isDuplicateEvent(key))
+        now = 30_000
+        assertTrue(gate.isDuplicateEvent(key))
+        now = 200_000
+        assertFalse(gate.isDuplicateEvent(key))
+    }
+
+    @Test
+    fun `cle absente sans identifiant`() {
+        assertNull(CallEventGate.eventKey("chat_message", emptyMap()))
+        assertFalse(CallEventGate().isDuplicateEvent(null))
+    }
+
+    @Test
+    fun `concurrence - un seul traitement pour un evenement recu en parallele`() {
+        val gate = CallEventGate()
+        val key = CallEventGate.eventKey("call_cancelled", mapOf("callId" to "c1"))
+        val processed = AtomicInteger(0)
+        val pool = Executors.newFixedThreadPool(8)
+        val start = CountDownLatch(1)
+        val done = CountDownLatch(50)
+        repeat(50) {
+            pool.execute {
+                start.await()
+                if (!gate.isDuplicateEvent(key)) processed.incrementAndGet()
+                done.countDown()
+            }
+        }
+        start.countDown()
+        done.await()
+        pool.shutdown()
+        assertEquals(1, processed.get())
+    }
+
+    // --- Préférences : catégories et profils son/vibration ---
+
+    @Test
+    fun `categories separees par type`() {
+        assertEquals(NotificationPrefs.Category.MESSAGES, NotificationPrefs.categoryFor("chat_message"))
+        assertEquals(NotificationPrefs.Category.MESSAGES, NotificationPrefs.categoryFor("audio"))
+        assertEquals(NotificationPrefs.Category.CALLS, NotificationPrefs.categoryFor("call"))
+        assertEquals(NotificationPrefs.Category.CALLS, NotificationPrefs.categoryFor("call_cancelled"))
+        assertEquals(NotificationPrefs.Category.GAMES, NotificationPrefs.categoryFor("game_turn"))
+        assertEquals(NotificationPrefs.Category.CALENDAR, NotificationPrefs.categoryFor("calendar_event"))
+        assertEquals(NotificationPrefs.Category.CALENDAR, NotificationPrefs.categoryFor("anniversary"))
+        assertEquals(NotificationPrefs.Category.CYCLE, NotificationPrefs.categoryFor("cycle"))
+        assertEquals(NotificationPrefs.Category.OTHER, NotificationPrefs.categoryFor("vault_add"))
+        assertEquals(6, NotificationPrefs.Category.values().map { it.key }.toSet().size)
+    }
+
+    @Test
+    fun `mode silencieux coupe son et vibration`() {
+        val p = NotificationPrefs.alertProfileFor("silent", vibration = true)
+        assertFalse(p.sound)
+        assertFalse(p.vibrate)
+        assertEquals("_q", p.channelSuffix)
+    }
+
+    @Test
+    fun `profils son et vibration distincts`() {
+        assertEquals("_sv", NotificationPrefs.alertProfileFor("default", true).channelSuffix)
+        assertEquals("_s", NotificationPrefs.alertProfileFor("default", false).channelSuffix)
+    }
+
+    @Test
+    fun `anciennes valeurs de son sans fichier audio ramenees au son du telephone`() {
+        assertEquals("default", NotificationPrefs.normalizeSound("heartbeat"))
+        assertEquals("default", NotificationPrefs.normalizeSound("soft_chime"))
+        assertEquals("default", NotificationPrefs.normalizeSound(null))
+        assertEquals("silent", NotificationPrefs.normalizeSound("silent"))
+    }
+
+    @Test
+    fun `fin d appel est un evenement de retrait`() {
+        assertTrue(NotificationPrefs.isDismissalType("call_cancelled"))
+        assertTrue(NotificationPrefs.isDismissalType("call_ended"))
+        assertFalse(NotificationPrefs.isDismissalType("call"))
+    }
+}

@@ -4,11 +4,12 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
+import { buildPayloadData, isAllowedType, ttlFor } from "./payload.ts";
 
 interface SendFcmRequest {
   coupleId: string;
   recipientId: string;
-  type: "chat_message" | "call" | "missed_call" | "audio" | "image" | "video" | "vault_add" | "game" | "game_turn" | "anniversary" | "mood_update" | "poll_created" | "love_bomb" | "calendar_event" | "cycle" | "call_declined" | "call_cancelled";
+  type: "chat_message" | "call" | "missed_call" | "audio" | "image" | "video" | "vault_add" | "game" | "game_turn" | "anniversary" | "mood_update" | "poll_created" | "love_bomb" | "calendar_event" | "cycle" | "call_declined" | "call_cancelled" | "call_ended";
   title?: string;
   body?: string;
   data?: Record<string, string>;
@@ -140,8 +141,7 @@ serve(async (req: Request) => {
     const body: SendFcmRequest = await req.json();
     const { coupleId, recipientId, type, title, hidePreview } = body;
 
-    const ALLOWED_TYPES = ["chat_message","call","missed_call","audio","image","video","vault_add","game","game_turn","anniversary","mood_update","poll_created","love_bomb","calendar_event","cycle","call_declined","call_cancelled"];
-    if (!recipientId || !type || !ALLOWED_TYPES.includes(type)) {
+    if (!recipientId || !type || !isAllowedType(type)) {
       return new Response(JSON.stringify({ error: "Missing recipientId or type parameter" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -194,22 +194,15 @@ serve(async (req: Request) => {
     }
 
     // 4. Format payload according to privacy settings
-    let messageText = body.body || "";
-    // Données de cycle : jamais de détail dans une notification push
-    if (type === "cycle") {
-      messageText = "";
-    }
-    if (hidePreview) {
-      messageText = "Nouveau message reçu 🔒";
-    }
-
-    const payloadData: Record<string, string> = {
-      ...(body.data || {}),
+    // Payload filtré (liste blanche stricte pour le cycle) — voir payload.ts et payload.test.ts
+    const payloadData = buildPayloadData({
       type,
-      coupleId: coupleId || "",
-      senderId: senderId,
-      messageText: messageText,
-    };
+      coupleId,
+      senderId,
+      body: body.body,
+      data: body.data,
+      hidePreview,
+    });
 
     const accessToken = await getGoogleAccessToken(serviceAccount);
     const fcmEndpoint = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
@@ -226,7 +219,7 @@ serve(async (req: Request) => {
           data: payloadData,
           android: {
             priority: "HIGH",
-            ttl: (type === "call" || type === "call_cancelled") ? "30s" : "86400s",
+            ttl: ttlFor(type),
           },
         },
       };
