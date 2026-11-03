@@ -124,7 +124,8 @@ jobs:
             echo "::warning::SUPABASE_URL / SUPABASE_ANON_KEY absents : l'APK ne pourra pas se connecter au serveur."
           fi
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace assembleDebug
+          # Compilation propre : aucun résultat réutilisé d'une compilation précédente
+          ./gradlew --no-daemon --stacktrace --no-build-cache clean assembleDebug
 
       - name: Unit tests
         run: |
@@ -146,6 +147,25 @@ jobs:
             echo "- Signature stable : ${{ steps.signing.outputs.stable }}"
             echo "- Empreinte SHA-256 : \`$FP\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Vérifie que l'APK contient EXACTEMENT les valeurs actuelles des secrets (jamais affichées)
+      - name: Contrôle de l'APK final
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          mkdir -p "$RUNNER_TEMP/apk" && unzip -q -o "$APK" 'classes*.dex' -d "$RUNNER_TEMP/apk"
+          DEX="$RUNNER_TEMP/apk"
+          KEY=$(printf '%s' "$SUPABASE_ANON_KEY" | tr -d '[:space:]')
+          URL=$(printf '%s' "$SUPABASE_URL" | tr -d '[:space:]')
+          has() { grep -a -q -F "$1" "$DEX"/classes*.dex && echo oui || echo NON; }
+          echo "APK : clé Supabase actuelle intégrée = $(has "$KEY")"
+          echo "APK : URL Supabase actuelle intégrée = $(has "$URL")"
+          echo "APK : ancienne valeur fictive présente = $(has dummykey) (attendu : NON)"
+          echo "APK : URL d'exemple xyzcompany présente = $(has xyzcompany.supabase.co) (attendu : NON)"
+          echo "APK : package = $(unzip -p "$APK" AndroidManifest.xml | grep -a -c com.mikayla.app >/dev/null && echo com.mikayla.app)"
+          [ "$(has "$KEY")" = oui ] && [ "$(has "$URL")" = oui ] || { echo "::error::L'APK ne contient pas les valeurs actuelles des secrets Supabase"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: steps.firebase.outputs.real == 'true'
