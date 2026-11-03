@@ -1507,6 +1507,9 @@ fun SettingsScreen(
         )
     }
 
+    var section by remember { mutableStateOf<String?>(null) }
+    androidx.activity.compose.BackHandler(enabled = section != null) { section = null }
+
     // --- MAIN SETTINGS SCREEN LAYOUT ---
     LazyColumn(
         modifier = Modifier
@@ -1516,7 +1519,47 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(top = 10.dp, bottom = 32.dp)
     ) {
+        if (section != null) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { section = null }) {
+                        Icon(Icons.Rounded.ArrowBack, contentDescription = "Retour", tint = TextPrimary)
+                    }
+                    Text(
+                        text = when (section) {
+                            "couple" -> "Compte & couple"
+                            "appearance" -> "Apparence & discussions"
+                            "privacy" -> "Confidentialité & sécurité"
+                            else -> "Mode de connexion"
+                        },
+                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary
+                    )
+                }
+            }
+        }
+        if (section == null) {
+            item {
+                Text(text = "Paramètres", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+        if (section == null) {
+            item {
+                Column {
+                    SettingsCategoryRow(Icons.Rounded.Person, AccentRose, "Compte & couple", "Profils, surnoms, anniversaire, jumelage, serveur") { section = "couple" }
+                    SettingsCategoryRow(Icons.Rounded.Palette, VibrantCyan, "Apparence & discussions", "Thème, fond d'écran, bulles, police, icône") { section = "appearance" }
+                    SettingsCategoryRow(Icons.Rounded.Chat, VibrantCyan, "Discussions", "Touche Entrée, galerie, qualité des photos") { showChatPrefsModal = true }
+                    SettingsCategoryRow(Icons.Rounded.Notifications, AccentGold, "Notifications", "Catégories, aperçus, sons et vibrations") { showNotificationsModal = true }
+                    SettingsCategoryRow(Icons.Rounded.Lock, AccentViolet, "Confidentialité & sécurité", "Présence, accusés de lecture, codes PIN, verrouillage") { section = "privacy" }
+                    SettingsCategoryRow(Icons.Rounded.Storage, TextSecondary, "Stockage & données", "Espace utilisé, cache, sauvegardes") { showStorageModal = true }
+                    SettingsCategoryRow(Icons.Rounded.WifiTethering, AccentViolet, "Mode de connexion", "En ligne ou hors-ligne (liaison directe)") { section = "connection" }
+                }
+            }
+        }
         // --- 1. HERO COUPLE PROFILES & STATUS HEADER ---
+        if (section == null) {
         item {
             Surface(
                 shape = RoundedCornerShape(24.dp),
@@ -1614,12 +1657,11 @@ fun SettingsScreen(
                 }
             }
         }
-
-        // --- 2. SECTION: PERSONNALISATION VISUELLE & DESIGN ---
-        item {
-            Text(text = "PERSONNALISATION VISUELLE & DESIGN", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = VibrantCyan)
         }
 
+        // --- 2. SECTION: PERSONNALISATION VISUELLE & DESIGN ---
+
+        if (section == "appearance") {
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -1701,12 +1743,11 @@ fun SettingsScreen(
                 }
             }
         }
-
-        // --- 3. SECTION: ESPACE COUPLE & SURNOMS ---
-        item {
-            Text(text = "ESPACE COUPLE & COMPLICITÉ", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = AccentRose)
         }
 
+        // --- 3. SECTION: ESPACE COUPLE & SURNOMS ---
+
+        if (section == "couple") {
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -1767,12 +1808,11 @@ fun SettingsScreen(
                 }
             }
         }
-
-        // --- 4. SECTION: CONFIDENTIALITÉ & SÉCURITÉ (STYLE WHATSAPP) ---
-        item {
-            Text(text = "CONFIDENTIALITÉ & SÉCURITÉ (WHATSAPP)", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = AccentViolet)
         }
 
+        // --- 4. SECTION: CONFIDENTIALITÉ & SÉCURITÉ (STYLE WHATSAPP) ---
+
+        if (section == "privacy") {
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -1828,52 +1868,12 @@ fun SettingsScreen(
                 }
             }
         }
-
-        // --- 5. SECTION: DISCUSSIONS & MÉDIAS ---
-        item {
-            Text(text = "DISCUSSIONS & MÉDIAS", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = VibrantCyan)
         }
 
-        item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingRow(
-                        icon = Icons.Rounded.Chat,
-                        iconTint = VibrantCyan,
-                        title = "Paramètres de Discussion",
-                        subtitle = "Touche Entrée, visibilité galerie, qualité HD des photos",
-                        onClick = { showChatPrefsModal = true }
-                    )
-
-                    SettingRow(
-                        icon = Icons.Rounded.NotificationsActive,
-                        iconTint = AccentGold,
-                        title = "Notifications & Sons Romantiques",
-                        subtitle = "Camouflage (Météo/Système), sonneries et vibreur cardiaque",
-                        onClick = { showNotificationsModal = true }
-                    )
-
-                    SettingRow(
-                        icon = Icons.Rounded.Storage,
-                        iconTint = AccentRose,
-                        title = "Stockage & Cache des Médias",
-                        subtitle = "Gestion de l'espace disque, nettoyage du cache et sauvegardes",
-                        onClick = { showStorageModal = true }
-                    )
-                }
-            }
-        }
 
         // --- 6. SECTION: MODES DE CONNEXION (2 OPTIONS) ---
-        item {
-            Text(text = "MODES DE CONNEXION (2 OPTIONS)", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = AccentViolet)
-        }
 
+        if (section == "connection") {
         item {
             val isOnline = settings.connectionMode == ConnectionMode.ONLINE
             Surface(
@@ -2065,8 +2065,10 @@ fun SettingsScreen(
                 }
             }
         }
+        }
 
         // --- 7. FOOTER: DISSOCIATION ---
+        if (section == null) {
         item {
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -2086,6 +2088,7 @@ fun SettingsScreen(
                     Text(text = "Dissocier l'Espace Couple", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
+        }
         }
     }
 
@@ -2195,6 +2198,35 @@ fun SettingsScreen(
             containerColor = CardDark,
             shape = RoundedCornerShape(20.dp)
         )
+    }
+}
+
+@Composable
+private fun SettingsCategoryRow(
+    icon: ImageVector,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(tint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Text(text = subtitle, fontSize = 13.sp, color = TextSecondary, maxLines = 2)
+        }
     }
 }
 

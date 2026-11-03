@@ -12,3 +12,18 @@ Déjà fait (non compilé) : défaut de notification « romantic », réglages p
 5. Ensuite seulement : WebRTC, P2P Wi-Fi Direct, durcissement Supabase (buckets privés, RLS), jeux/calendrier/cycle.
 Après chaque étape : rapport de ce qui est vérifié et de ce qui exige un test sur les deux téléphones.
 Contrainte : appareils réels Android 7 et Android 10 ; compatibilité API 24 → 36 obligatoire (pas d'API récente sans garde Build.VERSION).
+
+---
+## Mise à jour — refonte native / UI (à lire en premier)
+
+Déjà fait dans cette branche (non compilé, à vérifier dans le prévisualiseur) :
+- `SettingsScreen.kt` : l'écran Paramètres est désormais une liste de catégories style WhatsApp (Compte & couple, Apparence & discussions, Discussions, Notifications, Confidentialité & sécurité, Stockage & données, Mode de connexion) avec sous-pages et bouton retour. Tous les anciens réglages et boîtes de dialogue sont conservés.
+
+À faire, dans cet ordre :
+1. Compiler ; corriger toute erreur dans `SettingsScreen.kt` (icônes `Rounded.Chat/Storage/WifiTethering/ArrowBack`, `BackHandler`).
+2. Performance sur téléphones modestes (Android 7 et 10) : dans `ChatScreen.kt` et `MainDashboardScreen.kt`, utiliser `LazyColumn` avec `key`, `remember`/`derivedStateOf`, éviter flous/ombres/dégradés animés coûteux, limiter les recompositions (états stables), charger les images avec Coil à taille réduite.
+3. Chat style WhatsApp : en-tête avec avatar et présence, bulles simples avec heure et coches, séparateurs de date, barre de saisie arrondie avec micro/pièce jointe, réponse par glissement, sélection multiple.
+4. Navigation : barre du bas simple (Discussions, Appels, Espace couple, Coffre, Paramètres) ; retirer `GlassmorphicFloatingNavBar` si lourde ; supprimer boutons sans action et données de démo.
+5. Thème clair/sombre réellement appliqué partout (`isDarkMode`).
+6. Supabase : ne rien modifier (géré à part avec ChatGPT).
+Contraintes : Android 7 (API 24) → 16, aucune simulation, aucune fonctionnalité supprimée.
