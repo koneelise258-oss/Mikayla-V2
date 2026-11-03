@@ -162,9 +162,8 @@ jobs:
           has() { grep -a -q -F "$1" "$DEX"/classes*.dex && echo oui || echo NON; }
           echo "APK : clé Supabase actuelle intégrée = $(has "$KEY")"
           echo "APK : URL Supabase actuelle intégrée = $(has "$URL")"
-          echo "APK : ancienne valeur fictive présente = $(has dummykey) (attendu : NON)"
-          echo "APK : URL d'exemple xyzcompany présente = $(has xyzcompany.supabase.co) (attendu : NON)"
-          echo "APK : package = $(unzip -p "$APK" AndroidManifest.xml | grep -a -c com.mikayla.app >/dev/null && echo com.mikayla.app)"
+          # Valeur de repli de build.gradle (secret absent) : ne doit pas être la valeur intégrée
+          echo "APK : valeur de repli 'eyJ...dummykey' intégrée = $(has 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummykey') (attendu : NON)"
           [ "$(has "$KEY")" = oui ] && [ "$(has "$URL")" = oui ] || { echo "::error::L'APK ne contient pas les valeurs actuelles des secrets Supabase"; exit 1; }
 
       - uses: actions/upload-artifact@v4
