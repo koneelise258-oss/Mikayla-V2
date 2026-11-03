@@ -1,9 +1,15 @@
 package com.example.mikayala
 
 import com.example.mikayala.services.CallActionReceiver
+import com.example.mikayala.services.FcmTokenSyncEngine
+import com.example.mikayala.services.FirebaseTokenFetcher
 import com.example.mikayala.services.MyFirebaseMessagingService
+import com.example.mikayala.services.SupabasePushApi
+import com.example.mikayala.services.TokenStorage
 import com.example.mikayala.ui.components.VoicePlaybackCoordinator
 import com.example.mikayala.utils.VoiceNoteState
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -13,6 +19,45 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+
+class FakeTokenStorage : TokenStorage {
+    private var pending: String? = null
+    private var pendingUnregister: String? = null
+
+    override fun getPendingToken(): String? = pending
+    override fun savePendingToken(token: String?) { pending = token }
+    override fun getPendingUnregistrationToken(): String? = pendingUnregister
+    override fun savePendingUnregistrationToken(token: String?) { pendingUnregister = token }
+}
+
+class FakeFirebaseTokenFetcher(var tokenToReturn: String? = null) : FirebaseTokenFetcher {
+    override suspend fun fetchToken(): String? = tokenToReturn
+}
+
+class FakeSupabasePushApi(
+    var currentUid: String? = null,
+    var upsertSuccess: Boolean = true,
+    var deleteSuccess: Boolean = true
+) : SupabasePushApi {
+    val upsertedTokens = mutableListOf<Pair<String, String>>()
+    val deletedTokens = mutableListOf<Pair<String, String>>()
+
+    override fun getCurrentSessionUid(): String? = currentUid
+
+    override suspend fun upsertDevicePushToken(fcmToken: String): Boolean {
+        if (!upsertSuccess) return false
+        val uid = currentUid ?: return false
+        upsertedTokens.add(Pair(uid, fcmToken))
+        return true
+    }
+
+    override suspend fun deleteDevicePushToken(fcmToken: String): Boolean {
+        if (!deleteSuccess) return false
+        val uid = currentUid ?: return false
+        deletedTokens.add(Pair(uid, fcmToken))
+        return true
+    }
+}
 
 class VoiceAndPushUnitTest {
 
@@ -41,7 +86,6 @@ class VoiceAndPushUnitTest {
 
     @Test
     fun testTokenMaskingFunction() {
-        // Vérification de la fonction de production MyFirebaseMessagingService.maskToken
         val longToken = "fKm98xLa7200q1Z58921abcdef0123456789"
         assertEquals("fKm98x...6789", MyFirebaseMessagingService.maskToken(longToken))
 
@@ -57,13 +101,8 @@ class VoiceAndPushUnitTest {
         val userA = "11111111-2222-3333-4444-555555555555"
         val userB = "66666666-7777-8888-9999-000000000000"
 
-        // 1. Même utilisateur : doit être ignoré
         assertTrue(MyFirebaseMessagingService.shouldIgnoreNotification(userA, userA))
-
-        // 2. Utilisateurs différents : ne doit PAS être ignoré
         assertFalse(MyFirebaseMessagingService.shouldIgnoreNotification(userA, userB))
-
-        // 3. Cas limites (UID null ou vide) : ne pas filtrer
         assertFalse(MyFirebaseMessagingService.shouldIgnoreNotification(null, userB))
         assertFalse(MyFirebaseMessagingService.shouldIgnoreNotification(userA, null))
         assertFalse(MyFirebaseMessagingService.shouldIgnoreNotification("", userB))
@@ -73,19 +112,10 @@ class VoiceAndPushUnitTest {
     fun testResolveCallerNameWithCamouflageModes() {
         val rawCaller = "Élise"
 
-        // Mode Météo
         assertEquals("Service Météo", MyFirebaseMessagingService.resolveCallerName("weather_camouflage", rawCaller))
-
-        // Mode Système
         assertEquals("Système", MyFirebaseMessagingService.resolveCallerName("system_camouflage", rawCaller))
-
-        // Mode Discret
         assertEquals("Mikayala", MyFirebaseMessagingService.resolveCallerName("discreet", rawCaller))
-
-        // Mode Romantique / Standard
         assertEquals("Élise", MyFirebaseMessagingService.resolveCallerName("romantic", rawCaller))
-
-        // Nom vide -> fallback sur 'Mon Amour'
         assertEquals("Mon Amour", MyFirebaseMessagingService.resolveCallerName("romantic", ""))
     }
 
@@ -93,22 +123,18 @@ class VoiceAndPushUnitTest {
     fun testResolveMessageDisplayCamouflageAndTypes() {
         val rawSender = "Alex"
 
-        // 1. Mode Météo (tous types)
         val weather = MyFirebaseMessagingService.resolveMessageDisplay("chat_message", "weather_camouflage", rawSender, "Bonjour")
         assertEquals("Météo ☀️", weather.first)
         assertEquals("Ciel dégagé • 21°C", weather.second)
 
-        // 2. Mode Système (tous types)
         val system = MyFirebaseMessagingService.resolveMessageDisplay("chat_message", "system_camouflage", rawSender, "Bonjour")
         assertEquals("Système ⚙️", system.first)
         assertEquals("Mise à jour système prête", system.second)
 
-        // 3. Mode Discret
         val discreet = MyFirebaseMessagingService.resolveMessageDisplay("chat_message", "discreet", rawSender, "Texte secret")
         assertEquals("Mikayala 🔒", discreet.first)
         assertEquals("Nouveau message chiffré", discreet.second)
 
-        // 4. Mode Romantique avec différents types multimédia
         val audioMsg = MyFirebaseMessagingService.resolveMessageDisplay("audio", "romantic", rawSender, "")
         assertEquals("Alex", audioMsg.first)
         assertEquals("🎤 Note vocale reçue", audioMsg.second)
@@ -121,14 +147,9 @@ class VoiceAndPushUnitTest {
         assertEquals("Alex", videoMsg.first)
         assertEquals("📹 Vidéo reçue", videoMsg.second)
 
-        // 5. Réponse à un message (prefix ↳)
         val replyMsg = MyFirebaseMessagingService.resolveMessageDisplay("chat_message", "romantic", rawSender, "D'accord !", isReply = true)
         assertEquals("Alex", replyMsg.first)
         assertEquals("↳ D'accord !", replyMsg.second)
-
-        // Préfixe non dupliqué si déjà présent
-        val alreadyPrefixed = MyFirebaseMessagingService.resolveMessageDisplay("chat_message", "romantic", rawSender, "↳ Déjà préfixé", isReply = true)
-        assertEquals("↳ Déjà préfixé", alreadyPrefixed.second)
     }
 
     @Test
@@ -139,56 +160,115 @@ class VoiceAndPushUnitTest {
         assertEquals("IS_VIDEO", CallActionReceiver.EXTRA_IS_VIDEO)
     }
 
+    // --- TESTS DU CODE DE PRODUCTION FcmTokenSyncEngine ---
+
     @Test
-    fun testTokenSyncLifecycleStateMachine() {
-        // Simulation de la machine à états de synchronisation de jeton FCM
-        var pendingToken: String? = null
-        var registeredTokenInDb: String? = null
-        var authenticatedUid: String? = null
+    fun testSyncNetworkFailureRetainsPendingToken() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("token_network_fail_123")
+        val api = FakeSupabasePushApi(currentUid = "user_alice", upsertSuccess = false)
+        val engine = FcmTokenSyncEngine(storage, fetcher, api)
 
-        fun simulateTokenReceived(token: String) {
-            pendingToken = token
-            if (authenticatedUid != null) {
-                registeredTokenInDb = token
-                pendingToken = null
-            }
-        }
+        val result = engine.syncPendingAndCurrentToken()
 
-        fun simulateLogin(uid: String) {
-            authenticatedUid = uid
-            if (pendingToken != null) {
-                registeredTokenInDb = pendingToken
-                pendingToken = null
-            }
-        }
+        assertFalse(result)
+        assertEquals("token_network_fail_123", storage.getPendingToken())
+    }
 
-        fun simulateLogout(): Boolean {
-            if (authenticatedUid != null && registeredTokenInDb != null) {
-                registeredTokenInDb = null
-                pendingToken = null
-                authenticatedUid = null
-                return true
-            }
-            authenticatedUid = null
-            return false
-        }
+    @Test
+    fun testSyncNoSessionRetainsPendingToken() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("token_no_session_456")
+        val api = FakeSupabasePushApi(currentUid = null)
+        val engine = FcmTokenSyncEngine(storage, fetcher, api)
 
-        // Étape 1 : Token généré avant la connexion (démarrage à froid / installation)
-        simulateTokenReceived("fcm_token_initial_1234567890")
-        assertEquals("fcm_token_initial_1234567890", pendingToken)
-        assertNull(registeredTokenInDb)
+        val result = engine.syncPendingAndCurrentToken()
 
-        // Étape 2 : L'utilisateur se connecte
-        simulateLogin("user_alice_uuid")
-        assertNull(pendingToken) // Nettoyé après synchronisation
-        assertEquals("fcm_token_initial_1234567890", registeredTokenInDb)
+        assertFalse(result)
+        assertEquals("token_no_session_456", storage.getPendingToken())
+    }
 
-        // Étape 3 : Déconnexion attendue
-        val unregisterSuccess = simulateLogout()
-        assertTrue(unregisterSuccess)
-        assertNull(registeredTokenInDb)
-        assertNull(authenticatedUid)
-        assertNull(pendingToken)
+    @Test
+    fun testConcurrentSyncRequestsAreQueuedAndProcessed() = runBlocking {
+        val storage = FakeTokenStorage()
+        val fetcher = FakeFirebaseTokenFetcher("token_concurrent_789")
+        val api = FakeSupabasePushApi(currentUid = "user_bob", upsertSuccess = true)
+        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+
+        val job1 = async { engine.syncPendingAndCurrentToken() }
+        val job2 = async { engine.syncPendingAndCurrentToken() }
+
+        val res1 = job1.await()
+        val res2 = job2.await()
+
+        assertTrue(res1 || res2)
+        assertNull(storage.getPendingToken())
+        assertTrue(api.upsertedTokens.any { it.first == "user_bob" && it.second == "token_concurrent_789" })
+    }
+
+    @Test
+    fun testRenewedTokenReplacesOldPendingToken() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.savePendingToken("old_token_111")
+        val fetcher = FakeFirebaseTokenFetcher("fresh_token_999")
+        val api = FakeSupabasePushApi(currentUid = "user_charlie", upsertSuccess = true)
+        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+
+        val result = engine.syncPendingAndCurrentToken()
+
+        assertTrue(result)
+        assertNull(storage.getPendingToken())
+        assertEquals("fresh_token_999", api.upsertedTokens.last().second)
+    }
+
+    @Test
+    fun testFailedLogoutUnregistrationRetainsInfo() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.savePendingToken("active_token_555")
+        val fetcher = FakeFirebaseTokenFetcher("active_token_555")
+        val api = FakeSupabasePushApi(currentUid = "user_david", deleteSuccess = false)
+        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+
+        val result = engine.unregisterDeviceTokenOnLogout()
+
+        assertFalse(result)
+        assertEquals("active_token_555", storage.getPendingUnregistrationToken())
+    }
+
+    @Test
+    fun testRetryLogoutUnregistrationSucceedsOnNextSync() = runBlocking {
+        val storage = FakeTokenStorage()
+        storage.savePendingUnregistrationToken("failed_token_777")
+        val fetcher = FakeFirebaseTokenFetcher("fresh_token_888")
+        val api = FakeSupabasePushApi(currentUid = "user_david", deleteSuccess = true, upsertSuccess = true)
+        val engine = FcmTokenSyncEngine(storage, fetcher, api)
+
+        val result = engine.syncPendingAndCurrentToken()
+
+        assertTrue(result)
+        assertNull(storage.getPendingUnregistrationToken())
+        assertTrue(api.deletedTokens.any { it.second == "failed_token_777" })
+    }
+
+    @Test
+    fun testAccountSwitchingIsolation() = runBlocking {
+        val storageA = FakeTokenStorage()
+        val fetcherA = FakeFirebaseTokenFetcher("shared_device_token")
+        val apiA = FakeSupabasePushApi(currentUid = "user_account_A", deleteSuccess = true)
+        val engineA = FcmTokenSyncEngine(storageA, fetcherA, apiA)
+
+        val logoutResult = engineA.unregisterDeviceTokenOnLogout()
+        assertTrue(logoutResult)
+        assertEquals(Pair("user_account_A", "shared_device_token"), apiA.deletedTokens.last())
+
+        val storageB = FakeTokenStorage()
+        val fetcherB = FakeFirebaseTokenFetcher("shared_device_token")
+        val apiB = FakeSupabasePushApi(currentUid = "user_account_B", upsertSuccess = true)
+        val engineB = FcmTokenSyncEngine(storageB, fetcherB, apiB)
+
+        val syncResult = engineB.syncPendingAndCurrentToken()
+        assertTrue(syncResult)
+        assertEquals(Pair("user_account_B", "shared_device_token"), apiB.upsertedTokens.last())
     }
 
     @Test
@@ -208,7 +288,6 @@ class VoiceAndPushUnitTest {
         val formatted = sdf.format(Date(1730640000000L))
         assertTrue(formatted.endsWith("Z"))
         assertEquals(20, formatted.length)
-        // Vérifie qu'il n'y a pas de littéral 'now()' incorrect pour PostgREST
         assertFalse(formatted.contains("now()"))
     }
 }

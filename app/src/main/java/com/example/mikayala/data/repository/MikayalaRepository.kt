@@ -2836,12 +2836,21 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
-    suspend fun signOut(): Boolean = withContext(Dispatchers.IO) {
-        try {
+    suspend fun signOut(force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+        val unregistered = try {
             com.example.mikayala.services.MyFirebaseMessagingService.unregisterDeviceTokenOnLogout(context)
         } catch (e: Exception) {
             Log.w("MikayalaAuth", "Erreur lors de la désinscription du jeton FCM avant déconnexion: ${e.message}")
+            false
         }
+
+        if (!unregistered && !force) {
+            val pending = com.example.mikayala.services.MyFirebaseMessagingService.getPendingUnregistrationToken(context) ?: ""
+            val masked = com.example.mikayala.services.MyFirebaseMessagingService.maskToken(pending)
+            Log.w("MikayalaAuth", "signOut suspendu: la désinscription du jeton ($masked) a échoué.")
+            return@withContext false
+        }
+
         val success = supabaseService.signOut("")
         clearCoupleCache()
         prefs.edit().apply {
