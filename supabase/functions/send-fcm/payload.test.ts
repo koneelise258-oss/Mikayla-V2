@@ -74,3 +74,29 @@ test("recipientId transmis et non usurpable par data", () => {
   const out = buildPayloadData({ type: "chat_message", senderId: "u1", recipientId: "u2", data: { recipientId: "evil" } });
   assert.equal(out.recipientId, "u2");
 });
+
+import { isPairedCoupleMember, validateServiceAccount } from "./payload.ts";
+
+test("couple : status paired obligatoire", () => {
+  const row = { user1_id: "a", user2_id: "b", status: "paired" };
+  assert.ok(isPairedCoupleMember(row, "a", "b"));
+  assert.ok(isPairedCoupleMember(row, "b", "a"));
+  assert.ok(!isPairedCoupleMember({ ...row, status: "pending" }, "a", "b"));
+  assert.ok(!isPairedCoupleMember({ ...row, status: null }, "a", "b"));
+  assert.ok(!isPairedCoupleMember(row, "a", "x"));
+  assert.ok(!isPairedCoupleMember(row, "a", "a"));
+  assert.ok(!isPairedCoupleMember(null, "a", "b"));
+  assert.ok(!isPairedCoupleMember({ user1_id: "a", user2_id: null, status: "paired" }, "a", ""));
+});
+
+test("compte de service : validé sans exposer de valeur", () => {
+  const ok = JSON.stringify({ type: "service_account", project_id: "gen-lang-client-0988385912", client_email: "x@y", private_key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----" });
+  assert.equal(validateServiceAccount(ok), null);
+  assert.equal(validateServiceAccount(""), "missing_service_account");
+  assert.equal(validateServiceAccount("{oops"), "invalid_service_account_json");
+  assert.equal(validateServiceAccount(ok.replace("gen-lang-client-0988385912", "autre-projet")), "unexpected_project_id");
+  assert.equal(validateServiceAccount(JSON.stringify({ type: "service_account", project_id: "gen-lang-client-0988385912", client_email: "x@y" })), "missing_private_key");
+  // le code d'erreur ne contient jamais la clé
+  const bad = validateServiceAccount(ok.replace("gen-lang-client-0988385912", "p"));
+  assert.ok(!String(bad).includes("PRIVATE"));
+});

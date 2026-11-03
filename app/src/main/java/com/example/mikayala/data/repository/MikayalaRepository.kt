@@ -1575,6 +1575,10 @@ class MikayalaRepository(private val context: Context) {
                 val bytes = inputStream?.readBytes()
                 inputStream?.close()
                 if (bytes != null) {
+                    // 1) Bucket privé messages-media + URL signée (comme photos, vocaux et vidéos)
+                    if (sendDocumentViaSignedStorage(uri, fileName, bytes)) return@launch
+                    // 2) Repli transitoire : ancien envoi chat_media (URL publique) tant que
+                    //    messages-media n'accepte pas les documents
                     val safeName = "doc_${UUID.randomUUID().toString().take(8)}_$fileName"
                     val uploadedUrl = supabaseService.uploadChatMedia(couple.id, safeName, bytes, "application/octet-stream")
                     sendMessage(
@@ -1592,6 +1596,42 @@ class MikayalaRepository(private val context: Context) {
                 )
             }
         }
+    }
+
+    /** Envoi d'un document via messages-media (privé, URL signée). Retourne false pour déclencher le repli. */
+    private suspend fun sendDocumentViaSignedStorage(uri: Uri, fileName: String, bytes: ByteArray): Boolean {
+        val couple = _coupleSpace.value
+        val (myUserId, partnerId) = resolveCoupleMembers()
+        if (couple.id.isBlank() || myUserId.isBlank() || partnerId.isBlank()) return false
+        val messageId = UUID.randomUUID().toString()
+        val cleanName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80).ifBlank { "document" }
+        val storagePath = "${couple.id}/documents/${messageId}_$cleanName"
+        val mime = try { context.contentResolver.getType(uri) } catch (_: Exception) { null } ?: "application/octet-stream"
+
+        val uploaded = supabaseService.uploadMessageMedia(couple.id, storagePath, bytes, mime) ?: return false
+        Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] document envoyé dans messages-media ($uploaded)")
+        val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath)
+        if (signedUrl != null) mediaUrlCache[storagePath] = signedUrl
+
+        val msg = MessageEntity(
+            id = messageId,
+            coupleId = couple.id,
+            senderId = myUserId,
+            receiverId = partnerId,
+            content = fileName,
+            type = "document",
+            mediaUrl = signedUrl,
+            storagePath = storagePath,
+            createdAt = System.currentTimeMillis(),
+            status = "pending"
+        )
+        _messages.value = _messages.value + msg
+        val inserted = supabaseService.postMessageEntity(msg, storagePath = storagePath)
+        _messages.value = _messages.value.map {
+            if (it.id == messageId) it.copy(status = if (inserted) "sent" else "failed") else it
+        }
+        if (inserted) notifyPartnerAfterInsert("chat_message", "📄 $fileName", messageId)
+        return true
     }
 
     fun sendLocationMessage(latitude: Double, longitude: Double, address: String = "Ma position actuelle") {

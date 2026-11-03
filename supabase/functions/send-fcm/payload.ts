@@ -61,3 +61,38 @@ export function buildPayloadData(input: PayloadInput): Record<string, string> {
 export function ttlFor(type: string): string {
   return SHORT_TTL_TYPES.includes(type) ? "30s" : "86400s";
 }
+
+export interface CoupleRow {
+  user1_id?: string | null;
+  user2_id?: string | null;
+  status?: string | null;
+}
+
+/** Couple apparié (status = 'paired') ET expéditeur + destinataire distincts, tous deux membres. */
+export function isPairedCoupleMember(row: CoupleRow | null | undefined, senderId: string, recipientId: string): boolean {
+  if (!row || row.status !== "paired") return false;
+  if (!senderId || !recipientId || senderId === recipientId) return false;
+  const members = [row.user1_id, row.user2_id];
+  return members.includes(senderId) && members.includes(recipientId);
+}
+
+export const EXPECTED_FCM_PROJECT_ID = "gen-lang-client-0988385912";
+
+/**
+ * Valide le compte de service sans jamais renvoyer ni journaliser de valeur secrète.
+ * Retourne null si valide, sinon un code d'erreur neutre.
+ */
+export function validateServiceAccount(raw: string, expectedProjectId = EXPECTED_FCM_PROJECT_ID): string | null {
+  if (!raw) return "missing_service_account";
+  let sa: Record<string, unknown>;
+  try {
+    sa = JSON.parse(raw);
+  } catch {
+    return "invalid_service_account_json";
+  }
+  if (sa.type !== "service_account") return "not_a_service_account";
+  if (typeof sa.client_email !== "string" || !sa.client_email) return "missing_client_email";
+  if (typeof sa.private_key !== "string" || !String(sa.private_key).includes("PRIVATE KEY")) return "missing_private_key";
+  if (sa.project_id !== expectedProjectId) return "unexpected_project_id";
+  return null;
+}
