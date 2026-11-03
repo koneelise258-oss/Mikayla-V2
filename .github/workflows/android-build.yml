@@ -19,6 +19,26 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # Diagnostic : présence des secrets (jamais leur valeur)
+      - name: Secrets disponibles
+        env:
+          S1: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          S2: ${{ secrets.SUPABASE_URL }}
+          S3: ${{ secrets.SUPABASE_ANON_KEY }}
+          S4: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          S5: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          S6: ${{ secrets.ANDROID_KEY_ALIAS }}
+          S7: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          check() { if [ -n "$2" ]; then echo "SECRET $1 : présent"; else echo "SECRET $1 : ABSENT"; fi; }
+          check GOOGLE_SERVICES_JSON "$S1"
+          check SUPABASE_URL "$S2"
+          check SUPABASE_ANON_KEY "$S3"
+          check ANDROID_KEYSTORE_BASE64 "$S4"
+          check ANDROID_KEYSTORE_PASSWORD "$S5"
+          check ANDROID_KEY_ALIAS "$S6"
+          check ANDROID_KEY_PASSWORD "$S7"
+
       # Firebase : vrai fichier obligatoire pour un APK de test FCM.
       # Sans secret, on compile seulement (contrôle du code) et AUCUN APK n'est publié.
       - name: Configuration Firebase
