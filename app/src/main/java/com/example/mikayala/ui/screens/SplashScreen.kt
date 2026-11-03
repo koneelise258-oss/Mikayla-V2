@@ -81,15 +81,17 @@ fun SplashScreen(
         ) {
             Text(
                 text = "Mikayala",
-                fontSize = 20.sp,
+                fontSize = 22.sp,
+                fontFamily = com.example.mikayala.theme.Poppins,
                 fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
+                letterSpacing = 0.5.sp,
                 color = Color.White
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Messagerie privée du couple",
                 fontSize = 12.sp,
+                fontFamily = com.example.mikayala.theme.Poppins,
                 color = Color(0xFF9BA3B5)
             )
         }

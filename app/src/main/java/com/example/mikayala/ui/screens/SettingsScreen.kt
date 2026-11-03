@@ -103,14 +103,6 @@ fun SettingsScreen(
         }
     }
 
-    val iconPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        uri?.let {
-            repository.updateAppIcon("custom_image", it.toString())
-            Toast.makeText(context, "Nouvelle icône personnalisée importée ! ✨", Toast.LENGTH_SHORT).show()
-        }
-    }
 
     val scope = rememberCoroutineScope()
 
@@ -478,81 +470,69 @@ fun SettingsScreen(
 
     // 3. App Icon & Camouflage Modal
     if (showAppIconModal) {
-        val appIcons = listOf(
-            Triple("heart_luxury", "Cœur Luxueux Or & Rubis ❤️", "Icône officielle Mikayala"),
-            Triple("calculator", "Calculatrice Scientifique 🔢", "Camouflage discret parfait"),
-            Triple("notes", "Bloc-Notes & Mémos 📝", "Déguisement insoupçonnable"),
-            Triple("weather", "Météo Locale Pro ☀️", "Camouflage quotidien"),
-            Triple("cyber_cyan", "Nébuleuse Cyan Astrale 💠", "Design cyber moderne"),
-            Triple("cherry_blossom", "Fleur de Cerisier Zen 🌸", "Aura poétique et douce")
-        )
-
+        // Changement RÉEL de l'icône de l'écran d'accueil (alias Android, voir util/AppIconManager.kt)
+        var currentIcon by remember { mutableStateOf(com.example.mikayala.util.AppIconManager.current(context)) }
         Dialog(onDismissRequest = { showAppIconModal = false }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(text = "Changer l'Icône de l'Application 🎭", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Camouflez l'application sur votre écran d'accueil ou appliquez une image personnalisée.", fontSize = 12.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Import Custom Icon from Gallery
-                    Button(
-                        onClick = {
-                            iconPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CardDarkElevated),
-                        border = BorderStroke(1.dp, AccentGold.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.FileUpload, contentDescription = null, tint = AccentGold, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Importer une icône depuis la Galerie 🖼️", fontSize = 13.sp, color = AccentGold, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(text = "Icônes de Camouflage et de Style :", fontSize = 11.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        appIcons.forEach { (id, title, desc) ->
-                            val isSelected = settings.customAppIcon == id
-                            Surface(
-                                onClick = {
-                                    repository.updateAppIcon(id, "")
-                                    showAppIconModal = false
-                                    Toast.makeText(context, "Icône '$title' sélectionnée !", Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (isSelected) CardDarkElevated else Color(0x22141C2B),
-                                border = BorderStroke(if (isSelected) 1.5.dp else 1.dp, if (isSelected) AccentGold else BorderSubtleWhite),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+                    Text(text = "Icône de l'application", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "L'icône change sur l'écran d'accueil. Le téléphone peut mettre quelques secondes à l'afficher, et certains lanceurs retirent le raccourci : l'application reste alors dans la liste des applications.",
+                        fontSize = 12.sp, color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    com.example.mikayala.util.AppIconManager.ICONS.chunked(3).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            row.forEach { icon ->
+                                val selected = currentIcon == icon.id
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .width(84.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            if (icon.id != currentIcon) {
+                                                if (com.example.mikayala.util.AppIconManager.apply(context, icon.id)) {
+                                                    currentIcon = icon.id
+                                                    Toast.makeText(context, "Icône « ${icon.label} » appliquée", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "Le téléphone a refusé le changement d'icône.", Toast.LENGTH_LONG).show()
+                                                }
+                                            }
+                                        }
+                                        .padding(6.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                        Text(text = desc, fontSize = 11.sp, color = TextSecondary)
-                                    }
-                                    if (isSelected) {
-                                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = AccentGold, modifier = Modifier.size(20.dp))
-                                    }
+                                    androidx.compose.foundation.Image(
+                                        painter = androidx.compose.ui.res.painterResource(id = icon.preview),
+                                        contentDescription = icon.label,
+                                        modifier = Modifier
+                                            .size(60.dp)
+                                            .clip(CircleShape)
+                                            .border(if (selected) 3.dp else 0.dp, if (selected) AccentRose else Color.Transparent, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = icon.label,
+                                        fontSize = 10.sp,
+                                        color = if (selected) TextPrimary else TextSecondary,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2
+                                    )
                                 }
                             }
                         }
+                    }
+                    TextButton(onClick = { showAppIconModal = false }, modifier = Modifier.align(Alignment.End)) {
+                        Text("Fermer", color = AccentRose)
                     }
                 }
             }
@@ -1682,7 +1662,7 @@ fun SettingsScreen(
                         icon = Icons.Rounded.AppShortcut,
                         iconTint = AccentGold,
                         title = "Changer l'Icône de l'Application",
-                        subtitle = "Camouflage (Calculatrice, Notes) ou image importée",
+                        subtitle = "10 icônes au choix pour l'écran d'accueil",
                         onClick = { showAppIconModal = true }
                     )
                     }

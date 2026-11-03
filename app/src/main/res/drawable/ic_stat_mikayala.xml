@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Silhouette blanche du logo (deux bulles) : icône monochrome Android 13+ et petite icône des notifications -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:pivotX="54" android:pivotY="55" android:scaleX="1.15" android:scaleY="1.15">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M44,30 C31.5,30 23,38.5 23,49 C23,53.6 24.7,57.8 27.5,61 L25.5,70 L34.6,67 C37.4,68.2 40.6,68.8 44,68.8 C56.5,68.8 65,60.3 65,49.4 C65,38.5 56.5,30 44,30 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M64,41 C76.5,41 85,49.5 85,60 C85,64.6 83.3,68.8 80.5,72 L82.5,81 L73.4,78 C70.6,79.2 67.4,79.8 64,79.8 C51.5,79.8 43,71.3 43,60.4 C43,49.5 51.5,41 64,41 Z" />
+    </group>
+</vector>

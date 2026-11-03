@@ -156,7 +156,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALLS_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle(if (isVideo) "📹 Appel Vidéo Entrant" else "📞 Appel Vocal Entrant")
             .setContentText("$callerName vous appelle...")
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -187,7 +187,7 @@ object NotificationHelper {
         )
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALLS_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("Appel refusé")
             .setContentText("$partnerName a refusé votre appel")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -210,7 +210,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALLS_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle(if (isVideo) "Appel vidéo manqué" else "Appel vocal manqué")
             .setContentText("Appel manqué de $callerName")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -231,7 +231,7 @@ object NotificationHelper {
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_LOVE_TIME_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("💖 Love Time : $coupleNames")
             .setContentText("Ensemble depuis $daysTogether jours de pur bonheur ✨")
             .setOngoing(true) // Pinned in status bar
@@ -256,7 +256,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle(CYCLE_NEUTRAL_TITLE)
             .setContentText(CYCLE_NEUTRAL_TEXT)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -278,7 +278,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALENDAR_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🎉 Joyeux Anniversaire de Couple ! 🎉")
             .setContentText(anniversaryText)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -299,7 +299,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_GAMES_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🎮 Jeu de Couple • $partnerName")
             .setContentText("$partnerName vient de jouer à « $gameTitle » ! Découvrez son score 🔥")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -351,7 +351,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_MESSAGES_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle(senderName)
             .setContentText(messageText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(messageText))
@@ -367,7 +367,7 @@ object NotificationHelper {
         // Notification récapitulative pour regroupement intelligent sous Android
         val summaryBuilder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_MESSAGES_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setStyle(NotificationCompat.InboxStyle().setSummaryText("Mikayala"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setGroup("com.example.mikayala.CHAT_GROUP")
@@ -392,7 +392,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALENDAR_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("📅 Rappel d'Événement : $eventTitle")
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -416,7 +416,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_GAMES_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🎮 C'est à ton tour de jouer !")
             .setContentText("$partnerName a validé son coup dans « $gameTitle ». À toi de jouer ! 🔥")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -480,7 +480,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_MESSAGES_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("📡 Proximité • $senderName")
             .setContentText(displayText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(displayText))
@@ -503,7 +503,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🔒 Coffre-Fort Intime • $partnerName")
             .setContentText("$partnerName a ajouté un nouveau souvenir secret (« $itemTitle ») ! ✨")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -524,7 +524,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🎭 Humeur du Jour • $partnerName")
             .setContentText("$partnerName se sent $moodEmoji $moodLabel aujourd'hui. Envoie-lui un mot doux ! 💕")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -545,7 +545,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("📊 Sondage de Couple • $partnerName")
             .setContentText("$partnerName demande : « $pollQuestion » ! Donne ton avis 🗳️")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -566,7 +566,7 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
             .also { applyLegacyAlerts(context, it) }
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("💋 Bisou Volant Envoyé ! 💖")
             .setContentText("$partnerName vient de t'envoyer $kissCount bisous virtuels ! Pluie d'amour 🌧️💕")
             .setPriority(NotificationCompat.PRIORITY_HIGH)

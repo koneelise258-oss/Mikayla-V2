@@ -214,3 +214,20 @@ class AuthErrorExplainerTest {
         assertTrue(e.explain("whatever", false).contains("mal configurée"))
     }
 }
+
+class AppIconManagerTest {
+    private val m = com.example.mikayala.util.AppIconManager
+
+    @Test fun unSeulAliasActive() {
+        val (enable, disable) = m.planFor("c")
+        assertEquals(".LauncherC", enable)
+        assertEquals(m.ICONS.size - 1, disable.size)
+        assertFalse(disable.contains(enable))
+    }
+    @Test fun idInconnuRetombeSurPrincipal() {
+        assertEquals(".LauncherMain", m.planFor("inexistant").first)
+    }
+    @Test fun dixIconesDistinctes() {
+        assertEquals(10, m.ICONS.map { it.alias }.toSet().size)
+    }
+}
