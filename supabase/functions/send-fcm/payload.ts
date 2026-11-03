@@ -15,6 +15,7 @@ export interface PayloadInput {
   type: string;
   coupleId?: string;
   senderId: string;
+  recipientId?: string;
   body?: string;
   data?: Record<string, unknown>;
   hidePreview?: boolean;
@@ -40,6 +41,7 @@ export function buildPayloadData(input: PayloadInput): Record<string, string> {
     type: input.type,
     coupleId: input.coupleId || "",
     senderId: input.senderId,
+    recipientId: input.recipientId || "",
   };
 
   // Cycle menstruel : liste blanche stricte. Aucun champ client (phaseName, dates, symptômes,

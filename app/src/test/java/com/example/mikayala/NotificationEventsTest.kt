@@ -187,4 +187,13 @@ class NotificationEventsTest {
         assertTrue(NotificationPrefs.isDismissalType("call_ended"))
         assertFalse(NotificationPrefs.isDismissalType("call"))
     }
+
+    @Test
+    fun `notification destinee a un autre compte ignoree apres changement de compte`() {
+        val svc = com.example.mikayala.services.MyFirebaseMessagingService
+        assertTrue(svc.isForAnotherAccount("userB", "userA"))
+        assertFalse(svc.isForAnotherAccount("userA", "userA"))
+        assertFalse(svc.isForAnotherAccount("userA", null))
+        assertFalse(svc.isForAnotherAccount("userA", ""))
+    }
 }

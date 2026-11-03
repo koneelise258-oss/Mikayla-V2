@@ -22,7 +22,7 @@ test("cycle : aucun champ sensible même si le payload les contient", () => {
       prediction: "J+2",
     },
   });
-  assert.deepEqual(Object.keys(out).sort(), ["coupleId", "messageText", "senderId", "type"]);
+  assert.deepEqual(Object.keys(out).sort(), ["coupleId", "messageText", "recipientId", "senderId", "type"]);
   assert.equal(out.messageText, CYCLE_NEUTRAL_TEXT);
   const serialized = JSON.stringify(out);
   for (const word of ["Ovulation", "Chérie", "2026-11-12", "crampes", "fertile", "Règles", "J+2"]) {
@@ -68,4 +68,9 @@ test("types autorisés et TTL", () => {
   assert.equal(ttlFor("call"), "30s");
   assert.equal(ttlFor("call_cancelled"), "30s");
   assert.equal(ttlFor("chat_message"), "86400s");
+});
+
+test("recipientId transmis et non usurpable par data", () => {
+  const out = buildPayloadData({ type: "chat_message", senderId: "u1", recipientId: "u2", data: { recipientId: "evil" } });
+  assert.equal(out.recipientId, "u2");
 });

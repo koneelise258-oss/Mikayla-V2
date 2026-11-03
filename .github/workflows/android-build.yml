@@ -19,16 +19,23 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Vrai fichier Firebase si le secret existe, sinon fichier factice (compilation seulement, pas de push réel)
-      - name: google-services.json
+      # Firebase : vrai fichier obligatoire pour un APK de test FCM.
+      # Sans secret, on compile seulement (contrôle du code) et AUCUN APK n'est publié.
+      - name: Configuration Firebase
+        id: firebase
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
-            echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
-            echo "Firebase : fichier RÉEL (secret GOOGLE_SERVICES_JSON)"
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            if ! jq -e '.client[] | select(.client_info.android_client_info.package_name == "com.mikayla.app")' app/google-services.json > /dev/null; then
+              echo "::error::Le secret GOOGLE_SERVICES_JSON ne contient pas le package com.mikayla.app"
+              exit 1
+            fi
+            echo "Firebase : fichier RÉEL (secret GOOGLE_SERVICES_JSON), package com.mikayla.app vérifié"
+            echo "real=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Firebase : fichier FACTICE (aucun secret) - APK sans notifications réelles"
+            echo "::warning::Firebase : AUCUN secret GOOGLE_SERVICES_JSON. Fichier FACTICE pour compiler uniquement ; aucun APK publié."
             cat > app/google-services.json <<'JSON'
           {
             "project_info": { "project_number": "000000000000", "project_id": "ci-placeholder", "storage_bucket": "ci-placeholder.appspot.com" },
@@ -44,6 +51,31 @@ jobs:
             "configuration_version": "1"
           }
           JSON
+            echo "real=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Signature stable : même clé pour chaque APK, donc installation par-dessus la version précédente.
+      - name: Clé de signature
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/mikayala.jks"
+            {
+              echo "MIKAYALA_KEYSTORE_PATH=$RUNNER_TEMP/mikayala.jks"
+              echo "MIKAYALA_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "MIKAYALA_KEY_ALIAS=$KEY_ALIAS"
+              echo "MIKAYALA_KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Signature : clé STABLE (secrets ANDROID_KEYSTORE_*)"
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Signature : secrets ANDROID_KEYSTORE_* absents. Clé debug temporaire : chaque APK devra être désinstallé avant d'installer le suivant."
+            echo "stable=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build debug APK
@@ -51,6 +83,9 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::warning::SUPABASE_URL / SUPABASE_ANON_KEY absents : l'APK ne pourra pas se connecter au serveur."
+          fi
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleDebug
 
@@ -60,9 +95,25 @@ jobs:
           echo "Résumé des tests :"
           for f in app/build/test-results/testDebugUnitTest/*.xml; do grep -o 'testsuite name="[^"]*" tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' "$f"; done
 
+      # Empreinte du certificat (information publique) : doit être identique d'un APK à l'autre
+      - name: Empreinte de signature
+        id: cert
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          FP=$("$APKSIGNER" verify --print-certs "$APK" | grep -m1 "SHA-256 digest" | awk '{print $NF}')
+          echo "Empreinte SHA-256 du certificat : $FP"
+          {
+            echo "### Mikayala — APK de test"
+            echo "- Firebase réel : ${{ steps.firebase.outputs.real }}"
+            echo "- Signature stable : ${{ steps.signing.outputs.stable }}"
+            echo "- Empreinte SHA-256 : \`$FP\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: steps.firebase.outputs.real == 'true'
         with:
-          name: mikayala-debug-apk
+          name: mikayala-apk-test-fcm
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: ignore
+          if-no-files-found: error
+          retention-days: 30

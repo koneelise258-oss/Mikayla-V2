@@ -199,6 +199,7 @@ serve(async (req: Request) => {
       type,
       coupleId,
       senderId,
+      recipientId,
       body: body.body,
       data: body.data,
       hidePreview,

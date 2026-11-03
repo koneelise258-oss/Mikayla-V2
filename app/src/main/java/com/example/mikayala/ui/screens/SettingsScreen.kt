@@ -1407,6 +1407,24 @@ fun SettingsScreen(
         }
         // --- Pages dédiées : Notifications, Appels, Jeux, Calendrier & cycle (réglages appliqués immédiatement) ---
         if (section == "notifications") {
+            item {
+                // Permission refusée (Android 13+) ou notifications coupées dans les réglages système
+                val systemEnabled = remember(section) {
+                    androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+                }
+                if (!systemEnabled) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0x33FF5252),
+                        modifier = Modifier.fillMaxWidth().clickable { openAppNotificationSettings(context) }
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text("Notifications bloquées par Android", fontWeight = FontWeight.Bold, color = Color(0xFFFF8A80), fontSize = 15.sp)
+                            Text("Aucune notification ne peut s'afficher. Touchez ici pour les autoriser dans les réglages du téléphone.", color = TextSecondary, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
             item { SettingsGroupTitle("Affichage") }
             item {
                 Column {

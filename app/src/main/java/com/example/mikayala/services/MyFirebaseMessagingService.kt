@@ -203,6 +203,12 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             return if (token.length > 10) "${token.take(6)}...${token.takeLast(4)}" else "***"
         }
 
+        /** recipientId absent (ancienne version de send-fcm) : compatibilité, on ne bloque pas. */
+        fun isForAnotherAccount(currentUid: String?, recipientId: String?): Boolean {
+            if (recipientId.isNullOrBlank() || currentUid.isNullOrBlank()) return false
+            return recipientId != currentUid
+        }
+
         fun shouldIgnoreNotification(currentUid: String?, senderId: String?): Boolean {
             if (currentUid.isNullOrEmpty() || senderId.isNullOrEmpty()) return false
             return currentUid == senderId
@@ -300,6 +306,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             // Aucune notification sans session active (déconnexion / changement de compte)
             if (currentUid.isNullOrEmpty()) {
                 Log.d("FCM_MSG", "Notification ignorée : aucune session active")
+                return
+            }
+
+            // Changement de compte : un token resté associé à l'ancien compte ne doit pas afficher
+            // ses notifications sous le nouveau compte (recipientId ajouté par send-fcm).
+            if (isForAnotherAccount(currentUid, data["recipientId"])) {
+                Log.d("FCM_MSG", "Notification ignorée : destinée à un autre compte")
                 return
             }
 
