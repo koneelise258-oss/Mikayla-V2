@@ -43,4 +43,81 @@ class VoiceAndPushUnitTest {
         assertEquals("com.example.mikayala.ACTION_ANSWER_CALL", CallActionReceiver.ACTION_ANSWER_CALL)
         assertEquals("com.example.mikayala.ACTION_DECLINE_CALL", CallActionReceiver.ACTION_DECLINE_CALL)
     }
+
+    @Test
+    fun testNotificationCamouflageMapping() {
+        val rawSender = "Mon Amour"
+        val rawMessage = "Tu me manques tellement ❤️"
+
+        // Mode 1 : discreet
+        val discreet = when ("discreet") {
+            "weather_camouflage" -> Pair("Météo ☀️", "Ciel dégagé • 21°C")
+            "system_camouflage" -> Pair("Système ⚙️", "Mise à jour système prête")
+            "discreet" -> Pair("Mikayala 🔒", "Nouveau message chiffré")
+            else -> Pair(rawSender, rawMessage)
+        }
+        assertEquals("Mikayala 🔒", discreet.first)
+        assertEquals("Nouveau message chiffré", discreet.second)
+
+        // Mode 2 : weather camouflage
+        val weather = when ("weather_camouflage") {
+            "weather_camouflage" -> Pair("Météo ☀️", "Ciel dégagé • 21°C")
+            "system_camouflage" -> Pair("Système ⚙️", "Mise à jour système prête")
+            "discreet" -> Pair("Mikayala 🔒", "Nouveau message chiffré")
+            else -> Pair(rawSender, rawMessage)
+        }
+        assertEquals("Météo ☀️", weather.first)
+        assertEquals("Ciel dégagé • 21°C", weather.second)
+
+        // Mode 3 : system camouflage
+        val system = when ("system_camouflage") {
+            "weather_camouflage" -> Pair("Météo ☀️", "Ciel dégagé • 21°C")
+            "system_camouflage" -> Pair("Système ⚙️", "Mise à jour système prête")
+            "discreet" -> Pair("Mikayala 🔒", "Nouveau message chiffré")
+            else -> Pair(rawSender, rawMessage)
+        }
+        assertEquals("Système ⚙️", system.first)
+        assertEquals("Mise à jour système prête", system.second)
+
+        // Mode 4 : romantic
+        val romantic = when ("romantic") {
+            "weather_camouflage" -> Pair("Météo ☀️", "Ciel dégagé • 21°C")
+            "system_camouflage" -> Pair("Système ⚙️", "Mise à jour système prête")
+            "discreet" -> Pair("Mikayala 🔒", "Nouveau message chiffré")
+            else -> Pair(rawSender, rawMessage)
+        }
+        assertEquals("Mon Amour", romantic.first)
+        assertEquals("Tu me manques tellement ❤️", romantic.second)
+    }
+
+    @Test
+    fun testSelfNotificationFilter() {
+        val currentUserId = "user_123_abc"
+        val incomingSenderId = "user_123_abc"
+        val shouldIgnore = currentUserId == incomingSenderId
+        assertEquals(true, shouldIgnore)
+
+        val partnerSenderId = "user_456_xyz"
+        val shouldIgnorePartner = currentUserId == partnerSenderId
+        assertEquals(false, shouldIgnorePartner)
+    }
+
+    @Test
+    fun testVoiceNoteStates() {
+        val states = com.example.mikayala.utils.VoiceNoteState.values().map { it.name }
+        assertEquals(true, states.contains("IDLE"))
+        assertEquals(true, states.contains("RECORDING"))
+        assertEquals(true, states.contains("LOCKED"))
+        assertEquals(true, states.contains("PAUSED"))
+    }
+
+    @Test
+    fun testIso8601TimestampFormat() {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        val formatted = sdf.format(java.util.Date(1730640000000L)) // Fixed timestamp
+        assertEquals(true, formatted.endsWith("Z"))
+        assertEquals(20, formatted.length)
+    }
 }

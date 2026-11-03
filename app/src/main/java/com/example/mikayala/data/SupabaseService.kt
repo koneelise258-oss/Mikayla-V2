@@ -33,6 +33,10 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 class SupabaseService(
     private var customUrl: String? = null,
@@ -1126,7 +1130,12 @@ class SupabaseService(
         }
     }
 
-    private fun executePost(path: String, jsonBody: String, accessToken: String? = null): String? {
+    private fun executePost(
+        path: String,
+        jsonBody: String,
+        accessToken: String? = null,
+        prefer: String = "return=representation"
+    ): String? {
         return try {
             val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
                 path
@@ -1140,7 +1149,7 @@ class SupabaseService(
             val token = accessToken ?: getAuthToken()
             conn.setRequestProperty("Authorization", "Bearer $token")
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Prefer", "return=representation")
+            conn.setRequestProperty("Prefer", prefer)
             conn.doOutput = true
             conn.connectTimeout = 6000
             conn.readTimeout = 6000
@@ -1562,16 +1571,20 @@ class SupabaseService(
         val maskedToken = if (fcmToken.length > 10) "${fcmToken.take(6)}...${fcmToken.takeLast(4)}" else "***"
         Log.d("FCM_TOKEN", "Enregistrement sécurisé du jeton FCM pour UID=$uid ($maskedToken)")
         try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            val nowIso = sdf.format(Date())
             val body = JSONObject().apply {
                 put("user_id", uid)
                 put("fcm_token", fcmToken.trim())
                 put("platform", "android")
                 put("device_label", deviceLabel)
-                put("updated_at", "now()")
-                put("last_seen_at", "now()")
+                put("updated_at", nowIso)
+                put("last_seen_at", nowIso)
             }
             val path = "/rest/v1/device_push_tokens?on_conflict=fcm_token"
-            val res = executePost(path, body.toString())
+            val res = executePost(path, body.toString(), prefer = "return=representation,resolution=merge-duplicates")
             res != null
         } catch (e: Exception) {
             Log.e("FCM_TOKEN", "upsertDevicePushToken error: ${e.message}")

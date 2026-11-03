@@ -1,6 +1,12 @@
 package com.example.mikayala.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -47,6 +53,8 @@ import com.example.mikayala.ui.components.NeumorphicSquircleButton
 @Composable
 fun MainDashboardScreen(
     repository: MikayalaRepository,
+    pendingIntentExtras: Bundle? = null,
+    onClearIntentExtras: () -> Unit = {},
     onLockApp: () -> Unit
 ) {
     val context = LocalContext.current
@@ -57,6 +65,49 @@ fun MainDashboardScreen(
     var showPartnerProfileSheet by remember { mutableStateOf(false) }
     var showOfflineP2PPage by remember { mutableStateOf(false) }
     var activeCallState by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) } // (isActive, isVideo)
+
+    // Launcher pour demander la permission audio si AUTO_ANSWER est demandé sans permission
+    val recordAudioLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val isVideo = pendingIntentExtras?.getBoolean("IS_VIDEO", false) ?: false
+            activeCallState = Pair(true, isVideo)
+        } else {
+            Toast.makeText(context, "Permission microphone requise pour décrocher l'appel", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Gestion propre des intentions de notifications ("OPEN_CALL", "AUTO_ANSWER", "OPEN_CHAT", "OPEN_GAMES")
+    LaunchedEffect(pendingIntentExtras) {
+        val extras = pendingIntentExtras ?: return@LaunchedEffect
+        val isOpenCall = extras.getBoolean("OPEN_CALL", false)
+        val isAutoAnswer = extras.getBoolean("AUTO_ANSWER", false)
+        val isOpenChat = extras.getBoolean("OPEN_CHAT", false)
+        val isOpenGames = extras.getBoolean("OPEN_GAMES", false)
+        val isVideo = extras.getBoolean("IS_VIDEO", false)
+
+        if (isOpenCall) {
+            selectedTab = 1
+            if (isAutoAnswer) {
+                val hasAudioPerm = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (hasAudioPerm) {
+                    activeCallState = Pair(true, isVideo)
+                } else {
+                    recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        } else if (isOpenChat) {
+            selectedTab = 0
+        } else if (isOpenGames) {
+            selectedTab = 2
+        }
+        onClearIntentExtras()
+    }
 
     val coupleSpace by repository.activeCoupleSpace.collectAsState()
     val userSettings by repository.userSettings.collectAsState()

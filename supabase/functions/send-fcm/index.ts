@@ -220,12 +220,7 @@ serve(async (req: Request) => {
           token: token,
           data: payloadData,
           android: {
-            priority: type === "call" ? "HIGH" : "NORMAL",
-            notification: {
-              title: title || "Mikayala",
-              body: messageText,
-              channel_id: type === "call" ? "mikayala_incoming_calls" : "mikayala_general_notifs",
-            },
+            priority: "HIGH",
           },
         },
       };

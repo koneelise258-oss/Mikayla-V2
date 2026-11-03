@@ -48,13 +48,15 @@ object NotificationHelper {
                 description = "Compteur de couple épinglé dans la barre de statut"
             }
 
-            // 3. General Notifications (Cycle, Jeux, Anniversaires)
+            // 3. General Notifications (Messages, Vocaux, Photos, Jeux, Anniversaires)
             val generalChannel = NotificationChannel(
                 CHANNEL_NOTIFS_ID,
-                "Rappels & Activités de Couple",
-                NotificationManager.IMPORTANCE_DEFAULT
+                "Messages & Activités de Couple",
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Rappels de cycle menstruel, anniversaires et jeux du partenaire"
+                description = "Messages, vocaux, photos, rappels et jeux du partenaire"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 250, 250, 250)
             }
 
             manager.createNotificationChannel(callChannel)

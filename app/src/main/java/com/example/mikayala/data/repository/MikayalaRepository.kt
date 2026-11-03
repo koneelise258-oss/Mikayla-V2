@@ -141,6 +141,7 @@ class MikayalaRepository(private val context: Context) {
             com.example.mikayala.data.model.ConnectionMode.ONLINE
         }
 
+        val storedNotifPrivacyMode = prefs.getString("notification_privacy_mode", "discreet") ?: "discreet"
         if (storedUserId.isNotEmpty()) {
             _userSettings.value = _userSettings.value.copy(
                 userId = storedUserId,
@@ -149,7 +150,8 @@ class MikayalaRepository(private val context: Context) {
                 fakePinCode = storedFakePinCode,
                 hasLocalPassword = storedHasPassword,
                 hasCompletedPairingSetup = storedPairingSetupCompleted,
-                connectionMode = storedConnMode
+                connectionMode = storedConnMode,
+                notificationPrivacyMode = storedNotifPrivacyMode
             )
             // Stored state is loaded purely as cache, status starts unverified until Supabase sync
             if (storedPairingCode.isNotEmpty()) {
@@ -1233,6 +1235,7 @@ class MikayalaRepository(private val context: Context) {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
+                    notifyPartnerAfterInsert("image", contentText, messageId)
                 } else {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
@@ -1305,6 +1308,7 @@ class MikayalaRepository(private val context: Context) {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
+                    notifyPartnerAfterInsert("video", contentText, messageId)
                     try { videoFile.delete() } catch (_: Exception) {}
                 } else {
                     _messages.value = _messages.value.map {
@@ -1395,6 +1399,7 @@ class MikayalaRepository(private val context: Context) {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
+                    notifyPartnerAfterInsert("image", contentText, messageId)
                 } else {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
@@ -1469,6 +1474,7 @@ class MikayalaRepository(private val context: Context) {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
+                    notifyPartnerAfterInsert("image", contentText, messageId)
                 } else {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
@@ -1543,6 +1549,7 @@ class MikayalaRepository(private val context: Context) {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
                     }
+                    notifyPartnerAfterInsert("video", pendingMsg.content, messageId)
                 } else {
                     _messages.value = _messages.value.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
@@ -1983,6 +1990,7 @@ class MikayalaRepository(private val context: Context) {
         cyclePartnerAlertsEnabled: Boolean,
         loveWidgetEnabled: Boolean
     ) {
+        prefs.edit().putString("notification_privacy_mode", notificationPrivacyMode).apply()
         _userSettings.value = _userSettings.value.copy(
             notificationPrivacyMode = notificationPrivacyMode,
             notificationSound = notificationSound,
@@ -2748,7 +2756,30 @@ class MikayalaRepository(private val context: Context) {
         val pairingCode = couple.pairingCode
         addCallLog(isVideo, 0)
         val myName = if (couple.partner1Name.isNotEmpty()) couple.partner1Name else "Moi"
-        return supabaseService.initiateCall(coupleId, myName, if (isVideo) "video" else "voice", pairingCode)
+        val res = supabaseService.initiateCall(coupleId, myName, if (isVideo) "video" else "voice", pairingCode)
+        if (res != null) {
+            val callId = res.optString("id")
+            val (_, partnerId) = resolveCoupleMembers()
+            if (partnerId.isNotBlank()) {
+                repositoryScope.launch {
+                    supabaseService.sendFcmPush(
+                        coupleId = coupleId,
+                        recipientId = partnerId,
+                        type = "call",
+                        title = "Mikayala",
+                        body = if (isVideo) "📹 Appel Vidéo Entrant" else "📞 Appel Vocal Entrant",
+                        extraData = mapOf(
+                            "callerName" to myName,
+                            "callType" to if (isVideo) "video" else "voice",
+                            "callId" to callId,
+                            "coupleId" to coupleId
+                        ),
+                        hidePreview = false
+                    )
+                }
+            }
+        }
+        return res
     }
 
     suspend fun checkForIncomingCall(): Pair<Boolean, Boolean>? {
@@ -2779,6 +2810,21 @@ class MikayalaRepository(private val context: Context) {
             val callId = activeCall.optString("id")
             if (callId.isNotEmpty()) {
                 supabaseService.updateCallStatus(callId, "declined")
+                val (_, partnerId) = resolveCoupleMembers()
+                if (partnerId.isNotBlank()) {
+                    val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
+                    repositoryScope.launch {
+                        supabaseService.sendFcmPush(
+                            coupleId = couple.id,
+                            recipientId = partnerId,
+                            type = "missed_call",
+                            title = "Mikayala",
+                            body = "Appel refusé par $myName",
+                            extraData = mapOf("callerName" to myName),
+                            hidePreview = false
+                        )
+                    }
+                }
             }
         }
     }

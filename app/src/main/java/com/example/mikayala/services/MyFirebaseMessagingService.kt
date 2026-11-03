@@ -80,12 +80,29 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         if (data.isNotEmpty()) {
             val type = data["type"] ?: "chat_message"
             val coupleId = data["coupleId"] ?: data["couple_id"] ?: ""
+            val senderId = data["senderId"] ?: data["sender_id"]
+
+            // Ne jamais notifier l'utilisateur de ses propres messages
+            val currentUid = try { SupabaseService.getInstance().getCurrentSessionUid() } catch (_: Exception) { null }
+            if (!currentUid.isNullOrEmpty() && !senderId.isNullOrEmpty() && currentUid == senderId) {
+                Log.d("FCM_MSG", "Notification ignorée : l'expéditeur est l'utilisateur courant")
+                return
+            }
+
+            // Paramètres locaux de confidentialité et camouflage
+            val prefs = applicationContext.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
+            val privacyMode = prefs.getString("notification_privacy_mode", "discreet") ?: "discreet"
 
             when (type) {
                 "call" -> {
-                    val callerName = data["callerName"] ?: "Mon Amour"
-                    val callType = data["callType"] ?: "voice"
-                    val isVideo = callType == "video"
+                    val rawCaller = data["callerName"] ?: "Mon Amour"
+                    val isVideo = data["callType"] == "video"
+                    val callerName = when (privacyMode) {
+                        "weather_camouflage" -> "Service Météo"
+                        "system_camouflage" -> "Système"
+                        "discreet" -> "Mikayala"
+                        else -> rawCaller
+                    }
                     NotificationHelper.showIncomingCallNotification(
                         context = applicationContext,
                         callerName = callerName,
@@ -93,8 +110,14 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     )
                 }
                 "missed_call" -> {
-                    val callerName = data["callerName"] ?: "Mon Amour"
+                    val rawCaller = data["callerName"] ?: "Mon Amour"
                     val isVideo = data["callType"] == "video"
+                    val callerName = when (privacyMode) {
+                        "weather_camouflage" -> "Service Météo"
+                        "system_camouflage" -> "Système"
+                        "discreet" -> "Mikayala"
+                        else -> rawCaller
+                    }
                     NotificationHelper.showMissedCallNotification(
                         context = applicationContext,
                         callerName = callerName,
@@ -102,20 +125,29 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     )
                 }
                 "chat_message", "audio", "image", "video" -> {
-                    val senderName = data["senderName"] ?: "Mon Amour"
+                    val rawSender = data["senderName"] ?: "Mon Amour"
                     val defaultMsg = when (type) {
                         "audio" -> "🎤 Note vocale reçue"
                         "image" -> "📷 Photo reçue"
                         "video" -> "📹 Vidéo reçue"
                         else -> "Nouveau message"
                     }
-                    val messageText = data["messageText"] ?: data["content"] ?: defaultMsg
+                    val isReply = !data["replyToId"].isNullOrEmpty()
+                    val rawText = data["messageText"] ?: data["content"] ?: defaultMsg
+                    val formattedText = if (isReply && !rawText.startsWith("↳")) "↳ $rawText" else rawText
                     val messageId = data["messageId"] ?: "msg_${System.currentTimeMillis()}"
+
+                    val (displayedTitle, displayedText) = when (privacyMode) {
+                        "weather_camouflage" -> Pair("Météo ☀️", "Ciel dégagé • 21°C")
+                        "system_camouflage" -> Pair("Système ⚙️", "Mise à jour système prête")
+                        "discreet" -> Pair("Mikayala 🔒", "Nouveau message chiffré")
+                        else -> Pair(rawSender, formattedText)
+                    }
 
                     NotificationHelper.showNewMessageNotification(
                         context = applicationContext,
-                        senderName = senderName,
-                        messageText = messageText,
+                        senderName = displayedTitle,
+                        messageText = displayedText,
                         messageId = messageId
                     )
 

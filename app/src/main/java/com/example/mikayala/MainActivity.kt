@@ -41,9 +41,18 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: MikayalaRepository
     private var startupError: String? = null
 
+    private var pendingIntentExtras by mutableStateOf<Bundle?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingIntentExtras = intent.extras
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.d("MikayalaStartup", "MainActivity.onCreate started")
         super.onCreate(savedInstanceState)
+        pendingIntentExtras = intent?.extras
         enableEdgeToEdge()
 
         Log.d("MikayalaStartup", "Initializing repository...")
@@ -222,6 +231,8 @@ class MainActivity : ComponentActivity() {
                                 } else {
                                     MainDashboardScreen(
                                         repository = repository,
+                                        pendingIntentExtras = pendingIntentExtras,
+                                        onClearIntentExtras = { pendingIntentExtras = null },
                                         onLockApp = {
                                             val userSettings = repository.userSettings.value
                                             if (userSettings.hasLocalPassword && userSettings.pinCode.isNotEmpty()) {

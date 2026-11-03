@@ -23,7 +23,9 @@ class MikayalaApplication : Application() {
 
         // Initialize Firebase Messaging safely with token masking and sync queue
         try {
-            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+            val fcm = com.google.firebase.messaging.FirebaseMessaging.getInstance()
+            fcm.isAutoInitEnabled = true
+            fcm.token
                 .addOnCompleteListener { task ->
                     if (task.isSuccessful) {
                         val token = task.result

@@ -227,17 +227,26 @@ class VoiceNoteManager(private val context: Context) {
 
     @Synchronized
     fun pauseRecording(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-            (_recordingState.value == VoiceNoteState.RECORDING || _recordingState.value == VoiceNoteState.LOCKED)
-        ) {
+        if (_recordingState.value == VoiceNoteState.RECORDING || _recordingState.value == VoiceNoteState.LOCKED) {
             return try {
-                mediaRecorder?.pause()
                 val now = System.currentTimeMillis()
                 accumulatedDurationMs += (now - currentSessionStartTimeMs)
                 pollingJob?.cancel()
+
+                // Finaliser proprement le fichier MP4/AAC (écriture du header moov) pour prévisualisation immédiate
+                try {
+                    mediaRecorder?.stop()
+                } catch (ignored: Exception) {}
+                try {
+                    mediaRecorder?.reset()
+                    mediaRecorder?.release()
+                } catch (ignored: Exception) {}
+                mediaRecorder = null
+
                 _recordingState.value = VoiceNoteState.PAUSED
-                _durationSeconds.value = (accumulatedDurationMs / 1000).toInt()
-                Log.d(TAG, "Voice recording paused at ${_durationSeconds.value} s")
+                _durationSeconds.value = (accumulatedDurationMs / 1000).toInt().coerceAtLeast(1)
+                abandonAudioFocus()
+                Log.d(TAG, "Voice recording paused and finalized for preview at ${_durationSeconds.value} s -> ${currentFile?.absolutePath}")
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "pauseRecording failed: ${e.message}", e)
@@ -249,20 +258,12 @@ class VoiceNoteManager(private val context: Context) {
 
     @Synchronized
     fun resumeRecording(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && _recordingState.value == VoiceNoteState.PAUSED) {
-            return try {
-                mediaRecorder?.resume()
-                currentSessionStartTimeMs = System.currentTimeMillis()
-                _recordingState.value = VoiceNoteState.LOCKED
-                startPolling()
-                Log.d(TAG, "Voice recording resumed")
-                true
-            } catch (e: Exception) {
-                Log.e(TAG, "resumeRecording failed: ${e.message}", e)
-                false
-            }
-        }
-        return false
+        // En cas de reprise après prévisualisation, si l'enregistrement a été finalisé,
+        // on conserve l'état verrouillé pour continuer ou réenregistrer
+        return if (_recordingState.value == VoiceNoteState.PAUSED) {
+            _recordingState.value = VoiceNoteState.LOCKED
+            true
+        } else false
     }
 
     @Synchronized
@@ -282,15 +283,16 @@ class VoiceNoteManager(private val context: Context) {
         val totalDuration = ((totalMs + 500) / 1000).toInt().coerceAtLeast(1)
 
         return try {
-            mediaRecorder?.apply {
-                if (state == VoiceNoteState.PAUSED && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    try { resume() } catch (ignored: Exception) {}
-                }
-                stop()
-                reset()
-                release()
+            if (mediaRecorder != null) {
+                try {
+                    mediaRecorder?.stop()
+                } catch (ignored: Exception) {}
+                try {
+                    mediaRecorder?.reset()
+                    mediaRecorder?.release()
+                } catch (ignored: Exception) {}
+                mediaRecorder = null
             }
-            mediaRecorder = null
             _recordingState.value = VoiceNoteState.IDLE
             _durationSeconds.value = 0
             _liveAmplitudes.value = emptyList()

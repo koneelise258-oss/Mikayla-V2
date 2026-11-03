@@ -54,10 +54,10 @@
             </intent-filter>
         </activity>
 
-        <!-- Meta-data Firebase Messaging pour gestion contrôlée de l'auto-init -->
+        <!-- Meta-data Firebase Messaging pour initialisation automatique et gestion des jetons -->
         <meta-data
             android:name="firebase_messaging_auto_init_enabled"
-            android:value="false" />
+            android:value="true" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="mikayala_general_notifs" />
