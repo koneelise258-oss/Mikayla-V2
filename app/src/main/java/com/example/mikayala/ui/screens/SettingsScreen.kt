@@ -118,7 +118,7 @@ fun SettingsScreen(
             scope.launch {
                 val success = repository.uploadProfileAvatar(it)
                 if (success) {
-                    Toast.makeText(context, "Photo de profil mise à jour avec Supabase ! 📸", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Photo de profil mise à jour", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(context, "Erreur lors de l'upload sur Supabase Storage.", Toast.LENGTH_SHORT).show()
                 }
@@ -131,7 +131,7 @@ fun SettingsScreen(
     ) { uri: Uri? ->
         uri?.let {
             repository.updatePartnerProfile(settings.partnerNickname, settings.partnerStatus, it.toString())
-            Toast.makeText(context, "Photo du partenaire mise à jour ! 💖", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Photo du partenaire mise à jour", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -162,7 +162,7 @@ fun SettingsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Profils & Surnoms du Couple 💑",
+                        text = "Profils et surnoms",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -346,7 +346,7 @@ fun SettingsScreen(
                                 Toast.makeText(context, "Mon profil a été mis à jour !", Toast.LENGTH_SHORT).show()
                             } else {
                                 repository.updatePartnerProfile(partnerNick, partnerStat, settings.partnerAvatarUrl)
-                                Toast.makeText(context, "Surnom du partenaire enregistré ! 💖", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Surnom enregistré", Toast.LENGTH_SHORT).show()
                             }
                             showProfileModal = false
                         },
@@ -466,7 +466,7 @@ fun SettingsScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "Date d'Anniversaire & Amour 📅❤️", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Date de rencontre", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = loveQuoteInput,
@@ -486,7 +486,7 @@ fun SettingsScreen(
                                 loveQuote = loveQuoteInput
                             )
                             showAnniversaryDialog = false
-                            Toast.makeText(context, "Devise d'amour enregistrée ! 💖", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Enregistré", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                         shape = RoundedCornerShape(12.dp),
@@ -515,7 +515,7 @@ fun SettingsScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "Changer le Code PIN Réel 🔒", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Code PIN", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = newPin,
@@ -561,7 +561,7 @@ fun SettingsScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "Code PIN Leurre (Camouflage Calculatrice) 🎭", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Code leurre (calculatrice)", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(text = "Ce code secret ouvre une fausse calculatrice pour protéger votre intimité.", fontSize = 12.sp, color = TextSecondary)
                     Spacer(modifier = Modifier.height(12.dp))
@@ -604,7 +604,7 @@ fun SettingsScreen(
                     onClick = {
                         repository.clearChatHistory()
                         showClearChatDialog = false
-                        Toast.makeText(context, "Historique de discussion effacé 🧹", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Historique effacé", Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC4605C))
                 ) {
@@ -1021,7 +1021,7 @@ fun SettingsScreen(
                                 val sent = repository.sendLovePulse()
                                 Toast.makeText(
                                     context,
-                                    if (sent) "Envoyé à ${settings.partnerNickname} 💓" else "Envoi impossible : vérifiez la connexion et le jumelage",
+                                    if (sent) "Envoyé à ${settings.partnerNickname}" else "Envoi impossible : vérifiez la connexion et le jumelage",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -1220,7 +1220,7 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .clickable {
                                 repository.updateConnectionMode(ConnectionMode.ONLINE)
-                                Toast.makeText(context, "Mode En Ligne sélectionné 🌐", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Mode en ligne activé", Toast.LENGTH_SHORT).show()
                             }
                     ) {
                         Row(
@@ -1283,7 +1283,7 @@ fun SettingsScreen(
                                 selected = isOnline,
                                 onClick = {
                                     repository.updateConnectionMode(ConnectionMode.ONLINE)
-                                    Toast.makeText(context, "Mode En Ligne sélectionné 🌐", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Mode en ligne activé", Toast.LENGTH_SHORT).show()
                                 },
                                 colors = RadioButtonDefaults.colors(selectedColor = VibrantCyan)
                             )
@@ -1384,7 +1384,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Ouvrir le Gestionnaire de Liaison Directe 📡",
+                            text = "Ouvrir la liaison directe",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -1515,7 +1515,7 @@ fun SettingsScreen(
                         } else {
                             Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Tester la connexion Supabase ⚡", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Tester la connexion", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -1539,7 +1539,7 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     repository.updateSupabaseCredentials(urlInput, keyInput)
-                    Toast.makeText(context, "Configuration Supabase enregistrée ! ⚡", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Configuration enregistrée", Toast.LENGTH_SHORT).show()
                     showSupabaseDialog = false
                 }) {
                     Text("Enregistrer", color = VibrantCyan, fontWeight = FontWeight.Bold)
