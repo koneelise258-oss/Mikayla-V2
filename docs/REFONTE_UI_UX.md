@@ -69,3 +69,17 @@ Messagerie (réponses, réactions, édition, suppression, épinglage), notes voc
 - Les éditeurs photo/vidéo, la caméra et l'appel restent volontairement sombres.
 - Fonctions absentes : messages éphémères, téléchargement automatique, médias dans la galerie.
 - Rien n'est testé sur téléphone : vérifier en mode clair ET sombre, sur Android 7 et 10.
+
+## 6. Dernière passe (apparence finalisée)
+- **Ancien logo et ancienne animation d'entrée supprimés** : images JPEG du papillon dans un cube retirées ; logo « pulsant » avec halo remplacé par le logo statique sur la connexion et le jumelage ; écran de verrouillage sans pulsation en boucle.
+- **Thème** : Clair / Sombre / Comme le téléphone ; écran de démarrage et fond de lancement suivent le thème.
+- **Paramètres** : en-tête de profil façon messagerie (photo, nom, statut, vrai nombre de jours ensemble — « 842 jours » codé en dur retiré) ; lignes harmonisées ; cartes aplaties ; intitulés clairs ; emojis décoratifs retirés des titres.
+- **Données fictives retirées** : faux transferts P2P (« Photo_Intime_01.jpg • 42 Mo/s »), débits inventés, faux boutons d'envoi de fichiers P2P (n'envoyaient qu'un nom), sélecteur de bande Wi-Fi sans effet, faux pourcentages de restauration, durée de cycle fixe « 28 jours », emoji et prénoms codés en dur (« Mikayala ❤️ », « Mikey »).
+- **Confirmations** : 53 messages de confirmation rendus sobres.
+
+## 7. Points ouverts (nécessitent une décision ou un développement)
+- **Transfert de fichiers en P2P** : non implémenté (seuls les messages texte passent en liaison directe).
+- **Jeux de l'espace Couple** (bons, liste de rêves, quiz, Tu préfères, Action ou vérité) : enregistrés sur l'appareil, non partagés — tables Supabase à créer.
+- **RLS `messages`** : doit autoriser la mise à jour de `media_url` par les deux membres pour les jeux du chat.
+- **Messages éphémères, envoi de plusieurs photos, reprise d'envoi** : absents.
+- **Clé Supabase** : le secret contient une clé « publishable » refusée par l'application ; utiliser la clé legacy `anon`.
