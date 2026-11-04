@@ -126,14 +126,14 @@ fun OfflineP2PLinkScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Viseur Caméra QR Code 📷",
+                        text = "Scanner le QR code",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Scannez le QR Code sur l'écran du point d'accès",
+                        text = "Visez le QR code affiché sur le téléphone de votre partenaire",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         textAlign = TextAlign.Center
@@ -214,7 +214,7 @@ fun OfflineP2PLinkScreen(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Liaison Hors-Ligne 📡",
+                                    text = "Discuter sans Internet",
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
@@ -226,7 +226,7 @@ fun OfflineP2PLinkScreen(
                                     border = BorderStroke(0.8.dp, VibrantCyan.copy(alpha = 0.4f))
                                 ) {
                                     Text(
-                                        text = "Style Xender",
+                                        text = "Wi-Fi local",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = VibrantCyan,
@@ -315,7 +315,7 @@ fun OfflineP2PLinkScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "1. Émetteur (Hôte)",
+                                        text = "1. Ce téléphone crée la liaison",
                                         fontSize = 12.sp,
                                         fontWeight = if (selectedRole == 0) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selectedRole == 0) TextPrimary else TextSecondary
@@ -347,7 +347,7 @@ fun OfflineP2PLinkScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "2. Récepteur (Client)",
+                                        text = "2. Ce téléphone rejoint la liaison",
                                         fontSize = 12.sp,
                                         fontWeight = if (selectedRole == 1) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selectedRole == 1) TextPrimary else TextSecondary
@@ -407,14 +407,14 @@ fun OfflineP2PLinkScreen(
                             Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = "Émetteur Prêt & Signal Actif 📡",
+                                text = "Liaison prête",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Demandez à votre partenaire de scanner le QR Code ou de taper le code PIN",
+                                text = "Activez le partage de connexion (point d'accès Wi-Fi) sur ce téléphone, demandez à votre partenaire de s'y connecter, puis de scanner ce QR code ou de taper le code PIN.",
                                 fontSize = 12.sp,
                                 color = TextSecondary,
                                 textAlign = TextAlign.Center
@@ -490,7 +490,7 @@ fun OfflineP2PLinkScreen(
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         Text(
-                                            text = "IP Hôte : ${hostingState?.ip ?: "192.168.43.1"}:${hostingState?.port ?: 8888}",
+                                            text = "Adresse : ${hostingState?.ip ?: "…"}:${hostingState?.port ?: 8888}",
                                             fontSize = 11.sp,
                                             color = TextSecondary,
                                             fontFamily = FontFamily.Monospace
@@ -537,14 +537,14 @@ fun OfflineP2PLinkScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Rejoindre le Signal de Mikayala 🚀",
+                                text = "Rejoindre votre partenaire",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Choisissez votre méthode de connexion préférée :",
+                                text = "Connectez-vous d'abord au point d'accès Wi-Fi du téléphone de votre partenaire, puis :",
                                 fontSize = 12.sp,
                                 color = TextSecondary,
                                 textAlign = TextAlign.Center
@@ -576,7 +576,7 @@ fun OfflineP2PLinkScreen(
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(text = "OPTION 1 : Scanner le QR Code", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = "Caméra temps réel • Connexion en 1s ⚡", fontSize = 11.sp, color = VibrantCyan)
+                                        Text(text = "Le plus simple", fontSize = 11.sp, color = VibrantCyan)
                                     }
                                     Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = VibrantCyan)
                                 }
@@ -648,7 +648,7 @@ fun OfflineP2PLinkScreen(
                             Spacer(modifier = Modifier.height(16.dp))
 
                             GlowingGradientButton(
-                                text = "Rejoindre via Code PIN 🚀",
+                                text = "Rejoindre avec le code PIN",
                                 icon = Icons.Rounded.WifiTethering,
                                 onClick = {
                                     if (pinCodeInput.length == 6) {
@@ -702,7 +702,7 @@ fun OfflineP2PLinkScreen(
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
-                                        Text(text = "Liaison TCP Socket Établie ⚡", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(text = "Connectés sans Internet", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                                         Text(text = "Connecté avec ${connectedState.partnerName}", fontSize = 12.sp, color = OnlinePresenceGreen)
                                     }
                                 }
@@ -735,7 +735,7 @@ fun OfflineP2PLinkScreen(
                 // Beam File Action Bar
                 item {
                     Text(
-                        text = "ENVOI INSTANTANÉ DE FICHIERS (BEAM)",
+                        text = "COMMENT DISCUTER",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
@@ -748,7 +748,7 @@ fun OfflineP2PLinkScreen(
                     // et une taille inventée (aucun fichier réel) : retirés. Le transfert réel de fichiers en P2P
                     // reste à développer ; les messages texte en P2P fonctionnent.
                     Text(
-                        text = "Envoi de photos, vocaux et vidéos sans Internet : bientôt disponible. Les messages texte fonctionnent déjà en liaison directe.",
+                        text = "Une fois connectés, écrivez normalement dans Discussions : vos messages passent par la liaison directe, avec accusés de réception et de lecture. Au retour d'Internet, ils sont enregistrés sur le serveur, sans doublon. Les photos et vocaux attendent le retour d'Internet.",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -810,7 +810,7 @@ fun OfflineP2PLinkScreen(
                 // Live P2P Chat & File Feed
                 item {
                     Text(
-                        text = "CANAL DE MESSAGES ET TRANSFERTS P2P",
+                        text = "MESSAGES EN LIAISON DIRECTE",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
