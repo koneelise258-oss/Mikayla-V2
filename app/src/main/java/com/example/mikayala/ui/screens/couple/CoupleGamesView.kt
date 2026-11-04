@@ -249,14 +249,14 @@ private fun ScratchCardGameSection(repository: MikayalaRepository) {
                             // Scratch prompt text
                             if (scratchedPoints.isEmpty()) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                                    Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(32.dp))
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "GRATTE ICI AVEC LE DOIGT",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.sp,
-                                        color = Color.White
+                                        color = TextPrimary
                                     )
                                 }
                             }
@@ -654,14 +654,14 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
                                 .rotate(animatedRotation)
                         ) {
                             val colors = listOf(
-                                Color(0xFFFF4081),
-                                Color(0xFF00E5FF),
-                                Color(0xFFFFB300),
-                                Color(0xFF7C4DFF),
-                                Color(0xFF00B0FF),
-                                Color(0xFFE91E63),
-                                Color(0xFF26A69A),
-                                Color(0xFFAB47BC)
+                                Color(0xFFC97B86),
+                                Color(0xFF7FA8CC),
+                                Color(0xFFC9A15E),
+                                Color(0xFF9283C4),
+                                Color(0xFF7FA8CC),
+                                Color(0xFFC97B86),
+                                Color(0xFF7FAF93),
+                                Color(0xFF9283C4)
                             )
                             val sweepAngle = 360f / items.size
 
@@ -676,14 +676,14 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
 
                             // Center Hub
                             drawCircle(color = Color(0xFF1E202A), radius = 26.dp.toPx())
-                            drawCircle(color = Color.White, radius = 6.dp.toPx())
+                            drawCircle(color = TextPrimary, radius = 6.dp.toPx())
                         }
 
                         // Top Pointer Arrow
                         Icon(
                             imageVector = Icons.Rounded.ArrowDropDown,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = TextPrimary,
                             modifier = Modifier
                                 .size(44.dp)
                                 .align(Alignment.TopCenter)
@@ -1721,9 +1721,9 @@ private fun LoveCapsulesSection(
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Sceller la Capsule 🔒", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Sceller la Capsule 🔒", color = TextPrimary, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))

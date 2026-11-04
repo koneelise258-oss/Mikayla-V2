@@ -312,7 +312,7 @@ fun VoiceNoteRecorder(
                             Icon(
                                 imageVector = Icons.Rounded.Delete,
                                 contentDescription = "Supprimer",
-                                tint = Color(0xFFFF5252),
+                                tint = Color(0xFFC4605C),
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -566,9 +566,9 @@ fun VoiceNoteRecorder(
                         .fillMaxSize()
                         .background(
                             when {
-                                textInput.isNotBlank() -> Brush.linearGradient(listOf(Color(0xFF00B4D8), Color(0xFF0077B6)))
+                                textInput.isNotBlank() -> Brush.linearGradient(listOf(Color(0xFF7FA8CC), Color(0xFF7FA8CC)))
                                 recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED -> Brush.linearGradient(listOf(VibrantCyan, VibrantBlue))
-                                recordingState == VoiceNoteState.RECORDING -> Brush.linearGradient(listOf(AccentRose, Color(0xFFE84393)))
+                                recordingState == VoiceNoteState.RECORDING -> Brush.linearGradient(listOf(AccentRose, Color(0xFFC97B86)))
                                 else -> Brush.linearGradient(listOf(Color(0xFF25D366), Color(0xFF075E54))) // Vert WhatsApp élégant
                             }
                         )
@@ -587,7 +587,7 @@ fun VoiceNoteRecorder(
                             else -> Icons.Rounded.Mic
                         },
                         contentDescription = if (textInput.isNotBlank() || recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED) "Envoyer" else "Note vocale",
-                        tint = Color.White,
+                        tint = TextPrimary,
                         modifier = Modifier
                             .size(22.dp)
                             .then(

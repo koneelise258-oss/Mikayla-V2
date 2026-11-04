@@ -86,7 +86,7 @@ fun PairingDialog(
                         text = "Jumelage Espace Couple",
                         fontSize = 19.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -254,7 +254,7 @@ fun PairingDialog(
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentViolet),
                                     shape = RoundedCornerShape(14.dp)
                                 ) {
-                                    Text("Simuler détection du QR code 📸", color = Color.White, fontSize = 13.sp)
+                                    Text("Simuler détection du QR code 📸", color = TextPrimary, fontSize = 13.sp)
                                 }
                             }
                         }

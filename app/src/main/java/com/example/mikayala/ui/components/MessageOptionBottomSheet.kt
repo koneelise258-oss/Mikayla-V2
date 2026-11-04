@@ -74,7 +74,7 @@ fun MessageOptionBottomSheet(
                     colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Fermer", color = Color.White)
+                    Text("Fermer", color = TextPrimary)
                 }
             }
         )
@@ -262,7 +262,7 @@ fun MessageOptionBottomSheet(
                     icon = Icons.Rounded.DeleteForever,
                     title = "Supprimer pour tout le monde 💣",
                     subtitle = "Supprime définitivement chez les deux partenaires",
-                    iconColor = Color(0xFFFF5252),
+                    iconColor = Color(0xFFC4605C),
                     onClick = {
                         onDeleteForEveryone()
                         onDismiss()

@@ -197,7 +197,7 @@ fun SecurityLockScreen(
                         .clip(CircleShape)
                         .background(
                             if (isFilled) {
-                                if (isError) Color(0xFFFF5252) else AccentRose
+                                if (isError) Color(0xFFC4605C) else AccentRose
                             } else CardDark
                         )
                         .border(

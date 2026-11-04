@@ -111,7 +111,7 @@ fun GlowingGradientButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = TextPrimary,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -119,7 +119,7 @@ fun GlowingGradientButton(
                     text = text,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = TextPrimary,
                     letterSpacing = 0.3.sp
                 )
             }

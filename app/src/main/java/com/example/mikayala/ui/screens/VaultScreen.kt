@@ -97,7 +97,7 @@ fun VaultScreen(
                         text = item.title,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -121,10 +121,10 @@ fun VaultScreen(
                                 selectedItemForPreview = null
                                 Toast.makeText(context, "Élément supprimé du coffre", Toast.LENGTH_SHORT).show()
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0x33FF5252)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0x33C4605C)),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Supprimer 🗑️", color = Color(0xFFFF5252))
+                            Text("Supprimer 🗑️", color = Color(0xFFC4605C))
                         }
 
                         Button(
@@ -132,7 +132,7 @@ fun VaultScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Fermer", color = Color.White)
+                            Text("Fermer", color = TextPrimary)
                         }
                     }
                 }
@@ -251,7 +251,7 @@ fun VaultScreen(
                     .clip(CircleShape)
                     .background(Brush.linearGradient(listOf(AccentRose, AccentViolet)))
             ) {
-                Icon(Icons.Rounded.Add, contentDescription = "Ajouter", tint = Color.White)
+                Icon(Icons.Rounded.Add, contentDescription = "Ajouter", tint = TextPrimary)
             }
         }
 
@@ -296,15 +296,15 @@ fun VaultScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Rounded.Lock, contentDescription = null, tint = TextMuted, modifier = Modifier.size(44.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Coffre vide dans cette catégorie", color = TextSecondary, fontSize = 13.sp)
-                }
+                com.example.mikayala.ui.components.SoftEmptyState(
+                    icon = Icons.Rounded.Lock,
+                    title = "Rien ici pour l'instant",
+                    message = "Les souvenirs que vous ajoutez au coffre dans cette catégorie apparaîtront ici, pour vous deux."
+                )
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Adaptive(minSize = 160.dp), // 2 colonnes sur téléphone, plus sur tablette
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),

@@ -201,7 +201,7 @@ fun OnboardingScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = "Retour",
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                     }
                 } else {
@@ -212,7 +212,7 @@ fun OnboardingScreen(
                     text = "Mikayala",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = TextPrimary
                 )
 
                 val canShowClose = (currentStep != OnboardingStep.LANDING) || (coupleSpace.isPaired && onBackToApp != null)
@@ -460,9 +460,9 @@ fun LandingView(
                         2.dp,
                         Brush.linearGradient(
                             listOf(
-                                Color(0xFFE085FF),
-                                Color(0xFF8C52FF),
-                                Color(0xFF4A154B)
+                                Color(0xFF9283C4),
+                                Color(0xFF9283C4),
+                                Color(0xFF9283C4)
                             )
                         )
                     ),
@@ -485,7 +485,7 @@ fun LandingView(
             text = "Espace de Couple Intime",
             fontSize = 24.sp,
             fontWeight = FontWeight.ExtraBold,
-            color = Color.White,
+            color = TextPrimary,
             textAlign = TextAlign.Center
         )
 
@@ -597,7 +597,7 @@ fun LandingOptionCard(
                         text = title,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                 }
 
@@ -654,7 +654,7 @@ fun CreateSpaceView(
             text = if (isWaitingPartner) "Espace partagé ✨" else "Créer votre Espace ✨",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -794,7 +794,7 @@ fun CreateSpaceView(
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text(text = "Accéder à notre Espace 💖", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(text = "Accéder à notre Espace 💖", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             }
         } else if (isWaitingPartner) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -813,13 +813,13 @@ fun CreateSpaceView(
                     .height(50.dp)
             ) {
                 if (isCreating) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = TextPrimary, strokeWidth = 2.dp)
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text(text = "Création de l'espace...", fontSize = 14.sp, color = Color.White)
+                    Text(text = "Création de l'espace...", fontSize = 14.sp, color = TextPrimary)
                 } else {
                     Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Générer mon code de couple ✨", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(text = "Générer mon code de couple ✨", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                 }
             }
         }
@@ -855,7 +855,7 @@ fun JoinSpaceView(
             text = "Rejoindre mon/ma Partenaire 🤝",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -958,12 +958,12 @@ fun JoinSpaceView(
                 .height(52.dp)
         ) {
             if (isLoading) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TextPrimary, strokeWidth = 2.dp)
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Favorite, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.Favorite, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Rejoindre l'Espace de Couple 💖", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(text = "Rejoindre l'Espace de Couple 💖", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                 }
             }
         }
@@ -1000,7 +1000,7 @@ fun LinkTabletView(
             text = "Lier une Tablette / Nouvel Appareil 📱",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -1044,7 +1044,7 @@ fun LinkTabletView(
                     Text(text = "👑", fontSize = 20.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text(text = "Partenaire 1", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(text = "Partenaire 1", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         Text(text = "Titulaire principal", fontSize = 10.sp, color = TextSecondary)
                     }
                 }
@@ -1067,7 +1067,7 @@ fun LinkTabletView(
                     Text(text = "💖", fontSize = 20.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text(text = "Partenaire 2", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(text = "Partenaire 2", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         Text(text = "Second membre", fontSize = 10.sp, color = TextSecondary)
                     }
                 }
@@ -1128,7 +1128,7 @@ fun LinkTabletView(
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text(text = "Lancer sur cet écran 📱", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(text = "Lancer sur cet écran 📱", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             }
         } else {
             Button(
@@ -1141,12 +1141,12 @@ fun LinkTabletView(
                     .height(50.dp)
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TextPrimary, strokeWidth = 2.dp)
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Sync, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Sync, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Synchroniser l'appareil 📱", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(text = "Synchroniser l'appareil 📱", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     }
                 }
             }
@@ -1182,7 +1182,7 @@ fun RecoveryView(
             text = "Récupérer mon Espace 🔑",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -1347,7 +1347,7 @@ fun CameraScannerModal(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "Scanner Caméra QR Code 📷", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(text = "Scanner Caméra QR Code 📷", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Rounded.Close, contentDescription = "Fermer", tint = TextSecondary)
                     }
@@ -1477,7 +1477,7 @@ fun InteractiveQRCodeCanvas(
                 .size(34.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.White)
-                .border(BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFE085FF), Color(0xFF8C52FF)))), RoundedCornerShape(8.dp)),
+                .border(BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFF9283C4), Color(0xFF9283C4)))), RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             Image(

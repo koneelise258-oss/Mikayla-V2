@@ -433,7 +433,7 @@ fun OfflineP2PLinkScreen(
                             // REAL GENERATED QR CODE DISPLAY
                             Surface(
                                 shape = RoundedCornerShape(18.dp),
-                                color = Color.White,
+                                color = TextPrimary,
                                 modifier = Modifier
                                     .size(170.dp)
                                     .clickable {
@@ -728,7 +728,7 @@ fun OfflineP2PLinkScreen(
                                         Toast.makeText(context, "Liaison P2P déconnectée", Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
-                                    Text("Déconnecter", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Déconnecter", color = Color(0xFFC4605C), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
 
@@ -844,7 +844,7 @@ fun OfflineP2PLinkScreen(
                                     .clip(CircleShape)
                                     .background(Brush.horizontalGradient(listOf(CyanBlueGradientStart, CyanBlueGradientEnd)))
                             ) {
-                                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Envoyer", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Envoyer", tint = TextPrimary, modifier = Modifier.size(18.dp))
                             }
                         }
                     }

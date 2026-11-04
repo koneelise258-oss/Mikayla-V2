@@ -108,9 +108,9 @@ fun AuthScreen(
                             2.dp,
                             Brush.linearGradient(
                                 listOf(
-                                    Color(0xFFE085FF),
-                                    Color(0xFF8C52FF),
-                                    Color(0xFF4A154B)
+                                    Color(0xFF9283C4),
+                                    Color(0xFF9283C4),
+                                    Color(0xFF9283C4)
                                 )
                             )
                         ),
@@ -133,7 +133,7 @@ fun AuthScreen(
                 text = "Mikayala",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color.White
+                color = TextPrimary
             )
 
             Text(
@@ -196,7 +196,7 @@ fun AuthScreen(
                             text = "Créer un espace",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -258,7 +258,7 @@ fun AuthScreen(
                             text = "Rejoindre avec un code",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -289,7 +289,7 @@ fun AuthScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = loadingMessage,
-                            color = Color.White,
+                            color = TextPrimary,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Medium

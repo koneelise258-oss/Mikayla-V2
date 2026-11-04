@@ -218,7 +218,7 @@ fun SetFirstPasswordScreen(
                         text = "Définir un code 🔒",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                 }
 
@@ -316,7 +316,7 @@ fun SetFirstPasswordScreen(
                             .clip(CircleShape)
                             .background(
                                 if (isFilled) {
-                                    if (isError) Color(0xFFFF5252) else AccentRose
+                                    if (isError) Color(0xFFC4605C) else AccentRose
                                 } else CardDark
                             )
                             .border(

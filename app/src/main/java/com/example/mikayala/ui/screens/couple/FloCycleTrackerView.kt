@@ -70,9 +70,9 @@ fun FloCycleTrackerView(
     val primaryRingColor = when {
         isPeriod -> AccentRose
         cycleDay == ovulationDay -> VibrantCyan
-        isFertile -> Color(0xFF00E5FF)
+        isFertile -> Color(0xFF7FA8CC)
         isPMS -> WarningGold
-        else -> Color(0xFF9C27B0)
+        else -> Color(0xFF9283C4)
     }
 
     LazyColumn(

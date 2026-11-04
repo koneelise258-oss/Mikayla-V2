@@ -80,7 +80,7 @@ fun CallsScreen(
                             text = "Mikayala ❤️",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -129,7 +129,7 @@ fun CallsScreen(
                         Icon(
                             imageVector = Icons.Rounded.Videocam,
                             contentDescription = "Appel Vidéo",
-                            tint = Color.White,
+                            tint = TextPrimary,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -156,10 +156,10 @@ fun CallsScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Aucun appel pour le moment",
-                    color = TextMuted,
-                    fontSize = 14.sp
+                com.example.mikayala.ui.components.SoftEmptyState(
+                    icon = Icons.Rounded.Call,
+                    title = "Aucun appel pour le moment",
+                    message = "Vos appels audio et vidéo avec votre partenaire s'afficheront ici."
                 )
             }
         } else {
@@ -205,7 +205,7 @@ private fun CallLogItem(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (log.isMissed) Color(0x33FF5252) else HoverStateWhite),
+                        .background(if (log.isMissed) Color(0x33C4605C) else HoverStateWhite),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -217,7 +217,7 @@ private fun CallLogItem(
                             Icons.AutoMirrored.Rounded.CallMade
                         },
                         contentDescription = null,
-                        tint = if (log.isMissed) Color(0xFFFF5252) else if (log.isIncoming) OnlinePresenceGreen else AccentViolet,
+                        tint = if (log.isMissed) Color(0xFFC4605C) else if (log.isIncoming) OnlinePresenceGreen else AccentViolet,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -235,7 +235,7 @@ private fun CallLogItem(
                     Text(
                         text = if (log.isMissed) "Appel manqué • $timeFormatted" else "${log.durationSeconds / 60} min ${log.durationSeconds % 60} s • $timeFormatted",
                         fontSize = 12.sp,
-                        color = if (log.isMissed) Color(0xFFFF5252) else TextSecondary
+                        color = if (log.isMissed) Color(0xFFC4605C) else TextSecondary
                     )
                 }
             }

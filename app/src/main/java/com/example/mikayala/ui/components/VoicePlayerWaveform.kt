@@ -314,7 +314,7 @@ fun VoicePlayerWaveform(
                 .size(38.dp)
                 .clip(CircleShape)
                 .background(
-                    if (hasError) Brush.linearGradient(listOf(Color(0xFFE53935), Color(0xFFC62828)))
+                    if (hasError) Brush.linearGradient(listOf(Color(0xFFC4605C), Color(0xFFC4605C)))
                     else Brush.horizontalGradient(listOf(VibrantCyan, VibrantBlue))
                 )
                 .clickable {
@@ -334,7 +334,7 @@ fun VoicePlayerWaveform(
                 isLoading -> {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
-                        color = Color.White,
+                        color = TextPrimary,
                         strokeWidth = 2.dp
                     )
                 }
@@ -342,7 +342,7 @@ fun VoicePlayerWaveform(
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
                         contentDescription = "Réessayer la lecture",
-                        tint = Color.White,
+                        tint = TextPrimary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -350,7 +350,7 @@ fun VoicePlayerWaveform(
                     Icon(
                         imageVector = Icons.Rounded.Pause,
                         contentDescription = "Mettre en pause",
-                        tint = Color.White,
+                        tint = TextPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -358,7 +358,7 @@ fun VoicePlayerWaveform(
                     Icon(
                         imageVector = Icons.Rounded.PlayArrow,
                         contentDescription = "Lire la note vocale",
-                        tint = Color.White,
+                        tint = TextPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                 }

@@ -241,7 +241,7 @@ fun SettingsScreen(
                                     }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(13.dp))
                                 }
                             }
                         }
@@ -312,7 +312,7 @@ fun SettingsScreen(
                                     }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(13.dp))
                                 }
                             }
                         }
@@ -512,11 +512,11 @@ fun SettingsScreen(
                             showStorageModal = false
                             showClearChatDialog = true
                         },
-                        border = BorderStroke(1.dp, Color(0xFFFF5252)),
+                        border = BorderStroke(1.dp, Color(0xFFC4605C)),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Effacer tout l'historique des messages 🗑️", color = Color(0xFFFF5252), fontSize = 12.sp)
+                        Text("Effacer tout l'historique des messages 🗑️", color = Color(0xFFC4605C), fontSize = 12.sp)
                     }
                 }
             }
@@ -679,7 +679,7 @@ fun SettingsScreen(
                         showClearChatDialog = false
                         Toast.makeText(context, "Historique de discussion effacé 🧹", Toast.LENGTH_SHORT).show()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC4605C))
                 ) {
                     Text("Effacer", fontWeight = FontWeight.Bold)
                 }
@@ -707,7 +707,7 @@ fun SettingsScreen(
                         repository.clearSession()
                         Toast.makeText(context, "Espace couple réinitialisé & Déconnexion.", Toast.LENGTH_SHORT).show()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC4605C))
                 ) {
                     Text("Dissocier", fontWeight = FontWeight.Bold)
                 }
@@ -787,11 +787,11 @@ fun SettingsScreen(
                 if (!systemEnabled) {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = Color(0x33FF5252),
+                        color = Color(0x33C4605C),
                         modifier = Modifier.fillMaxWidth().clickable { openAppNotificationSettings(context) }
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
-                            Text("Notifications bloquées par Android", fontWeight = FontWeight.Bold, color = Color(0xFFFF8A80), fontSize = 15.sp)
+                            Text("Notifications bloquées par Android", fontWeight = FontWeight.Bold, color = Color(0xFFD98C97), fontSize = 15.sp)
                             Text("Aucune notification ne peut s'afficher. Touchez ici pour les autoriser dans les réglages du téléphone.", color = TextSecondary, fontSize = 12.sp)
                         }
                     }
@@ -1471,14 +1471,14 @@ fun SettingsScreen(
                             imageVector = Icons.Rounded.QrCodeScanner,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Ouvrir le Gestionnaire de Liaison Directe 📡",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimary
                         )
                     }
                 }
@@ -1491,8 +1491,8 @@ fun SettingsScreen(
         item {
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = Color(0x22FF5252),
-                border = BorderStroke(1.dp, Color(0x44FF5252)),
+                color = Color(0x22C4605C),
+                border = BorderStroke(1.dp, Color(0x44C4605C)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showDissolveDialog = true }
@@ -1502,9 +1502,9 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Rounded.LinkOff, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.LinkOff, contentDescription = null, tint = Color(0xFFC4605C), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Dissocier l'Espace Couple", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(text = "Dissocier l'Espace Couple", color = Color(0xFFC4605C), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         }
@@ -1585,15 +1585,15 @@ fun SettingsScreen(
 
                     testResult?.let { (success, msg) ->
                         Surface(
-                            color = if (success) Color(0x2200E676) else Color(0x22FF5252),
-                            border = BorderStroke(1.dp, if (success) Color(0xFF00E676) else Color(0xFFFF5252)),
+                            color = if (success) Color(0x227FAF93) else Color(0x22C4605C),
+                            border = BorderStroke(1.dp, if (success) Color(0xFF7FAF93) else Color(0xFFC4605C)),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 text = msg,
                                 fontSize = 11.sp,
-                                color = if (success) Color(0xFF00E676) else Color(0xFFFF5252),
+                                color = if (success) Color(0xFF7FAF93) else Color(0xFFC4605C),
                                 modifier = Modifier.padding(8.dp)
                             )
                         }

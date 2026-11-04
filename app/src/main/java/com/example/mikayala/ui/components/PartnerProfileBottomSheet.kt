@@ -317,7 +317,7 @@ fun PartnerProfileBottomSheet(
                             onClick = { selectedMediaTab = 0 },
                             label = { Text("Photos/Médias (${mediaMessages.size})", fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x3800E5FF),
+                                selectedContainerColor = Color(0x387FA8CC),
                                 selectedLabelColor = Color.White,
                                 containerColor = CardDarkElevated,
                                 labelColor = TextSecondary
@@ -328,7 +328,7 @@ fun PartnerProfileBottomSheet(
                             onClick = { selectedMediaTab = 1 },
                             label = { Text("Liens (${linkMessages.size})", fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x3800E5FF),
+                                selectedContainerColor = Color(0x387FA8CC),
                                 selectedLabelColor = Color.White,
                                 containerColor = CardDarkElevated,
                                 labelColor = TextSecondary
@@ -339,7 +339,7 @@ fun PartnerProfileBottomSheet(
                             onClick = { selectedMediaTab = 2 },
                             label = { Text("Favoris ⭐ (${starredMessages.size})", fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x3800E5FF),
+                                selectedContainerColor = Color(0x387FA8CC),
                                 selectedLabelColor = Color.White,
                                 containerColor = CardDarkElevated,
                                 labelColor = TextSecondary

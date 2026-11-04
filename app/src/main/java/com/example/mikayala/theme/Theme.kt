@@ -14,7 +14,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
 private fun schemeFor(p: MikayalaPalette) = if (p.isDark) darkColorScheme(
-    primary = p.accent, onPrimary = p.background,
+    primary = p.accent, onPrimary = p.textPrimary,
     secondary = p.lavender, onSecondary = p.background,
     tertiary = p.sand,
     background = p.background, onBackground = p.textPrimary,

@@ -803,7 +803,7 @@ private fun MessageBubble(
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.Reply,
                             contentDescription = "Répondre",
-                            tint = Color.White,
+                            tint = TextPrimary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -1026,7 +1026,7 @@ private fun MessageBubble(
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, Color(0xFF00C853).copy(alpha = 0.4f)),
+                    border = BorderStroke(1.dp, Color(0xFF7FAF93).copy(alpha = 0.4f)),
                     modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -1035,14 +1035,14 @@ private fun MessageBubble(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF00C853).copy(alpha = 0.2f)),
+                                    .background(Color(0xFF7FAF93).copy(alpha = 0.2f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Rounded.LocationOn, contentDescription = null, tint = Color(0xFF00C853), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Rounded.LocationOn, contentDescription = null, tint = Color(0xFF7FAF93), modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
-                                Text(text = "Position partagée 📍", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00C853))
+                                Text(text = "Position partagée 📍", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7FAF93))
                                 Text(text = message.content, fontSize = 13.sp, color = TextPrimary)
                             }
                         }
@@ -1054,7 +1054,7 @@ private fun MessageBubble(
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, Color(0xFF00BCD4).copy(alpha = 0.4f)),
+                    border = BorderStroke(1.dp, Color(0xFF7FA8CC).copy(alpha = 0.4f)),
                     modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
                 ) {
                     Row(
@@ -1065,10 +1065,10 @@ private fun MessageBubble(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF00BCD4).copy(alpha = 0.2f)),
+                                .background(Color(0xFF7FA8CC).copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Person, contentDescription = null, tint = Color(0xFF00BCD4), modifier = Modifier.size(22.dp))
+                            Icon(Icons.Rounded.Person, contentDescription = null, tint = Color(0xFF7FA8CC), modifier = Modifier.size(22.dp))
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
@@ -1083,7 +1083,7 @@ private fun MessageBubble(
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, Color(0xFF7E57C2).copy(alpha = 0.4f)),
+                    border = BorderStroke(1.dp, Color(0xFF9283C4).copy(alpha = 0.4f)),
                     modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
                 ) {
                     Row(
@@ -1094,10 +1094,10 @@ private fun MessageBubble(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF7E57C2).copy(alpha = 0.2f)),
+                                .background(Color(0xFF9283C4).copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF7E57C2), modifier = Modifier.size(22.dp))
+                            Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF9283C4), modifier = Modifier.size(22.dp))
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
@@ -1115,14 +1115,14 @@ private fun MessageBubble(
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, Color(0xFFFFD600).copy(alpha = 0.4f)),
+                    border = BorderStroke(1.dp, Color(0xFFC9A15E).copy(alpha = 0.4f)),
                     modifier = Modifier.widthIn(min = 240.dp, max = 300.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Poll, contentDescription = null, tint = Color(0xFFFFD600), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Poll, contentDescription = null, tint = Color(0xFFC9A15E), modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Sondage de Couple", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD600))
+                            Text(text = "Sondage de Couple", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC9A15E))
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(text = message.content, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -1132,8 +1132,8 @@ private fun MessageBubble(
                             val isSelected = selectedOptionIndex == idx
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) Color(0x33FFD600) else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
-                                border = BorderStroke(1.dp, if (isSelected) Color(0xFFFFD600) else BorderSubtleWhite),
+                                color = if (isSelected) Color(0x33C9A15E) else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
+                                border = BorderStroke(1.dp, if (isSelected) Color(0xFFC9A15E) else BorderSubtleWhite),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp)
@@ -1146,7 +1146,7 @@ private fun MessageBubble(
                                     RadioButton(
                                         selected = isSelected,
                                         onClick = { selectedOptionIndex = idx },
-                                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFD600)),
+                                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFC9A15E)),
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -1297,7 +1297,7 @@ private fun MessageBubble(
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(text = "Révéler la réponse 👁️", fontSize = 11.sp, color = Color.White)
+                                    Text(text = "Révéler la réponse 👁️", fontSize = 11.sp, color = TextPrimary)
                                 }
                             }
                         }
@@ -1373,14 +1373,14 @@ private fun MessageBubble(
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = CardModalSurface,
-                    border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, Color(0xFF7FAF93).copy(alpha = 0.5f)),
                     modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Balance, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(18.dp))
+                            Icon(Icons.Rounded.Balance, contentDescription = null, tint = Color(0xFF7FAF93), modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Tu Préfères ? ⚖️", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                            Text(text = "Tu Préfères ? ⚖️", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7FAF93))
                         }
                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -1388,8 +1388,8 @@ private fun MessageBubble(
                             val isChosen = selectedChoice == part
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (isChosen) Color(0x334CAF50) else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
-                                border = BorderStroke(1.dp, if (isChosen) Color(0xFF4CAF50) else BorderSubtleWhite),
+                                color = if (isChosen) Color(0x337FAF93) else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
+                                border = BorderStroke(1.dp, if (isChosen) Color(0xFF7FAF93) else BorderSubtleWhite),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp)
@@ -1436,7 +1436,7 @@ private fun MessageBubble(
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(text = if (isRedeemed) "Bon Utilisé ✅" else "Utiliser ce Bon 💖", fontSize = 11.sp, color = Color.White)
+                            Text(text = if (isRedeemed) "Bon Utilisé ✅" else "Utiliser ce Bon 💖", fontSize = 11.sp, color = TextPrimary)
                         }
                     }
                 }
@@ -1847,7 +1847,7 @@ fun VideoMessageItem(
                                 Icon(
                                     imageVector = Icons.Rounded.PlayArrow,
                                     contentDescription = "Lire vidéo",
-                                    tint = Color.White,
+                                    tint = TextPrimary,
                                     modifier = Modifier.size(32.dp)
                                 )
                             }
@@ -1871,7 +1871,7 @@ fun VideoMessageItem(
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("VIDÉO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("VIDÉO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                             }
                         }
                     }
@@ -2012,7 +2012,7 @@ fun FullScreenPhotoDialog(
                         onClick = onRetry,
                         colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan)
                     ) {
-                        Text("Recharger l'image 🔄", color = Color.White, fontSize = 12.sp)
+                        Text("Recharger l'image 🔄", color = TextPrimary, fontSize = 12.sp)
                     }
                 }
             }
@@ -2027,7 +2027,7 @@ fun FullScreenPhotoDialog(
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = "Fermer",
-                    tint = Color.White
+                    tint = TextPrimary
                 )
             }
         }
@@ -2111,7 +2111,7 @@ fun FullScreenVideoDialog(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan)
                     ) {
-                        Text("Réessayer 🔄", color = Color.White, fontSize = 12.sp)
+                        Text("Réessayer 🔄", color = TextPrimary, fontSize = 12.sp)
                     }
                 }
             }
@@ -2126,7 +2126,7 @@ fun FullScreenVideoDialog(
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = "Fermer",
-                    tint = Color.White
+                    tint = TextPrimary
                 )
             }
         }
@@ -2192,7 +2192,7 @@ fun WheelOfFortuneMessageItem(
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = CardDarkElevated,
-        border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color(0xFFFF007F), Color(0xFF7928CA)))),
+        border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color(0xFFC97B86), Color(0xFF9283C4)))),
         modifier = Modifier.widthIn(min = 250.dp, max = 310.dp)
     ) {
         Column(
@@ -2200,13 +2200,13 @@ fun WheelOfFortuneMessageItem(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Casino, contentDescription = null, tint = Color(0xFFFF007F), modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.Casino, contentDescription = null, tint = Color(0xFFC97B86), modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Roue de la Fortune d'Amour 🎡",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFF007F)
+                    color = Color(0xFFC97B86)
                 )
             }
             Spacer(modifier = Modifier.height(10.dp))
@@ -2222,8 +2222,8 @@ fun WheelOfFortuneMessageItem(
                 ) {
                     val sweepAngle = 360f / items.size
                     val colors = listOf(
-                        Color(0xFFFF2D55), Color(0xFF00B4D8), Color(0xFFFFD600),
-                        Color(0xFF9C27B0), Color(0xFF00C853), Color(0xFFFF9100)
+                        Color(0xFFC4605C), Color(0xFF7FA8CC), Color(0xFFC9A15E),
+                        Color(0xFF9283C4), Color(0xFF7FAF93), Color(0xFFC9A15E)
                     )
 
                     items.forEachIndexed { index, _ ->
@@ -2250,7 +2250,7 @@ fun WheelOfFortuneMessageItem(
                 Icon(
                     imageVector = Icons.Rounded.ArrowDropDown,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = TextPrimary,
                     modifier = Modifier
                         .size(32.dp)
                         .align(Alignment.TopCenter)
@@ -2263,8 +2263,8 @@ fun WheelOfFortuneMessageItem(
             if (selectedResult != null) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0x33FF007F),
-                    border = BorderStroke(1.dp, Color(0xFFFF007F)),
+                    color = Color(0x33C97B86),
+                    border = BorderStroke(1.dp, Color(0xFFC97B86)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
@@ -2290,7 +2290,7 @@ fun WheelOfFortuneMessageItem(
                     }
                 },
                 enabled = !isSpinning,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF007F)),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC97B86)),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -2298,7 +2298,7 @@ fun WheelOfFortuneMessageItem(
                     text = if (isSpinning) "La roue tourne... 🎡" else "Tourner la Roue ! 🎡",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = TextPrimary
                 )
             }
         }
@@ -2317,21 +2317,21 @@ fun CalendarEventMessageItem(
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = CardDarkElevated,
-        border = BorderStroke(1.dp, Color(0xFFE91E63).copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, Color(0xFFC97B86).copy(alpha = 0.5f)),
         modifier = Modifier.widthIn(min = 240.dp, max = 300.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFFE91E63).copy(alpha = 0.2f),
+                    color = Color(0xFFC97B86).copy(alpha = 0.2f),
                     modifier = Modifier.size(36.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Rounded.Event,
                             contentDescription = null,
-                            tint = Color(0xFFE91E63),
+                            tint = Color(0xFFC97B86),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -2342,7 +2342,7 @@ fun CalendarEventMessageItem(
                         text = "Événement de Couple 📅",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFE91E63)
+                        color = Color(0xFFC97B86)
                     )
                     Text(
                         text = message.content,
@@ -2375,7 +2375,7 @@ fun CalendarEventMessageItem(
                         text = if (isConfirmed) "Confirmé ✅" else "En attente ⏳",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (isConfirmed) Color(0xFF00C853) else AccentGold
+                        color = if (isConfirmed) Color(0xFF7FAF93) else AccentGold
                     )
                 }
             }
@@ -2384,21 +2384,21 @@ fun CalendarEventMessageItem(
 
             Button(
                 onClick = { isConfirmed = !isConfirmed },
-                colors = ButtonDefaults.buttonColors(containerColor = if (isConfirmed) Color(0xFF00C853) else Color(0xFFE91E63)),
+                colors = ButtonDefaults.buttonColors(containerColor = if (isConfirmed) Color(0xFF7FAF93) else Color(0xFFC97B86)),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
                     imageVector = if (isConfirmed) Icons.Rounded.CheckCircle else Icons.Rounded.Add,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = TextPrimary,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = if (isConfirmed) "Inscrit à l'agenda de couple" else "Ajouter à mon agenda 📅",
                     fontSize = 11.sp,
-                    color = Color.White
+                    color = TextPrimary
                 )
             }
         }
