@@ -888,105 +888,49 @@ fun SettingsScreen(
                 }
             }
         }
-        // --- 1. HERO COUPLE PROFILES & STATUS HEADER ---
+        // --- 1. PROFIL (ligne façon messagerie : avatar, nom, statut) ---
         if (section == null) {
-        item {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardDark,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showProfileModal = true }
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+            item {
+                val days = remember(coupleSpace.anniversaryDate) {
+                    java.util.concurrent.TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - coupleSpace.anniversaryDate).coerceAtLeast(0)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { showProfileModal = true }
+                        .padding(horizontal = 4.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(60.dp).clip(CircleShape).background(com.example.mikayala.theme.MikayalaColors.accentSoft),
+                        contentAlignment = Alignment.Center
                     ) {
-                        // My Profile
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(AccentRose.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(text = settings.moodEmoji, fontSize = 26.sp)
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(text = settings.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = settings.customStatus, fontSize = 11.sp, color = AccentRose, maxLines = 1)
-                            }
-                        }
-
-                        // Center Love Link Badge
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = "❤️", fontSize = 18.sp)
-                        }
-
-                        // Partner Profile & Nickname
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(text = settings.partnerNickname, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = VibrantCyan)
-                                Text(text = settings.partnerStatus, fontSize = 11.sp, color = AccentViolet, maxLines = 1)
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(VibrantCyan.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(text = "👸", fontSize = 26.sp)
-                            }
+                        if (settings.avatarUrl.isNotBlank()) {
+                            coil.compose.AsyncImage(
+                                model = settings.avatarUrl,
+                                contentDescription = "Ma photo",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Text(text = settings.moodEmoji, fontSize = 28.sp)
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = BorderSubtleWhite)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Favorite, contentDescription = null, tint = AccentRose, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "842 jours d'amour partagés", fontSize = 12.sp, color = TextSecondary)
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = AccentRose.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.4f)),
-                            modifier = Modifier.clickable { showProfileModal = true }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Rounded.Edit, contentDescription = null, tint = AccentRose, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(text = "Modifier Profils & Surnoms", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentRose)
-                            }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = settings.displayName.ifBlank { "Mon profil" }, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Text(text = settings.customStatus, fontSize = 13.sp, color = TextSecondary, maxLines = 1)
+                        if (coupleSpace.isPaired) {
+                            Text(
+                                text = "Avec ${settings.partnerNickname.ifBlank { "votre partenaire" }} · $days jour${if (days > 1) "s" else ""} ensemble",
+                                fontSize = 12.sp, color = AccentRose, maxLines = 1
+                            )
                         }
                     }
+                    Icon(Icons.Rounded.ChevronRight, contentDescription = "Modifier le profil", tint = TextMuted)
                 }
             }
-        }
         }
 
         // --- 2. SECTION: PERSONNALISATION VISUELLE & DESIGN ---
