@@ -62,24 +62,8 @@ fun AuthScreen(
             .background(darkBg)
     ) {
         // Glowing background effect
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AccentRose.copy(alpha = 0.2f), Color.Transparent),
-                    center = Offset(w * 0.8f, h * 0.2f),
-                    radius = w * 0.7f
-                )
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AccentViolet.copy(alpha = 0.15f), Color.Transparent),
-                    center = Offset(w * 0.2f, h * 0.8f),
-                    radius = w * 0.8f
-                )
-            )
-        }
+        // (halo lumineux décoratif retiré : style Soft, et rendu plus léger)
+
 
         Column(
             modifier = Modifier

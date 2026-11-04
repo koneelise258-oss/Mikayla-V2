@@ -168,26 +168,8 @@ fun OnboardingScreen(
             .background(darkBg)
     ) {
         // Glowing Background Lights
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
+        // (halo lumineux décoratif retiré : style Soft, et rendu plus léger)
 
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AccentViolet.copy(alpha = 0.22f), Color.Transparent),
-                    center = Offset(w * 0.2f, h * 0.15f),
-                    radius = w * 0.7f
-                )
-            )
-
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AccentRose.copy(alpha = 0.18f), Color.Transparent),
-                    center = Offset(w * 0.8f, h * 0.75f),
-                    radius = w * 0.8f
-                )
-            )
-        }
 
         Column(
             modifier = Modifier
@@ -1407,6 +1389,7 @@ fun CameraScannerModal(
                         }
                     }
 
+                    val laserColor = AccentRose
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val w = size.width
                         val h = size.height
@@ -1414,7 +1397,7 @@ fun CameraScannerModal(
 
                         // Red Laser Line
                         drawLine(
-                            color = AccentRose,
+                            color = laserColor,
                             start = Offset(0f, yPos),
                             end = Offset(w, yPos),
                             strokeWidth = 3.dp.toPx()
