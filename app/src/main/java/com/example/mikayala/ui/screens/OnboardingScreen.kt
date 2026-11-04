@@ -278,12 +278,12 @@ fun OnboardingScreen(
                                 isCreatingSpace = true
                                 android.util.Log.d("SupabaseDiag", "[CREATE] Tentative de création avec le code: $newCode")
                                 coroutineScope.launch {
-                                    val success = repository.createCoupleSpaceInSupabase(newCode, createName.ifEmpty { "Mikey" })
+                                    val success = repository.createCoupleSpaceInSupabase(newCode, createName.ifEmpty { "Partenaire 1" })
                                     isCreatingSpace = false
                                     if (success) {
                                         generatedCode = newCode
                                         isWaitingPartner = true
-                                        repository.updateProfile(createName.ifEmpty { "Mikey" }, "En ligne", "", avatarPresets[selectedAvatarIndex])
+                                        repository.updateProfile(createName.ifEmpty { "Partenaire 1" }, "En ligne", "", avatarPresets[selectedAvatarIndex])
                                         Toast.makeText(context, "Espace Supabase créé avec succès ! ✨", Toast.LENGTH_SHORT).show()
                                     } else {
                                         Toast.makeText(context, "Erreur Supabase : impossible de créer l'espace. Vérifiez les logs. ❌", Toast.LENGTH_LONG).show()
@@ -291,7 +291,7 @@ fun OnboardingScreen(
                                 }
                             },
                             onComplete = {
-                                repository.updateProfile(createName.ifEmpty { "Mikey" }, "En ligne avec mon cœur", "", avatarPresets[selectedAvatarIndex])
+                                repository.updateProfile(createName.ifEmpty { "Partenaire 1" }, "En ligne avec mon cœur", "", avatarPresets[selectedAvatarIndex])
                                 onCompleteOnboarding()
                             }
                         )
@@ -313,7 +313,7 @@ fun OnboardingScreen(
                                 isJoiningLoading = true
                                 joinErrorMessage = null
                                 coroutineScope.launch {
-                                    val joined = repository.joinCoupleSpaceInSupabase(joinCode, joinName.ifEmpty { "Mikayala" })
+                                    val joined = repository.joinCoupleSpaceInSupabase(joinCode, joinName.ifEmpty { "Partenaire 2" })
                                     isJoiningLoading = false
                                     if (joined) {
                                         repository.updatePartnerProfile(joinName.ifEmpty { "Partenaire" }, "En ligne", "💖")
@@ -343,7 +343,7 @@ fun OnboardingScreen(
                                 isLinkingLoading = true
                                 linkError = null
                                 coroutineScope.launch {
-                                    val linked = repository.joinCoupleSpaceInSupabase(linkCode, if (selectedPartnerOwner == "partner1") "Mikey" else "Mikayala")
+                                    val linked = repository.joinCoupleSpaceInSupabase(linkCode, if (selectedPartnerOwner == "partner1") "Partenaire 1" else "Partenaire 2")
                                     isLinkingLoading = false
                                     linkSuccess = linked
                                     if (linked) {
@@ -1193,13 +1193,13 @@ fun RecoveryView(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = WarningGold)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Restauration intégrale réussie !", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = WarningGold)
+                        Text(text = "Espace du couple retrouvé", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = WarningGold)
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "• Messages & Vocaux restaurés (100%)\n• Coffre-fort & Souvenirs restaurés (100%)\n• Calendrier & Love Time synchronisés",
+                        text = "Vos messages, le coffre et le calendrier sont rechargés depuis le serveur du couple.",
                         fontSize = 11.sp,
                         color = TextSecondary,
                         lineHeight = 16.sp

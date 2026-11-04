@@ -546,7 +546,7 @@ fun LoveTimeView(
                                 repository.updateLoveTimeSettings(
                                     anniversaryDate = tempDateMillis,
                                     partner1Name = tempPartner1.ifBlank { "Moi" },
-                                    partner2Name = tempPartner2.ifBlank { "Mikayala" },
+                                    partner2Name = tempPartner2.ifBlank { "Partenaire 2" },
                                     loveQuote = tempQuote.ifBlank { "Pour toujours et à jamais." }
                                 )
                                 showEditSettingsDialog = false
