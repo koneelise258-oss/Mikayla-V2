@@ -1,6 +1,8 @@
 package com.example.mikayala.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -144,7 +146,13 @@ fun VaultScreen(
     if (showAddDialog) {
         var newTitle by remember { mutableStateOf("") }
         var newCaption by remember { mutableStateOf("") }
-        var newType by remember { mutableStateOf("photo") }
+        // Photo facultative : sans photo, l'élément est une note (avant, tout était enregistré comme « photo » sans image)
+        var pickedPhoto by remember { mutableStateOf<android.net.Uri?>(null) }
+        var saving by remember { mutableStateOf(false) }
+        val vaultScope = rememberCoroutineScope()
+        val photoPicker = rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+        ) { uri -> if (uri != null) pickedPhoto = uri }
 
         Dialog(onDismissRequest = { showAddDialog = false }) {
             Surface(
@@ -159,9 +167,39 @@ fun VaultScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "Nouveau Souvenir Secret 🔒", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Nouveau souvenir", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
 
                     Spacer(modifier = Modifier.height(14.dp))
+
+                    // Choix de la photo, avec aperçu
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(com.example.mikayala.theme.MikayalaColors.surfaceSunken)
+                            .clickable {
+                                photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val uri = pickedPhoto
+                        if (uri != null) {
+                            coil.compose.AsyncImage(
+                                model = uri,
+                                contentDescription = "Photo choisie",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, tint = AccentRose, modifier = Modifier.size(32.dp))
+                                Text("Ajouter une photo (facultatif)", fontSize = 13.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     OutlinedTextField(
                         value = newTitle,
@@ -196,18 +234,32 @@ fun VaultScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
+                        enabled = !saving && (newTitle.isNotBlank() || pickedPhoto != null),
                         onClick = {
-                            if (newTitle.isNotBlank()) {
-                                repository.addVaultItem(newTitle, newType, selectedCategory, newCaption)
+                            val photo = pickedPhoto
+                            if (photo == null) {
+                                repository.addVaultItem(newTitle, "note", selectedCategory, newCaption)
                                 showAddDialog = false
-                                Toast.makeText(context, "Souvenir sauvegardé dans le Coffre", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Enregistré dans le coffre", Toast.LENGTH_SHORT).show()
+                            } else {
+                                saving = true
+                                vaultScope.launch {
+                                    val ok = repository.addVaultPhoto(photo, newTitle, newCaption, selectedCategory)
+                                    saving = false
+                                    if (ok) {
+                                        showAddDialog = false
+                                        Toast.makeText(context, "Photo enregistrée dans le coffre", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Envoi impossible : vérifiez la connexion", Toast.LENGTH_LONG).show()
+                                    }
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Enregistrer dans le Coffre ✨", fontWeight = FontWeight.Bold)
+                        Text(if (saving) "Envoi…" else "Enregistrer", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -315,7 +367,8 @@ fun VaultScreen(
                 items(filteredItems, key = { it.id }) { item ->
                     VaultGridItem(
                         item = item,
-                        onClick = { selectedItemForPreview = item }
+                        onClick = { selectedItemForPreview = item },
+                        resolveMedia = { ref -> repository.resolveVaultMediaUrl(ref) }
                     )
                 }
             }
@@ -326,7 +379,8 @@ fun VaultScreen(
 @Composable
 private fun VaultGridItem(
     item: VaultItemEntity,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    resolveMedia: suspend (String) -> String? = { null }
 ) {
     Surface(
         onClick = onClick,
@@ -348,16 +402,31 @@ private fun VaultGridItem(
                     .background(CardElevated),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = when (item.type) {
-                        "photo" -> "📸"
-                        "video" -> "🎬"
-                        "audio" -> "🎙️"
-                        "letter" -> "💌"
-                        else -> "📝"
-                    },
-                    fontSize = 32.sp
-                )
+                // Vraie photo si l'élément en contient une, sinon pictogramme du type
+                var shownUrl by remember(item.mediaUrl) { mutableStateOf<String?>(null) }
+                if (item.type == "photo" && item.mediaUrl.isNotBlank()) {
+                    LaunchedEffect(item.mediaUrl) { shownUrl = resolveMedia(item.mediaUrl) }
+                }
+                val url = shownUrl
+                if (url != null) {
+                    coil.compose.AsyncImage(
+                        model = url,
+                        contentDescription = item.title,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text(
+                        text = when (item.type) {
+                            "photo" -> "📸"
+                            "video" -> "🎬"
+                            "audio" -> "🎙️"
+                            "letter" -> "💌"
+                            else -> "📝"
+                        },
+                        fontSize = 32.sp
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))

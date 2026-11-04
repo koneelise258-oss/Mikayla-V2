@@ -1817,20 +1817,56 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun saveMessageToVault(message: MessageEntity) {
-        val vaultItem = VaultItemEntity(
-            id = "v_" + UUID.randomUUID().toString().take(8),
-            title = if (message.type == "audio") "Message vocal sauvegardé" else "Souvenir du chat",
-            type = if (message.type == "audio") "audio" else "note",
-            category = "sauvegardes",
-            caption = message.content,
-            duration = message.duration,
-            dateAdded = System.currentTimeMillis()
-        )
-        addVaultItem(vaultItem.title, vaultItem.type, vaultItem.category, vaultItem.caption)
+        // Conserve le média (photo, vidéo, vocal) : référence au fichier privé, re-signée à l'affichage
+        val type = when (message.type) {
+            "audio" -> "audio"
+            "image" -> "photo"
+            "video" -> "video"
+            else -> "note"
+        }
+        val mediaRef = message.storagePath?.takeIf { it.isNotBlank() }?.let { "msgmedia:$it" } ?: message.mediaUrl.orEmpty()
+        val title = when (type) {
+            "audio" -> "Message vocal"
+            "photo" -> "Photo du chat"
+            "video" -> "Vidéo du chat"
+            else -> "Message du chat"
+        }
+        addVaultItem(title, type, "sauvegardes", message.content, mediaRef = mediaRef)
+    }
+
+    /** URL affichable d'un média du coffre (les références « msgmedia: » sont des fichiers privés signés). */
+    suspend fun resolveVaultMediaUrl(ref: String): String? {
+        if (ref.isBlank()) return null
+        if (!ref.startsWith("msgmedia:")) return ref
+        val path = ref.removePrefix("msgmedia:")
+        mediaUrlCache[path]?.let { return it }
+        return supabaseService.getSignedMessageMediaUrl(path)?.also { mediaUrlCache[path] = it }
+    }
+
+    /** Ajoute une photo au coffre : envoi dans le stockage privé du couple, puis création de l'élément. */
+    suspend fun addVaultPhoto(uri: Uri, title: String, caption: String, category: String): Boolean {
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return false
+        return try {
+            val original = context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } ?: return false
+            val (bmp, quality) = preparePhotoForUpload(original)
+            val out = ByteArrayOutputStream()
+            @Suppress("DEPRECATION")
+            bmp.compress(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP, quality, out)
+            if (bmp !== original) bmp.recycle()
+            original.recycle()
+            val path = "${couple.id}/vault/${UUID.randomUUID()}.webp"
+            supabaseService.uploadMessageMedia(couple.id, path, out.toByteArray(), "image/webp") ?: return false
+            addVaultItem(title.ifBlank { "Photo" }, "photo", category, caption, mediaRef = "msgmedia:$path")
+            true
+        } catch (e: Exception) {
+            Log.e("MikayalaRepository", "addVaultPhoto: ${e.message}")
+            false
+        }
     }
 
     // --- Shared Vault Actions ---
-    fun addVaultItem(title: String, type: String, category: String, caption: String, isViewOnce: Boolean = false) {
+    fun addVaultItem(title: String, type: String, category: String, caption: String, isViewOnce: Boolean = false, mediaRef: String = "") {
         val couple = _coupleSpace.value
         val myUserId = getCurrentUserId()
         val coupleId = couple.id
@@ -1844,6 +1880,7 @@ class MikayalaRepository(private val context: Context) {
             category = category,
             caption = caption,
             isViewOnce = isViewOnce,
+            mediaUrl = mediaRef,
             dateAdded = System.currentTimeMillis()
         )
         _vaultItems.value = listOf(newItem) + _vaultItems.value
@@ -1858,7 +1895,7 @@ class MikayalaRepository(private val context: Context) {
                     type = type,
                     category = category,
                     caption = caption,
-                    mediaUrl = "",
+                    mediaUrl = mediaRef,
                     pairingCode = pairingCode
                 )
             }
@@ -2947,6 +2984,7 @@ class MikayalaRepository(private val context: Context) {
                 val category = obj.optString("category", "intime")
                 val caption = obj.optString("caption", "")
                 val createdAt = obj.optLong("created_at", System.currentTimeMillis())
+                val media = obj.optString("media_url", "").takeIf { it != "null" } ?: ""
 
                 fetchedVault.add(
                     VaultItemEntity(
@@ -2956,6 +2994,7 @@ class MikayalaRepository(private val context: Context) {
                         type = type,
                         category = category,
                         caption = caption,
+                        mediaUrl = media,
                         dateAdded = createdAt
                     )
                 )
