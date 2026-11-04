@@ -1,73 +1,163 @@
 package com.example.mikayala.theme
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 // ==============================================================================
-// PALETTE CHROMATIQUE SOFT-MATTE NEUMORPHIC & CYAN-BLUE (IMAGE DE RÉFÉRENCE)
+// SYSTÈME DE DESIGN « SOFT » — couleurs sémantiques, mode clair ET mode sombre
+// ------------------------------------------------------------------------------
+// Une seule identité : crème / blanc doux / gris chaud / anthracite, accents pastel.
+// Les écrans utilisent des noms sémantiques (fond, surface, texte, accent…) : les valeurs
+// changent selon le thème actif (Paramètres > Apparence), sans toucher aux écrans.
+// Les anciens noms (DeepNight, CardDark, VibrantCyan…) sont conservés comme alias pour
+// que tout l'existant bascule automatiquement sur la nouvelle palette.
 // ==============================================================================
 
-// Fond Global (Canvas Body) - Ardoise anthracite mate & douce
-val MatteSlateBackground = Color(0xFF1E2128)
-val DeepNight = MatteSlateBackground
-val DeepSurfaceBlack = Color(0xFF16181F)
+@Immutable
+data class MikayalaPalette(
+    val isDark: Boolean,
+    // Fonds et surfaces
+    val background: Color,        // fond principal
+    val surface: Color,           // surfaces (listes, cartes discrètes)
+    val surfaceElevated: Color,   // surfaces mises en avant, éléments sélectionnés
+    val surfaceSunken: Color,     // zones en creux (champs de saisie, pistes)
+    val modal: Color,             // feuilles et boîtes de dialogue
+    // Textes
+    val textPrimary: Color,
+    val textSecondary: Color,
+    val textMuted: Color,
+    // Lignes
+    val border: Color,
+    val borderStrong: Color,
+    // Accents pastel
+    val accent: Color,            // rose poudré : action principale
+    val accentSoft: Color,        // fond léger derrière un accent
+    val lavender: Color,
+    val sky: Color,               // bleu doux : liens, informations
+    val sand: Color,              // sable doré : mises en valeur
+    val warning: Color,
+    val success: Color,
+    val danger: Color,
+    // Messagerie
+    val bubbleOutgoing: Color,
+    val bubbleIncoming: Color,
+    val onBubbleOutgoing: Color,
+    // États
+    val pressed: Color,
+)
 
-// Cartes Principales & Composants Neumorphiques
-val MatteCardDark = Color(0xFF262A36)
-val CardDark = MatteCardDark
-val MatteCardElevated = Color(0xFF2D3242)
-val CardElevated = MatteCardElevated
-val CardDarkElevated = MatteCardElevated
-val CardModalSurface = Color(0xFF232733)
-val CardDarkBlur95 = Color(0xF2262A36)
+val SoftLight = MikayalaPalette(
+    isDark = false,
+    background = Color(0xFFFAF7F2),
+    surface = Color(0xFFFFFFFF),
+    surfaceElevated = Color(0xFFF3EEE8),
+    surfaceSunken = Color(0xFFF1ECE6),
+    modal = Color(0xFFFFFFFF),
+    textPrimary = Color(0xFF2B2A2E),
+    textSecondary = Color(0xFF6B6661),
+    textMuted = Color(0xFF9A948D),
+    border = Color(0xFFE8E1D9),
+    borderStrong = Color(0xFFD6CCC1),
+    accent = Color(0xFFC97B86),
+    accentSoft = Color(0xFFF6E3E5),
+    lavender = Color(0xFF9283C4),
+    sky = Color(0xFF6E97BF),
+    sand = Color(0xFFB8925A),
+    warning = Color(0xFFC9963E),
+    success = Color(0xFF6FA287),
+    danger = Color(0xFFC4605C),
+    bubbleOutgoing = Color(0xFFF4DEE0),
+    bubbleIncoming = Color(0xFFFFFFFF),
+    onBubbleOutgoing = Color(0xFF2B2A2E),
+    pressed = Color(0x0F2B2A2E),
+)
 
-// Boutons Squircles & Éléments Extrudés
-val MatteSquircle = Color(0xFF292E3C)
-val MatteSquircleBorder = Color(0x334E576F)
-val MatteSquircleHighlight = Color(0x24FFFFFF)
-val MatteInset = Color(0xFF1B1D24)
+val SoftDark = MikayalaPalette(
+    isDark = true,
+    background = Color(0xFF1B1A1E),
+    surface = Color(0xFF242328),
+    surfaceElevated = Color(0xFF2D2B31),
+    surfaceSunken = Color(0xFF17161A),
+    modal = Color(0xFF26252A),
+    textPrimary = Color(0xFFEEEAE5),
+    textSecondary = Color(0xFFADA7A1),
+    textMuted = Color(0xFF7F7A75),
+    border = Color(0xFF34323A),
+    borderStrong = Color(0xFF45424B),
+    accent = Color(0xFFE6A3AD),
+    accentSoft = Color(0xFF3A2C30),
+    lavender = Color(0xFFBDB0EA),
+    sky = Color(0xFF9DC2E4),
+    sand = Color(0xFFE2C796),
+    warning = Color(0xFFE3B866),
+    success = Color(0xFF8EC2A5),
+    danger = Color(0xFFE58A85),
+    bubbleOutgoing = Color(0xFF4A3539),
+    bubbleIncoming = Color(0xFF2A292E),
+    onBubbleOutgoing = Color(0xFFF5EEEC),
+    pressed = Color(0x14FFFFFF),
+)
 
-// Dégradé Signature Bleu Cyan Flamboyant (Bouton Principal "New Message" / Action)
-val CyanBlueGradientStart = Color(0xFF56CCF2)
-val CyanBlueGradientEnd = Color(0xFF2F80ED)
-val VibrantBlue = Color(0xFF3880FF)
-val VibrantCyan = Color(0xFF4FACFE)
+val LocalMikayalaPalette = staticCompositionLocalOf { SoftDark }
 
-// Couleurs d'Accent & Romance
-val AccentRose = Color(0xFFFF7675)
-val AccentViolet = Color(0xFFA29BFE)
-val AccentGold = Color(0xFFFFEAA7)
-val WarningGold = Color(0xFFFFD166)
+/** Accès direct : MikayalaColors.accent, MikayalaColors.surface… */
+val MikayalaColors: MikayalaPalette
+    @Composable @ReadOnlyComposable get() = LocalMikayalaPalette.current
 
-// Dégradés Sortants
-val OutgoingGradientStart = CyanBlueGradientStart
-val OutgoingGradientEnd = CyanBlueGradientEnd
+private val p: MikayalaPalette @Composable @ReadOnlyComposable get() = LocalMikayalaPalette.current
 
-// Typographie & Hiérarchie des Textes
-val TextPrimary = Color(0xFFFFFFFF)
-val TextSecondary = Color(0xFF9BA3B5)
-val TextSecondary70 = Color(0xB3FFFFFF)
-val TextMuted = Color(0xFF6B7487)
-val TimeStampMuted = Color(0xFF7E8699)
-
-// Bordures et Séparateurs
-val BorderSubtleWhite = Color(0x1F4E576F)
-val BorderHighlight = Color(0x3356CCF2)
-
-// Statuts d'Acheminement & Présence
-val StatusBlue = Color(0xFF56CCF2)
-val StatusGrey = Color(0xFF8E97AA)
-val StatusSent = Color(0xFF6B7487)
-val OnlinePresenceGreen = Color(0xFF00E676)
-
-// Bulles de Discussion & Médias
-val ChatBubbleReceiver = Color(0xFF282D3B)
-val ChatBubbleSender = Color(0xFF2C3243)
-val ChatBubbleSenderFallback = Color(0xFF2F80ED)
-val ProgressRingFill = Color(0xFF56CCF2)
-val ProgressRingTrack = Color(0x33FFFFFF)
-
-// États d'Interaction
-val HoverStateWhite = Color(0x14FFFFFF)
-val HoverStateCyan = Color(0x2656CCF2)
-val HoverStateCoral = Color(0x1AFF7675)
-
+// ---------- Alias historiques (utilisés par les écrans existants) ----------
+// Fonds
+val MatteSlateBackground: Color @Composable @ReadOnlyComposable get() = p.background
+val DeepNight: Color @Composable @ReadOnlyComposable get() = p.background
+val DeepSurfaceBlack: Color @Composable @ReadOnlyComposable get() = p.surfaceSunken
+// Surfaces
+val MatteCardDark: Color @Composable @ReadOnlyComposable get() = p.surface
+val CardDark: Color @Composable @ReadOnlyComposable get() = p.surface
+val MatteCardElevated: Color @Composable @ReadOnlyComposable get() = p.surfaceElevated
+val CardElevated: Color @Composable @ReadOnlyComposable get() = p.surfaceElevated
+val CardDarkElevated: Color @Composable @ReadOnlyComposable get() = p.surfaceElevated
+val CardModalSurface: Color @Composable @ReadOnlyComposable get() = p.modal
+val CardDarkBlur95: Color @Composable @ReadOnlyComposable get() = p.surface.copy(alpha = 0.95f)
+val MatteSquircle: Color @Composable @ReadOnlyComposable get() = p.surfaceElevated
+val MatteSquircleBorder: Color @Composable @ReadOnlyComposable get() = p.border
+val MatteSquircleHighlight: Color @Composable @ReadOnlyComposable get() = p.pressed
+val MatteInset: Color @Composable @ReadOnlyComposable get() = p.surfaceSunken
+// Accents : plus de dégradés fluo, des pastels sobres
+val CyanBlueGradientStart: Color @Composable @ReadOnlyComposable get() = p.accent
+val CyanBlueGradientEnd: Color @Composable @ReadOnlyComposable get() = p.accent
+val VibrantBlue: Color @Composable @ReadOnlyComposable get() = p.sky
+val VibrantCyan: Color @Composable @ReadOnlyComposable get() = p.accent
+val AccentRose: Color @Composable @ReadOnlyComposable get() = p.accent
+val AccentViolet: Color @Composable @ReadOnlyComposable get() = p.lavender
+val AccentGold: Color @Composable @ReadOnlyComposable get() = p.sand
+val WarningGold: Color @Composable @ReadOnlyComposable get() = p.warning
+val OutgoingGradientStart: Color @Composable @ReadOnlyComposable get() = p.bubbleOutgoing
+val OutgoingGradientEnd: Color @Composable @ReadOnlyComposable get() = p.bubbleOutgoing
+// Textes
+val TextPrimary: Color @Composable @ReadOnlyComposable get() = p.textPrimary
+val TextSecondary: Color @Composable @ReadOnlyComposable get() = p.textSecondary
+val TextSecondary70: Color @Composable @ReadOnlyComposable get() = p.textSecondary
+val TextMuted: Color @Composable @ReadOnlyComposable get() = p.textMuted
+val TimeStampMuted: Color @Composable @ReadOnlyComposable get() = p.textMuted
+// Lignes
+val BorderSubtleWhite: Color @Composable @ReadOnlyComposable get() = p.border
+val BorderHighlight: Color @Composable @ReadOnlyComposable get() = p.borderStrong
+// Statuts
+val StatusBlue: Color @Composable @ReadOnlyComposable get() = p.sky
+val StatusGrey: Color @Composable @ReadOnlyComposable get() = p.textMuted
+val StatusSent: Color @Composable @ReadOnlyComposable get() = p.textMuted
+val OnlinePresenceGreen: Color @Composable @ReadOnlyComposable get() = p.success
+// Messagerie
+val ChatBubbleReceiver: Color @Composable @ReadOnlyComposable get() = p.bubbleIncoming
+val ChatBubbleSender: Color @Composable @ReadOnlyComposable get() = p.bubbleOutgoing
+val ChatBubbleSenderFallback: Color @Composable @ReadOnlyComposable get() = p.bubbleOutgoing
+val ProgressRingFill: Color @Composable @ReadOnlyComposable get() = p.accent
+val ProgressRingTrack: Color @Composable @ReadOnlyComposable get() = p.border
+// États
+val HoverStateWhite: Color @Composable @ReadOnlyComposable get() = p.pressed
+val HoverStateCyan: Color @Composable @ReadOnlyComposable get() = p.accentSoft
+val HoverStateCoral: Color @Composable @ReadOnlyComposable get() = p.accentSoft

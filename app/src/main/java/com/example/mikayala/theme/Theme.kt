@@ -13,34 +13,26 @@ import androidx.core.view.WindowCompat
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
-private val DarkColorScheme = darkColorScheme(
-    primary = AccentRose,
-    onPrimary = TextPrimary,
-    secondary = AccentViolet,
-    onSecondary = TextPrimary,
-    tertiary = AccentGold,
-    background = DeepNight,
-    onBackground = TextPrimary,
-    surface = CardDark,
-    onSurface = TextPrimary,
-    surfaceVariant = CardElevated,
-    onSurfaceVariant = TextSecondary,
-    outline = BorderSubtleWhite
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = AccentRose,
-    onPrimary = Color.White,
-    secondary = AccentViolet,
-    onSecondary = Color.White,
-    tertiary = AccentGold,
-    background = Color(0xFFF9FAFB),
-    onBackground = Color(0xFF1F2937),
-    surface = Color.White,
-    onSurface = Color(0xFF1F2937),
-    surfaceVariant = Color(0xFFF3F4F6),
-    onSurfaceVariant = Color(0xFF4B5563),
-    outline = Color(0xFFE5E7EB)
+private fun schemeFor(p: MikayalaPalette) = if (p.isDark) darkColorScheme(
+    primary = p.accent, onPrimary = p.background,
+    secondary = p.lavender, onSecondary = p.background,
+    tertiary = p.sand,
+    background = p.background, onBackground = p.textPrimary,
+    surface = p.surface, onSurface = p.textPrimary,
+    surfaceVariant = p.surfaceElevated, onSurfaceVariant = p.textSecondary,
+    surfaceContainer = p.surface, surfaceContainerHigh = p.modal,
+    outline = p.borderStrong, outlineVariant = p.border,
+    error = p.danger
+) else lightColorScheme(
+    primary = p.accent, onPrimary = Color.White,
+    secondary = p.lavender, onSecondary = Color.White,
+    tertiary = p.sand,
+    background = p.background, onBackground = p.textPrimary,
+    surface = p.surface, onSurface = p.textPrimary,
+    surfaceVariant = p.surfaceElevated, onSurfaceVariant = p.textSecondary,
+    surfaceContainer = p.surface, surfaceContainerHigh = p.modal,
+    outline = p.borderStrong, outlineVariant = p.border,
+    error = p.danger
 )
 
 @Composable
@@ -48,7 +40,8 @@ fun MikayalaTheme(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val palette = if (darkTheme) SoftDark else SoftLight
+    val colorScheme = schemeFor(palette)
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -64,7 +57,7 @@ fun MikayalaTheme(
             
             activity?.let { act ->
                 val window = act.window
-                val systemColor = if (darkTheme) DeepNight else Color(0xFFF9FAFB)
+                val systemColor = palette.background
                 window.statusBarColor = systemColor.toArgb()
                 window.navigationBarColor = systemColor.toArgb()
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
@@ -73,9 +66,11 @@ fun MikayalaTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    androidx.compose.runtime.CompositionLocalProvider(LocalMikayalaPalette provides palette) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

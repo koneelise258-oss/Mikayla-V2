@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = if (userSettings.isDarkMode) DeepNight else Color.White
+                    color = DeepNight
                 ) {
                     Crossfade(targetState = navigationState, label = "main_navigation_crossfade") { state ->
                         when (state) {

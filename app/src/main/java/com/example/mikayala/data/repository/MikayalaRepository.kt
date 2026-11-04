@@ -141,6 +141,8 @@ class MikayalaRepository(private val context: Context) {
         }
 
         val storedNotifPrivacyMode = prefs.getString("notification_privacy_mode", "romantic") ?: "romantic"
+        // Thème : préférence locale à l'appareil, restaurée avant même la connexion
+        _userSettings.value = _userSettings.value.copy(isDarkMode = prefs.getBoolean("is_dark_mode", _userSettings.value.isDarkMode))
         if (storedUserId.isNotEmpty()) {
             _userSettings.value = _userSettings.value.copy(
                 userId = storedUserId,
@@ -1993,6 +1995,7 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun updateDarkMode(enabled: Boolean) {
+        prefs.edit().putBoolean("is_dark_mode", enabled).apply()
         _userSettings.value = _userSettings.value.copy(isDarkMode = enabled)
     }
 
@@ -2945,7 +2948,7 @@ class MikayalaRepository(private val context: Context) {
             remove("display_name")
             apply()
         }
-        _userSettings.value = com.example.mikayala.data.model.UserSettingsEntity()
+        _userSettings.value = com.example.mikayala.data.model.UserSettingsEntity(isDarkMode = prefs.getBoolean("is_dark_mode", true))
         return@withContext success
     }
 }
