@@ -241,3 +241,33 @@ class ChatDatesTest {
     @Test fun memeJour() { assertTrue(d.sameDay(now, now - 3600_000)) }
     @Test fun autreAnnee() { assertTrue(d.label(now - 400L * 24 * 3600_000, now).contains("2025")) }
 }
+
+class TicTacToeTest {
+    private val t = com.example.mikayala.util.TicTacToe
+
+    @Test fun xCommence() { assertEquals('X', t.nextSymbol(t.EMPTY)) }
+    @Test fun pasSonTour() { assertNull(t.play(t.EMPTY, 0, 'O')) }
+    @Test fun caseOccupee() { val s = t.play(t.EMPTY, 4, 'X')!!; assertNull(t.play(s, 4, 'O')) }
+    @Test fun alternance() { val s = t.play(t.EMPTY, 0, 'X')!!; assertEquals('O', t.nextSymbol(s)) }
+    @Test fun victoireLigne() { assertEquals('X', t.result("XXXOO----")) }
+    @Test fun victoireDiagonale() { assertEquals('O', t.result("OX-XO-X-O")) }
+    @Test fun matchNul() { assertEquals('D', t.result("XOXXOOOXX")) }
+    @Test fun plusDeCoupApresVictoire() { assertNull(t.play("XXXOO----", 8, 'O')) }
+    @Test fun etatInvalideRemisAZero() { assertEquals(t.EMPTY, t.normalize("n'importe quoi")) }
+}
+
+class ChatGamesTest {
+    private val g = com.example.mikayala.util.ChatGames
+
+    @Test fun ancienMessageLisible() { assertEquals("A|B", g.base("A|B")); assertNull(g.state("A|B")) }
+    @Test fun dilemmeChacunSonChoix() {
+        val a = g.dilemmaChoose("A|B", isSender = true, choice = 1)
+        assertEquals(1 to -1, g.dilemmaChoices(a))
+        val b = g.dilemmaChoose(a, isSender = false, choice = 0)
+        assertEquals(1 to 0, g.dilemmaChoices(b))
+        assertEquals("A|B", g.base(b))
+    }
+    @Test fun quizReponse() { assertEquals("La mer", g.quizReply(g.with("Notre voyage", "La mer"))) }
+    @Test fun carteGrattee() { assertFalse(g.isDone(null)); assertTrue(g.isDone(g.with(null, "1"))) }
+    @Test fun roueResultat() { assertEquals(3, g.wheelResult(g.with("a|b|c|d", "3"))) }
+}

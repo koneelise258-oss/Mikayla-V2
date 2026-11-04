@@ -1720,6 +1720,36 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Joue un coup dans un jeu du chat : met à jour l'état (media_url) localement puis sur Supabase,
+     * et prévient le partenaire que c'est son tour. Retourne false si l'enregistrement échoue
+     * (l'état local est alors restauré).
+     */
+    suspend fun playGameMove(messageId: String, newState: String, gameTitle: String): Boolean {
+        val before = _messages.value.firstOrNull { it.id == messageId } ?: return false
+        _messages.value = _messages.value.map { if (it.id == messageId) it.copy(mediaUrl = newState) else it }
+        val ok = supabaseService.updateMessageFields(messageId, JSONObject().apply { put("media_url", newState) })
+        if (!ok) {
+            _messages.value = _messages.value.map { if (it.id == messageId) it.copy(mediaUrl = before.mediaUrl) else it }
+            return false
+        }
+        saveLocalMessagesCache()
+        val couple = _coupleSpace.value
+        val (_, partnerId) = resolveCoupleMembers()
+        if (couple.id.isNotBlank() && partnerId.isNotBlank()) {
+            supabaseService.sendFcmPush(
+                coupleId = couple.id,
+                recipientId = partnerId,
+                type = "game_turn",
+                title = "Mikayala",
+                body = "À toi de jouer",
+                extraData = mapOf("partnerName" to _userSettings.value.displayName.ifBlank { "Mon Amour" }, "gameTitle" to gameTitle, "messageId" to "$messageId:$newState"),
+                hidePreview = false
+            )
+        }
+        return true
+    }
+
     fun editMessage(messageId: String, newContent: String) {
         val now = System.currentTimeMillis()
         _messages.value = _messages.value.map {
