@@ -57,7 +57,7 @@ fun MessageOptionBottomSheet(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Expéditeur : ${if (isFromMe) "Moi (Partenaire 1)" else "Mikayala (Partenaire 2)"}", color = TextSecondary, fontSize = 13.sp)
+                    Text("Expéditeur : ${if (isFromMe) "Vous" else "Votre partenaire"}", color = TextSecondary, fontSize = 13.sp)
                     Text("Date d'envoi : ${dateFormat.format(Date(message.createdAt))}", color = TextSecondary, fontSize = 13.sp)
                     Text("Statut : ${message.status.uppercase()}", color = AccentRose, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     message.readAt?.let {

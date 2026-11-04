@@ -64,6 +64,8 @@ fun MainDashboardScreen(
     // Barre de navigation visible par défaut (masquable depuis le menu ⋮ pour le plein écran)
     var showNavBarInChat by remember { mutableStateOf(true) }
     var showNavDrawerSheet by remember { mutableStateOf(false) }
+    // Recherche / favoris dans la conversation (menu ⋮)
+    var chatSearchMode by remember { mutableStateOf<String?>(null) }
     var showPartnerProfileSheet by remember { mutableStateOf(false) }
     var showOfflineP2PPage by remember { mutableStateOf(false) }
     var activeCallState by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) } // (isActive, isVideo)
@@ -281,6 +283,16 @@ fun MainDashboardScreen(
                                         )
                                         if (selectedTab == 0) {
                                             DropdownMenuItem(
+                                                text = { Text("Rechercher") },
+                                                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                                                onClick = { menuOpen = false; chatSearchMode = "search" }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Messages favoris") },
+                                                leadingIcon = { Icon(Icons.Rounded.Star, contentDescription = null) },
+                                                onClick = { menuOpen = false; chatSearchMode = "starred" }
+                                            )
+                                            DropdownMenuItem(
                                                 text = { Text(if (showNavBarInChat) "Plein écran (masquer la barre)" else "Afficher la barre de navigation") },
                                                 leadingIcon = { Icon(if (showNavBarInChat) Icons.Rounded.Fullscreen else Icons.Rounded.FullscreenExit, contentDescription = null) },
                                                 onClick = { menuOpen = false; showNavBarInChat = !showNavBarInChat }
@@ -461,7 +473,9 @@ fun MainDashboardScreen(
                     when (tab) {
                         0 -> ChatScreen(
                             repository = repository,
-                            onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) }
+                            onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) },
+                            searchMode = chatSearchMode,
+                            onCloseSearch = { chatSearchMode = null }
                         )
                         1 -> CallsScreen(
                             repository = repository,
@@ -630,7 +644,7 @@ fun MainDashboardScreen(
                 repository = repository,
                 onDismiss = { showPartnerProfileSheet = false },
                 onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) },
-                onOpenSearch = { selectedTab = 0 }
+                onOpenSearch = { selectedTab = 0; chatSearchMode = "search" }
             )
         }
 

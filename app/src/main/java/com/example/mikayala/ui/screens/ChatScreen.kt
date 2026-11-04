@@ -75,7 +75,10 @@ import kotlin.math.abs
 @Composable
 fun ChatScreen(
     repository: MikayalaRepository,
-    onStartCall: (isVideo: Boolean) -> Unit
+    onStartCall: (isVideo: Boolean) -> Unit,
+    /** "search" = recherche dans la conversation, "starred" = messages favoris, null = conversation normale. */
+    searchMode: String? = null,
+    onCloseSearch: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -158,6 +161,17 @@ fun ChatScreen(
     val isPartnerTyping by repository.isPartnerTyping.collectAsState()
     val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
     val userSettings by repository.userSettings.collectAsState()
+
+    // Recherche et favoris (menu ⋮ de l'en-tête)
+    var searchQuery by remember(searchMode) { mutableStateOf("") }
+    val shownMessages = remember(messages, searchMode, searchQuery) {
+        when (searchMode) {
+            "starred" -> messages.filter { it.isStarred && !it.isDeletedForEveryone }
+            "search" -> if (searchQuery.isBlank()) messages
+                else messages.filter { !it.isDeletedForEveryone && it.content.contains(searchQuery.trim(), ignoreCase = true) }
+            else -> messages
+        }
+    }
 
     var textInput by remember { mutableStateOf("") }
     var replyToMessage by remember { mutableStateOf<MessageEntity?>(null) }
@@ -335,6 +349,34 @@ fun ChatScreen(
                 }
             }
 
+            // Barre de recherche / favoris
+            if (searchMode != null) {
+                Surface(color = com.example.mikayala.theme.MikayalaColors.surface, modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onCloseSearch) { Icon(Icons.Rounded.ArrowBack, contentDescription = "Fermer", tint = TextPrimary) }
+                        if (searchMode == "search") {
+                            TextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Rechercher dans la conversation") },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                                    focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = AccentRose
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            Text("Messages favoris", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, modifier = Modifier.weight(1f))
+                        }
+                        if (searchMode == "starred" || searchQuery.isNotBlank()) {
+                            Text("${shownMessages.size}", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(end = 12.dp))
+                        }
+                    }
+                }
+            }
+
             // Message List
             val chatCurrentUid = remember(messages.size) { repository.getCurrentUserId() }
             LazyColumn(
@@ -346,7 +388,16 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(top = 10.dp, bottom = 10.dp)
             ) {
-                if (messages.isEmpty()) {
+                if (searchMode != null && shownMessages.isEmpty()) {
+                    item(key = "empty_search") {
+                        com.example.mikayala.ui.components.SoftEmptyState(
+                            icon = if (searchMode == "starred") Icons.Rounded.StarBorder else Icons.Rounded.Search,
+                            title = if (searchMode == "starred") "Aucun message favori" else "Aucun résultat",
+                            message = if (searchMode == "starred") "Appuyez longuement sur un message puis choisissez « favori » pour le retrouver ici." else "Essayez avec un autre mot."
+                        )
+                    }
+                }
+                if (searchMode == null && messages.isEmpty()) {
                     item(key = "empty_chat") {
                         com.example.mikayala.ui.components.SoftEmptyState(
                             icon = Icons.Rounded.ChatBubbleOutline,
@@ -355,9 +406,9 @@ fun ChatScreen(
                         )
                     }
                 }
-                itemsIndexed(messages, key = { _, m -> m.id }) { index, message ->
+                itemsIndexed(shownMessages, key = { _, m -> m.id }) { index, message ->
                     // Séparateur de date (Aujourd'hui / Hier / date) lorsque le jour change
-                    val previous = if (index > 0) messages[index - 1] else null
+                    val previous = if (index > 0) shownMessages[index - 1] else null
                     if (previous == null || !com.example.mikayala.util.ChatDates.sameDay(previous.createdAt, message.createdAt)) {
                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
                             Surface(shape = RoundedCornerShape(10.dp), color = com.example.mikayala.theme.MikayalaColors.surfaceElevated) {
