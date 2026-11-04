@@ -60,7 +60,6 @@ fun SettingsScreen(
     // Dialog & BottomSheet state toggles
     var showProfileModal by remember { mutableStateOf(false) }
     var showAppIconModal by remember { mutableStateOf(false) }
-    var showStorageModal by remember { mutableStateOf(false) }
     var showPinDialog by remember { mutableStateOf(false) }
     var showDecoyPinDialog by remember { mutableStateOf(false) }
     var showPairingDialog by remember { mutableStateOf(false) }
@@ -449,79 +448,7 @@ fun SettingsScreen(
 
 
     // 9. Storage Manager Modal
-    if (showStorageModal) {
-        val totalMsgs = messages.size
-        val totalVault = vaultItems.size
 
-        Dialog(onDismissRequest = { showStorageModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Text(text = "Gestionnaire de Stockage & Cache 📦", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text(text = "Visualisez et optimisez l'espace utilisé par l'application.", fontSize = 12.sp, color = TextSecondary)
-
-                    // Storage breakdown card
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = CardDarkElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Discussions & Textes", fontSize = 12.sp, color = TextSecondary)
-                                Text("$totalMsgs messages (1.2 Mo)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = VibrantCyan)
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Coffre Secret & Photos HD", fontSize = 12.sp, color = TextSecondary)
-                                Text("$totalVault éléments (14.8 Mo)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRose)
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Cache Médias Temporaires", fontSize = 12.sp, color = TextSecondary)
-                                Text("4.6 Mo", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentGold)
-                            }
-                        }
-                    }
-
-                    // Clean Cache Button
-                    Button(
-                        onClick = {
-                            Toast.makeText(context, "4.6 Mo de cache temporaire nettoyés ! 🧹", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Vider le Cache des Médias (4.6 Mo)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-
-                    // Clear Chat Button
-                    OutlinedButton(
-                        onClick = {
-                            showStorageModal = false
-                            showClearChatDialog = true
-                        },
-                        border = BorderStroke(1.dp, Color(0xFFC4605C)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Effacer tout l'historique des messages 🗑️", color = Color(0xFFC4605C), fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-    }
 
     // 10. Anniversary & Couple Date Modal
     if (showAnniversaryDialog) {
@@ -770,6 +697,7 @@ fun SettingsScreen(
                             "appearance" -> "Apparence"
                             "calendar_cycle" -> "Calendrier et cycle"
                             "games" -> "Jeux"
+                            "storage" -> "Stockage et données"
                             else -> "P2P et connexion locale"
                         },
                         fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary
@@ -865,6 +793,44 @@ fun SettingsScreen(
             }
         }
 
+        if (section == "storage") {
+            item {
+                var usage by remember { mutableStateOf<com.example.mikayala.util.StorageStats.Usage?>(null) }
+                var refresh by remember { mutableIntStateOf(0) }
+                LaunchedEffect(refresh) {
+                    usage = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.mikayala.util.StorageStats.measure(context) }
+                }
+                val fmt = com.example.mikayala.util.StorageStats::format
+                Column {
+                    SettingsGroupTitle("Sur cet appareil")
+                    val u = usage
+                    if (u == null) {
+                        com.example.mikayala.ui.components.SoftLoading("Calcul de l'espace utilisé…")
+                    } else {
+                        SettingsInfoRow("Total utilisé", fmt(u.totalBytes))
+                        SettingsInfoRow("Cache (images, fichiers temporaires)", fmt(u.cacheBytes))
+                        SettingsInfoRow("Fichiers de l'application", fmt(u.filesBytes))
+                        SettingsInfoRow("Données locales", fmt(u.databasesBytes))
+                    }
+                    SettingsInfoRow("Messages chargés", "${messages.size}")
+                    SettingsInfoRow("Éléments du coffre", "${vaultItems.size}")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SettingsCategoryRow(Icons.Rounded.CleaningServices, AccentGold, "Vider le cache", "Libère de la place. Les messages, le coffre et vos réglages ne sont pas touchés.") {
+                        scope.launch {
+                            val freed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.mikayala.util.StorageStats.clearCache(context) }
+                            Toast.makeText(context, "${fmt(freed)} libérés", Toast.LENGTH_SHORT).show()
+                            refresh++
+                        }
+                    }
+                    SettingsCategoryRow(Icons.Rounded.DeleteSweep, Color(0xFFC4605C), "Effacer toutes les discussions", "Une confirmation sera demandée") { showClearChatDialog = true }
+                    Text(
+                        "Les messages et le coffre sont sauvegardés sur le serveur du couple : ils reviennent après une réinstallation.",
+                        fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(4.dp)
+                    )
+                }
+            }
+        }
+
         if (section == "calls") {
             item {
                 Column {
@@ -910,7 +876,7 @@ fun SettingsScreen(
                     SettingsCategoryRow(Icons.Rounded.Notifications, AccentGold, "Notifications", "Aperçus, son, vibration, catégories") { section = "notifications" }
                     SettingsCategoryRow(Icons.Rounded.Chat, VibrantCyan, "Conversations", "Fond d'écran, bulles, police, médias") { section = "conversations" }
                     SettingsCategoryRow(Icons.Rounded.Call, VibrantCyan, "Appels", "Notifications d'appel, micro et caméra") { section = "calls" }
-                    SettingsCategoryRow(Icons.Rounded.Storage, TextSecondary, "Stockage et données", "Espace utilisé, cache, sauvegardes") { showStorageModal = true }
+                    SettingsCategoryRow(Icons.Rounded.Storage, TextSecondary, "Stockage et données", "Espace utilisé, cache, sauvegardes") { section = "storage" }
                     SettingsCategoryRow(Icons.Rounded.Palette, AccentRose, "Apparence", "Thème sombre ou clair, icône de l'application") { section = "appearance" }
                     SettingsCategoryRow(Icons.Rounded.CalendarMonth, AccentRose, "Calendrier et cycle", "Anniversaire, rappels, notifications du cycle") { section = "calendar_cycle" }
                     SettingsCategoryRow(Icons.Rounded.SportsEsports, AccentGold, "Jeux", "Notifications d'invitation et de tour") { section = "games" }
@@ -1617,6 +1583,17 @@ fun SettingsScreen(
             containerColor = CardDark,
             shape = RoundedCornerShape(20.dp)
         )
+    }
+}
+
+@Composable
+private fun SettingsInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 15.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
     }
 }
 
