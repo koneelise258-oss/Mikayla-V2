@@ -994,9 +994,8 @@ fun SettingsScreen(
         if (section == "appearance" || section == "conversations") {
         item {
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardDark,
-                border = BorderStroke(0.5.dp, BorderSubtleWhite),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Transparent,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1004,7 +1003,7 @@ fun SettingsScreen(
                     SettingRow(
                         icon = Icons.Rounded.AppShortcut,
                         iconTint = AccentGold,
-                        title = "Changer l'Icône de l'Application",
+                        title = "Icône de l'application",
                         subtitle = "10 icônes au choix pour l'écran d'accueil",
                         onClick = { showAppIconModal = true }
                     )
@@ -1042,9 +1041,8 @@ fun SettingsScreen(
         if (section == "couple" || section == "calendar_cycle") {
         item {
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardDark,
-                border = BorderStroke(0.5.dp, BorderSubtleWhite),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Transparent,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1052,8 +1050,8 @@ fun SettingsScreen(
                     SettingRow(
                         icon = Icons.Rounded.Loyalty,
                         iconTint = AccentRose,
-                        title = "Surnom du Partenaire & Profils",
-                        subtitle = "Personnaliser son surnom ('${settings.partnerNickname}') et avatar",
+                        title = "Profils et surnoms",
+                        subtitle = "Votre nom, photo et statut ; surnom de votre partenaire (${settings.partnerNickname})",
                         onClick = { showProfileModal = true }
                     )
                     }
@@ -1062,8 +1060,8 @@ fun SettingsScreen(
                     SettingRow(
                         icon = Icons.Rounded.FavoriteBorder,
                         iconTint = AccentRose,
-                        title = "Date d'Anniversaire & Citation",
-                        subtitle = "Compteur de relation et devise d'amour",
+                        title = "Date de rencontre et anniversaire",
+                        subtitle = "Compteur de jours ensemble et phrase du couple",
                         onClick = { showAnniversaryDialog = true }
                     )
                     }
@@ -1091,8 +1089,8 @@ fun SettingsScreen(
                     SettingRow(
                         icon = Icons.Rounded.QrCode,
                         iconTint = AccentViolet,
-                        title = "Code de Jumelage Couple (${coupleSpace.pairingCode})",
-                        subtitle = "Gérer la liaison ou scanner le QR code",
+                        title = "Code du couple : ${coupleSpace.pairingCode}",
+                        subtitle = "Afficher ou scanner le code QR du couple",
                         onClick = { showPairingDialog = true }
                     )
                     }
@@ -1101,8 +1099,8 @@ fun SettingsScreen(
                     SettingRow(
                         icon = Icons.Rounded.AutoAwesome,
                         iconTint = VibrantCyan,
-                        title = "Module d'Onboarding & Jumelage Multi-appareils",
-                        subtitle = "Créer, rejoindre, lier une tablette ou restaurer l'espace",
+                        title = "Autres appareils",
+                        subtitle = "Lier une tablette, rejoindre ou restaurer l'espace du couple",
                         onClick = { showOnboardingScreen = true }
                     )
                     }
@@ -1111,8 +1109,8 @@ fun SettingsScreen(
                     SettingRow(
                         icon = Icons.Rounded.CloudSync,
                         iconTint = VibrantCyan,
-                        title = "Base de Données Supabase (Cloud & Realtime)",
-                        subtitle = "Configurer l'URL Supabase, la clé API & tester le serveur",
+                        title = "Serveur (avancé)",
+                        subtitle = "Adresse du serveur et test de connexion — à ne modifier que sur conseil",
                         onClick = { showSupabaseDialog = true }
                     )
                     }
@@ -1757,33 +1755,26 @@ private fun SettingRow(
     subtitle: String,
     onClick: () -> Unit
 ) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
-        color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth()
+    // Même présentation que SettingsCategoryRow : une seule grammaire visuelle dans les Paramètres
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(iconTint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(iconTint.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(imageVector = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                Text(text = subtitle, fontSize = 11.sp, color = TextSecondary, maxLines = 1)
-            }
-            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
+            Icon(imageVector = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
         }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Text(text = subtitle, fontSize = 13.sp, color = TextSecondary, maxLines = 2)
+        }
+        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextMuted, modifier = Modifier.size(20.dp))
     }
 }
