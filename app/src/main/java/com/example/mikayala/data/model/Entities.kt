@@ -53,6 +53,7 @@ data class LoveMilestoneEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class LoveCouponEntity(
     val id: String,
     val title: String,
@@ -63,6 +64,7 @@ data class LoveCouponEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class CoupleBucketItemEntity(
     val id: String,
     val title: String,
@@ -87,6 +89,7 @@ data class LoveCapsuleEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class TruthOrDareEntity(
     val id: String,
     val type: String, // "truth", "dare"
@@ -95,6 +98,7 @@ data class TruthOrDareEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class CoupleDilemmaEntity(
     val id: String,
     val optionA: String,
@@ -247,6 +251,7 @@ data class CallLogEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class QuizItemEntity(
     val id: String,
     val question: String,

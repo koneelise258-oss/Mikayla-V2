@@ -120,6 +120,7 @@ class MikayalaRepository(private val context: Context) {
     init {
         // Préférences d'interface de l'appareil : restaurées avant tout, puis enregistrées à chaque changement
         _userSettings.value = com.example.mikayala.data.UiPreferencesStore.load(prefs, _userSettings.value)
+        restoreAndPersistLocalGames()
         repositoryScope.launch {
             _userSettings.collect { com.example.mikayala.data.UiPreferencesStore.save(prefs, it) }
         }
@@ -2034,6 +2035,35 @@ class MikayalaRepository(private val context: Context) {
     fun updateDarkMode(enabled: Boolean) {
         prefs.edit().putBoolean("is_dark_mode", enabled).apply()
         _userSettings.value = _userSettings.value.copy(isDarkMode = enabled)
+    }
+
+    /**
+     * Jeux et listes de l'espace Couple (bons d'amour, liste de rêves, quiz, Tu préfères, Action ou vérité) :
+     * ils n'existent pas côté Supabase. Ils sont désormais enregistrés SUR L'APPAREIL (ils survivaient
+     * auparavant seulement tant que l'application restait ouverte). Ils ne sont pas encore partagés
+     * avec le partenaire : cela demande des tables Supabase dédiées (décision à prendre).
+     */
+    private val localGamesJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+    private inline fun <reified T> restoreList(key: String, flow: MutableStateFlow<List<T>>) {
+        val raw = prefs.getString(key, null) ?: return
+        try { flow.value = localGamesJson.decodeFromString<List<T>>(raw) } catch (e: Exception) {
+            Log.w("MikayalaRepo", "Lecture impossible de $key : ${e.message}")
+        }
+    }
+
+    private inline fun <reified T> persistList(key: String, flow: MutableStateFlow<List<T>>) {
+        repositoryScope.launch {
+            flow.collect { list -> prefs.edit().putString(key, localGamesJson.encodeToString(list)).apply() }
+        }
+    }
+
+    private fun restoreAndPersistLocalGames() {
+        restoreList("local_game_coupons", _coupons); persistList("local_game_coupons", _coupons)
+        restoreList("local_game_bucket", _bucketList); persistList("local_game_bucket", _bucketList)
+        restoreList("local_game_quiz", _quizItems); persistList("local_game_quiz", _quizItems)
+        restoreList("local_game_dilemmas", _dilemmas); persistList("local_game_dilemmas", _dilemmas)
+        restoreList("local_game_truth_dare", _truthOrDare); persistList("local_game_truth_dare", _truthOrDare)
     }
 
     /**
