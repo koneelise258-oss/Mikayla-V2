@@ -359,7 +359,7 @@ private fun AttachmentSquircleButton(item: AttachmentGridItem) {
                         )
                     )
                 ),
-                shadowElevation = 8.dp,
+                shadowElevation = 1.dp,
                 modifier = Modifier.size(56.dp)
             ) {
                 Box(

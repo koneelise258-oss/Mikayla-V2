@@ -44,7 +44,7 @@ fun NeumorphicSquircleButton(
         shape = RoundedCornerShape(14.dp),
         color = backgroundColor,
         border = BorderStroke(1.dp, MatteSquircleBorder),
-        shadowElevation = 4.dp,
+        shadowElevation = 1.dp,
         modifier = modifier.size(size)
     ) {
         Box(
@@ -84,7 +84,7 @@ fun GlowingGradientButton(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         color = Color.Transparent,
-        shadowElevation = 8.dp,
+        shadowElevation = 1.dp,
         modifier = modifier
             .height(52.dp)
             .shadow(

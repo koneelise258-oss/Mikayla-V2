@@ -796,7 +796,7 @@ private fun MessageBubble(
                 Surface(
                     shape = CircleShape,
                     color = VibrantCyan,
-                    shadowElevation = 4.dp,
+                    shadowElevation = 1.dp,
                     modifier = Modifier.size(32.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -828,7 +828,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(20.dp),
                     color = CardDarkElevated,
                     border = BorderStroke(1.dp, BorderSubtleWhite),
-                    shadowElevation = 8.dp,
+                    shadowElevation = 1.dp,
                     modifier = Modifier.padding(bottom = 6.dp)
                 ) {
                     Row(
@@ -986,7 +986,7 @@ private fun MessageBubble(
                             shape = RoundedCornerShape(14.dp),
                             color = CardDarkElevated,
                             border = BorderStroke(1.dp, BorderSubtleWhite),
-                            shadowElevation = 3.dp,
+                            shadowElevation = 1.dp,
                             modifier = Modifier.padding(bottom = 2.dp)
                         ) {
                             Row(
@@ -1476,7 +1476,7 @@ private fun MessageBubble(
                             shape = RoundedCornerShape(14.dp),
                             color = CardDarkElevated,
                             border = BorderStroke(1.dp, BorderSubtleWhite),
-                            shadowElevation = 3.dp,
+                            shadowElevation = 1.dp,
                             modifier = Modifier.padding(bottom = 3.dp)
                         ) {
                             Row(
@@ -1520,7 +1520,7 @@ private fun MessageBubble(
                 shape = RoundedCornerShape(24.dp),
                 color = CardModalSurface,
                 border = BorderStroke(1.dp, MatteSquircleBorder),
-                shadowElevation = 12.dp,
+                shadowElevation = 1.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(420.dp)
@@ -1746,7 +1746,7 @@ fun ImageMessageItem(
                 shape = RoundedCornerShape(14.dp),
                 color = CardDarkElevated,
                 border = BorderStroke(1.dp, BorderSubtleWhite),
-                shadowElevation = 3.dp,
+                shadowElevation = 1.dp,
                 modifier = Modifier.padding(bottom = 2.dp)
             ) {
                 Row(
@@ -1840,7 +1840,7 @@ fun VideoMessageItem(
                         Surface(
                             shape = CircleShape,
                             color = VibrantCyan,
-                            shadowElevation = 6.dp,
+                            shadowElevation = 1.dp,
                             modifier = Modifier.size(52.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
@@ -1921,7 +1921,7 @@ fun VideoMessageItem(
                 shape = RoundedCornerShape(14.dp),
                 color = CardDarkElevated,
                 border = BorderStroke(1.dp, BorderSubtleWhite),
-                shadowElevation = 3.dp,
+                shadowElevation = 1.dp,
                 modifier = Modifier.padding(bottom = 2.dp)
             ) {
                 Row(

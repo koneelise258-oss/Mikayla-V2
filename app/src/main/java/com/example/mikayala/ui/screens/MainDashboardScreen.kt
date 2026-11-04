@@ -395,7 +395,7 @@ fun MainDashboardScreen(
                                 shape = CircleShape,
                                 color = CardDarkElevated,
                                 border = BorderStroke(1.dp, BorderSubtleWhite),
-                                shadowElevation = 6.dp,
+                                shadowElevation = 1.dp,
                                 modifier = Modifier
                                     .padding(bottom = 6.dp)
                                     .clip(CircleShape)

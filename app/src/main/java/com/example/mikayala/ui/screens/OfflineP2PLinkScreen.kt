@@ -439,7 +439,7 @@ fun OfflineP2PLinkScreen(
                                     .clickable {
                                         Toast.makeText(context, "QR Code prêt ! Scanner avec l'autre appareil.", Toast.LENGTH_SHORT).show()
                                     },
-                                shadowElevation = 8.dp
+                                shadowElevation = 1.dp
                             ) {
                                 Box(
                                     modifier = Modifier

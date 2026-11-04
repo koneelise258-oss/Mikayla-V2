@@ -410,7 +410,7 @@ fun VoiceNoteRecorder(
                         1.dp,
                         if (isLockThresholdMet) AccentRose else VibrantCyan
                     ),
-                    shadowElevation = 8.dp,
+                    shadowElevation = 1.dp,
                     modifier = Modifier
                         .offset(y = (-64).dp)
                         .padding(bottom = 6.dp)
@@ -444,7 +444,7 @@ fun VoiceNoteRecorder(
             Surface(
                 shape = CircleShape,
                 color = Color.Transparent,
-                shadowElevation = 6.dp,
+                shadowElevation = 1.dp,
                 modifier = Modifier
                     .size(46.dp)
                     // Gestion gestuelle WhatsApp (Hold & Drag) quand il n'y a pas de texte tapé
