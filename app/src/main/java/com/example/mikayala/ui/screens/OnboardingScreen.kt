@@ -127,7 +127,7 @@ fun OnboardingScreen(
                 if (partnerName != null) {
                     isPartnerConnected = true
                     isWaitingPartner = false
-                    Toast.makeText(context, "$partnerName vient de se connecter ! ❤️", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "$partnerName vient de se connecter", Toast.LENGTH_LONG).show()
                     break
                 }
             }
@@ -284,9 +284,9 @@ fun OnboardingScreen(
                                         generatedCode = newCode
                                         isWaitingPartner = true
                                         repository.updateProfile(createName.ifEmpty { "Partenaire 1" }, "En ligne", "", avatarPresets[selectedAvatarIndex])
-                                        Toast.makeText(context, "Espace Supabase créé avec succès ! ✨", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Espace Supabase créé avec succès", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "Erreur Supabase : impossible de créer l'espace. Vérifiez les logs. ❌", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Erreur Supabase : impossible de créer l'espace. Vérifiez les logs.", Toast.LENGTH_LONG).show()
                                     }
                                 }
                             },
@@ -317,7 +317,7 @@ fun OnboardingScreen(
                                     isJoiningLoading = false
                                     if (joined) {
                                         repository.updatePartnerProfile(joinName.ifEmpty { "Partenaire" }, "En ligne", "💖")
-                                        Toast.makeText(context, "Espace rejoint via Supabase ! 💖", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Espace rejoint via Supabase", Toast.LENGTH_SHORT).show()
                                         onCompleteOnboarding()
                                     } else {
                                         joinErrorMessage = "Impossible de se connecter à l'espace avec ce code."
@@ -347,7 +347,7 @@ fun OnboardingScreen(
                                     isLinkingLoading = false
                                     linkSuccess = linked
                                     if (linked) {
-                                        Toast.makeText(context, "Tablette synchronisée via Supabase ! 📱", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Tablette synchronisée via Supabase", Toast.LENGTH_LONG).show()
                                     } else {
                                         linkError = "Échec de la liaison avec le serveur Supabase."
                                     }
@@ -374,7 +374,7 @@ fun OnboardingScreen(
                                     delay(1800)
                                     isRecoveryLoading = false
                                     recoverySuccess = true
-                                    Toast.makeText(context, "Espace restauré intégralement ! 🔑", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Espace restauré intégralement", Toast.LENGTH_LONG).show()
                                 }
                             },
                             onComplete = onCompleteOnboarding
@@ -404,7 +404,7 @@ fun OnboardingScreen(
                 onCodeScanned = { scannedCode ->
                     joinCode = scannedCode
                     showCameraScanner = false
-                    Toast.makeText(context, "Code scanné : $scannedCode 📷", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Code scanné : $scannedCode", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -702,7 +702,7 @@ fun CreateSpaceView(
                     .clickable {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Code Mikayala", generatedCode))
-                        Toast.makeText(context, "Code copié : $generatedCode 📋", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Code copié : $generatedCode", Toast.LENGTH_SHORT).show()
                     }
             ) {
                 Row(

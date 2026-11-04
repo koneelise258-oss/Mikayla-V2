@@ -480,7 +480,7 @@ fun FloCycleTrackerView(
                                     color = CardDarkElevated,
                                     border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                     modifier = Modifier.clickable {
-                                        Toast.makeText(context, "Super idée d'attention : $suggestion ! ❤️", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Super idée d'attention : $suggestion", Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
                                     Text(
@@ -794,7 +794,7 @@ fun FloCycleTrackerView(
                                 )
                                 repository.saveCycleDailyLog(newLog)
                                 showLogDayDialog = false
-                                Toast.makeText(context, "Journal enregistré ! 🌸", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Journal enregistré", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1.3f)
                         )

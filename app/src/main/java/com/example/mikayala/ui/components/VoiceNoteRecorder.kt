@@ -303,7 +303,7 @@ fun VoiceNoteRecorder(
                         IconButton(
                             onClick = {
                                 manager.cancelRecording()
-                                Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Enregistrement annulé", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.size(36.dp)
                         ) {
@@ -516,7 +516,7 @@ fun VoiceNoteRecorder(
                                             isCancelled = true
                                             manager.cancelRecording()
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Enregistrement annulé", Toast.LENGTH_SHORT).show()
                                             break
                                         }
 
@@ -549,7 +549,7 @@ fun VoiceNoteRecorder(
                                         } else {
                                             // Appui accidentel trop court (< 800ms)
                                             manager.cancelRecording()
-                                            Toast.makeText(context, "Maintenez le micro pour enregistrer 🎙️", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Maintenez le micro pour enregistrer", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }

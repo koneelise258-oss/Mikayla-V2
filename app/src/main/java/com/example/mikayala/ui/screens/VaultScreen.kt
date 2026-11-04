@@ -200,7 +200,7 @@ fun VaultScreen(
                             if (newTitle.isNotBlank()) {
                                 repository.addVaultItem(newTitle, newType, selectedCategory, newCaption)
                                 showAddDialog = false
-                                Toast.makeText(context, "Souvenir sauvegardé dans le Coffre ! 🔒", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Souvenir sauvegardé dans le Coffre", Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentRose),

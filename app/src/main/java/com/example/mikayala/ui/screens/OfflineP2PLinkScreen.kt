@@ -89,10 +89,10 @@ fun OfflineP2PLinkScreen(
     LaunchedEffect(p2pState) {
         when (val state = p2pState) {
             is P2PState.Connected -> {
-                Toast.makeText(context, "⚡ Connecté avec succès à ${state.partnerName} !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Connecté avec succès à ${state.partnerName}", Toast.LENGTH_SHORT).show()
             }
             is P2PState.Error -> {
-                Toast.makeText(context, "⚠️ ${state.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "${state.message}", Toast.LENGTH_LONG).show()
             }
             else -> {}
         }

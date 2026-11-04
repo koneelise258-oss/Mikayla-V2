@@ -550,7 +550,7 @@ fun LoveTimeView(
                                     loveQuote = tempQuote.ifBlank { "Pour toujours et à jamais." }
                                 )
                                 showEditSettingsDialog = false
-                                Toast.makeText(context, "Love Time mis à jour ! ❤️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Love Time mis à jour", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1.3f)
                         )

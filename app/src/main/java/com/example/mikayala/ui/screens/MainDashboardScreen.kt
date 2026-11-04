@@ -337,7 +337,7 @@ fun MainDashboardScreen(
                                             .clickable {
                                                 if (!isOnline) {
                                                     repository.updateConnectionMode(ConnectionMode.ONLINE)
-                                                    Toast.makeText(context, "Mode En Ligne activé 🌐", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "Mode En Ligne activé", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                     ) {

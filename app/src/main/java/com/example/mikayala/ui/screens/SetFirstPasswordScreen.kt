@@ -68,7 +68,7 @@ fun SetFirstPasswordScreen(
                     if (updated == firstPin) {
                         repository.updatePinCode(updated)
                         repository.setPairingSetupCompleted(true)
-                        Toast.makeText(context, "Code secret enregistré avec succès ! 🔒", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Code secret enregistré avec succès", Toast.LENGTH_SHORT).show()
                         onPasswordSet()
                     } else {
                         isError = true

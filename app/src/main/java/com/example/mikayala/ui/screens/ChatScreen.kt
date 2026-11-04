@@ -126,7 +126,7 @@ fun ChatScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            Toast.makeText(context, "Microphone activé 🎙️ Vous pouvez enregistrer", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Microphone activé Vous pouvez enregistrer", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(context, "Permission microphone requise pour les vocaux", Toast.LENGTH_SHORT).show()
         }
@@ -149,7 +149,7 @@ fun ChatScreen(
                 type = "document",
                 mediaUrl = uri.toString()
             )
-            Toast.makeText(context, "Document partagé ! 📄", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Document partagé", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -625,7 +625,7 @@ fun ChatScreen(
                 },
                 onSendVoiceNote = { file, duration ->
                     repository.sendVoiceNote(file.absolutePath, duration)
-                    Toast.makeText(context, "Vocal en cours d'envoi... 🎙️", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Vocal en cours d'envoi...", Toast.LENGTH_SHORT).show()
                 },
                 onRequestRecordPermission = {
                     recordAudioLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
@@ -681,12 +681,12 @@ fun ChatScreen(
                 onSendLocation = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Notre café romantique préféré 📍", type = "location", mediaUrl = "48.8566, 2.3522")
-                    Toast.makeText(context, "Position partagée 📍", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Position partagée", Toast.LENGTH_SHORT).show()
                 },
                 onSendContact = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Mikayala ❤️ (+33 6 12 34 56 78)", type = "contact")
-                    Toast.makeText(context, "Fiche contact partagée 👤", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Fiche contact partagée", Toast.LENGTH_SHORT).show()
                 },
                 onSendDocument = {
                     showAttachmentSheet = false
@@ -694,34 +694,34 @@ fun ChatScreen(
                         documentLauncher.launch("*/*")
                     } catch (e: Exception) {
                         repository.sendMessage(content = "Nos_Billets_Weekend_Rome.pdf 📄 (2.4 Mo)", type = "document")
-                        Toast.makeText(context, "Document chiffré partagé 📄", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Document chiffré partagé", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onSendAudio = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Chanson de notre première danse 🎵", type = "audio", duration = 42)
-                    Toast.makeText(context, "Morceau audio partagé 🎧", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Morceau audio partagé", Toast.LENGTH_SHORT).show()
                 },
                 onSendPoll = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Ce soir pour notre date ? 🍽️", type = "poll", mediaUrl = "Italien aux chandelles 🍝|Sushi fait maison 🍣|Soirée Burgers & Plaid 🍔")
-                    Toast.makeText(context, "Sondage de couple lancé 📊", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Sondage de couple lancé", Toast.LENGTH_SHORT).show()
                 },
                 onSendEvent = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Escapade Weekend Spa & Jacuzzi 🧖‍♀️ (Ce Samedi à 18h)", type = "event")
-                    Toast.makeText(context, "Événement de couple planifié 📅", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Événement de couple planifié", Toast.LENGTH_SHORT).show()
                 },
                 onSendAiImage = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Portrait d'art magique de nous deux sous les étoiles ✨🎨", type = "ai_image")
-                    Toast.makeText(context, "Image d'IA générée ✨", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Image d'IA générée", Toast.LENGTH_SHORT).show()
                 },
                 // Chat Games
                 onSendScratchCard = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "🎁 Carte Mystère : Massage du dos sensuel aux huiles chaudes (20 min) 💆‍♂️", type = "scratch_card")
-                    Toast.makeText(context, "Carte à gratter envoyée 🎴", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Carte à gratter envoyée", Toast.LENGTH_SHORT).show()
                 },
                 onSendTruthOrDare = {
                     showAttachmentSheet = false
@@ -732,32 +732,32 @@ fun ChatScreen(
                         "✨ Vérité : Quel est ton fantasme secret pour notre prochain voyage à deux ?"
                     )
                     repository.sendMessage(content = challenges.random(), type = "truth_or_dare")
-                    Toast.makeText(context, "Défi Action ou Vérité lancé 🔥", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Défi Action ou Vérité lancé", Toast.LENGTH_SHORT).show()
                 },
                 onSendQuiz = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "🧠 Quiz Complicité : Quel est notre souvenir commun le plus émouvant ?", type = "quiz", mediaUrl = "Notre premier voyage en bord de mer au clair de lune.")
-                    Toast.makeText(context, "Quiz de couple envoyé 🧠", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Quiz de couple envoyé", Toast.LENGTH_SHORT).show()
                 },
                 onSendTicTacToe = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Partie de Morpion de Couple ! ⭕❌", type = "tictactoe", mediaUrl = "---------")
-                    Toast.makeText(context, "Partie de Morpion lancée dans le chat ⭕❌", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Partie de Morpion lancée dans le chat ⭕", Toast.LENGTH_SHORT).show()
                 },
                 onSendDilemma = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Tu Préfères ? ⚖️", type = "dilemma", mediaUrl = "Un voyage surprise à Venise en gondole 🛶|Un chalet isolé au coin du feu sous la neige ❄️")
-                    Toast.makeText(context, "Dilemme envoyé ⚖️", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Dilemme envoyé", Toast.LENGTH_SHORT).show()
                 },
                 onSendLoveCoupon = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "🎟️ Bon d'Amour : Joker Câlin Infini sans condition ! Valable à tout moment ❤️", type = "coupon")
-                    Toast.makeText(context, "Bon d'Amour offert 🎟️💖", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Bon d'Amour offert", Toast.LENGTH_SHORT).show()
                 },
                 onSendWheel = {
                     showAttachmentSheet = false
                     repository.sendMessage(content = "Roue de la Fortune d'Amour 🎡", type = "wheel", mediaUrl = "Massage 💆|Dîner aux chandelles 🍷|Soirée Film 🎬|Cuisiner ensemble 🍳|Baiser doux 💋|Vérité Intime 🤫")
-                    Toast.makeText(context, "Roue de la Fortune lancée ! 🎡", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Roue de la Fortune lancée", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -820,7 +820,7 @@ fun ChatScreen(
                             onComplete = { webpBytes, caption, isViewOnce ->
                                 activeMediaEditorTarget = null
                                 repository.sendEditedImageMedia(webpBytes, caption, isViewOnce)
-                                Toast.makeText(context, "Photo éditée en cours d'envoi... 🖼️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Photo éditée en cours d'envoi...", Toast.LENGTH_SHORT).show()
                             }
                         )
                     }
@@ -831,7 +831,7 @@ fun ChatScreen(
                             onComplete = { webpBytes, caption, isViewOnce ->
                                 activeMediaEditorTarget = null
                                 repository.sendEditedImageMedia(webpBytes, caption, isViewOnce)
-                                Toast.makeText(context, "Photo caméra éditée en cours d'envoi... 📸", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Photo caméra éditée en cours d'envoi...", Toast.LENGTH_SHORT).show()
                             }
                         )
                     }
@@ -842,7 +842,7 @@ fun ChatScreen(
                             onComplete = { exportedFile, caption ->
                                 activeMediaEditorTarget = null
                                 repository.sendEditedVideoMedia(exportedFile, caption)
-                                Toast.makeText(context, "Vidéo éditée en cours d'envoi... 🎬", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Vidéo éditée en cours d'envoi...", Toast.LENGTH_SHORT).show()
                             }
                         )
                     }
@@ -914,7 +914,7 @@ private fun MessageBubble(
                         if (newOffset > 40f && !replyTriggered) {
                             replyTriggered = true
                             onReply()
-                            Toast.makeText(context, "Répondre au message 💬", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Répondre au message", Toast.LENGTH_SHORT).show()
                         }
                     }
                 )

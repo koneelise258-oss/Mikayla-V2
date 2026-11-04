@@ -388,7 +388,7 @@ fun CoupleCalendarView(
             onConfirm = { title, date, category, note ->
                 repository.addEvent(title, date, category, note)
                 showAddEventDialog = false
-                Toast.makeText(context, "Événement ajouté au calendrier ! ❤️", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Événement ajouté au calendrier", Toast.LENGTH_SHORT).show()
             }
         )
     }

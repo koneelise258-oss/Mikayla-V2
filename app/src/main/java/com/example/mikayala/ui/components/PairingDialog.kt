@@ -151,7 +151,7 @@ fun PairingDialog(
                                         .clickable {
                                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                             clipboard.setPrimaryClip(ClipData.newPlainText("Code Jumelage", currentPairingCode))
-                                            Toast.makeText(context, "Code copié ! 📋", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Code copié", Toast.LENGTH_SHORT).show()
                                         }
                                 ) {
                                     Row(

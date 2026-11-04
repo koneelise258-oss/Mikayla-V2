@@ -223,7 +223,7 @@ private fun ScratchCardGameSection(repository: MikayalaRepository) {
                                             scratchedPoints = scratchedPoints + change.position
                                             if (scratchedPoints.size > 80) {
                                                 isRevealed = true
-                                                Toast.makeText(context, "Surprise révélée ! Félicitations ! ❤️", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Surprise révélée! Félicitations", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -293,7 +293,7 @@ private fun ScratchCardGameSection(repository: MikayalaRepository) {
                                     content = "🎁 Carte Mystère : ${prizes[currentPrizeIndex]}",
                                     type = "scratch_card"
                                 )
-                                Toast.makeText(context, "Carte envoyée dans le chat ! 💬❤️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Carte envoyée dans le chat", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan),
                             shape = RoundedCornerShape(14.dp),
@@ -1017,7 +1017,7 @@ private fun LoveCouponsGameSection(
                         Button(
                             onClick = {
                                 repository.redeemCoupon(coupon.id)
-                                Toast.makeText(context, "Bon « ${coupon.title} » utilisé avec succès ! ❤️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Bon « ${coupon.title} » utilisé avec succès", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                             shape = RoundedCornerShape(10.dp),
@@ -1417,7 +1417,7 @@ private fun LoveCapsulesSection(
                             } else {
                                 Toast.makeText(
                                     context,
-                                    "🔒 Capsule scellée ! Revenez dans $daysRemaining jour(s).",
+                                    "Capsule scellée! Revenez dans $daysRemaining jour(s).",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -1582,7 +1582,7 @@ private fun LoveCapsulesSection(
                                 content = "💌 Capsule Temporelle [${capsule.title}] : « ${capsule.message} »",
                                 type = "love_capsule"
                             )
-                            Toast.makeText(context, "Lettre partagée dans le Chat ! 💬❤️", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Lettre partagée dans le Chat", Toast.LENGTH_SHORT).show()
                             selectedCapsuleForView = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan),
@@ -1714,7 +1714,7 @@ private fun LoveCapsulesSection(
                                 unlockDate = unlockTime,
                                 sealTheme = sealTheme
                             )
-                            Toast.makeText(context, "Capsule scellée avec succès ! 🔒✨", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Capsule scellée avec succès", Toast.LENGTH_SHORT).show()
                             showCreateDialog = false
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentRose),

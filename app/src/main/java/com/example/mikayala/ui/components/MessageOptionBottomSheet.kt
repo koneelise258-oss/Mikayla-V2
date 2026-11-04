@@ -169,7 +169,7 @@ fun MessageOptionBottomSheet(
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("Mikayala Message", message.content)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Texte copié ! 📋", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Texte copié", Toast.LENGTH_SHORT).show()
                         onDismiss()
                     }
                 )
@@ -221,7 +221,7 @@ fun MessageOptionBottomSheet(
                 iconColor = AccentRose,
                 onClick = {
                     onSaveToVault()
-                    Toast.makeText(context, "Ajouté au Coffre-Fort ! 🔒", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Ajouté au Coffre-Fort", Toast.LENGTH_SHORT).show()
                     onDismiss()
                 }
             )

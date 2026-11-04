@@ -474,10 +474,10 @@ fun InAppCameraCaptureDialog(
                                     // VIDEO MODE
                                     if (!isRecordingVideo) {
                                         isRecordingVideo = true
-                                        Toast.makeText(context, "Enregistrement vidéo démarré 🔴", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Enregistrement vidéo démarré", Toast.LENGTH_SHORT).show()
                                     } else {
                                         isRecordingVideo = false
-                                        Toast.makeText(context, "Vidéo enregistrée 🎬", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Vidéo enregistrée", Toast.LENGTH_SHORT).show()
                                         // Create dummy video file placeholder if needed or fallback
                                         val outputVideoFile = File(context.cacheDir, "camera_video_${System.currentTimeMillis()}.mp4")
                                         if (!outputVideoFile.exists()) {

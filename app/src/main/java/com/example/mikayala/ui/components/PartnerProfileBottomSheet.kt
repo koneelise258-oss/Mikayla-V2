@@ -414,7 +414,7 @@ fun PartnerProfileBottomSheet(
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("Code de couple", coupleSpace.pairingCode)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Code copié dans le presse-papier ! 📋", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Code copié dans le presse-papier", Toast.LENGTH_SHORT).show()
                     }
             ) {
                 Row(
