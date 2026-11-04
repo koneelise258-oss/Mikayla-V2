@@ -942,7 +942,9 @@ class SupabaseService(
         mimeType: String
     ): String? = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty()) return@withContext null
-        val buckets = listOf("chat_media", "attachments", "media", "avatars")
+        // Uniquement chat_media : l'ancien essai en cascade (attachments, media, avatars) pouvait déposer
+        // un document de conversation dans le stockage des photos de profil.
+        val buckets = listOf("chat_media")
         for (bucket in buckets) for (token in storageAuthTokens()) {
             try {
                 val path = "$coupleId/$fileName"
@@ -1617,7 +1619,7 @@ class SupabaseService(
 
     // --- NATIVE ANDROID FCM PUSH TOKEN & DISPATCH ---
 
-    suspend fun upsertDevicePushToken(fcmToken: String, deviceLabel: String = "Android"): Boolean = withContext(Dispatchers.IO) {
+    suspend fun upsertDevicePushToken(fcmToken: String, deviceLabel: String = "Android", installationSecret: String? = null): Boolean = withContext(Dispatchers.IO) {
         val uid = getCurrentSessionUid()
         if (uid.isNullOrEmpty() || fcmToken.isBlank()) {
             Log.w("FCM_TOKEN", "upsertDevicePushToken ignored: session non authentifiée ou jeton vide")
@@ -1638,16 +1640,20 @@ class SupabaseService(
                 put("updated_at", nowIso)
                 put("last_seen_at", nowIso)
             }
-            // 1) Fonction claim_device_push_token (reprend atomiquement un token resté au nom d'un ancien
-            //    compte sur cet appareil). Tant qu'elle n'est pas déployée, l'appel échoue et on se replie.
-            val rpcBody = JSONObject().apply {
-                put("p_token", fcmToken.trim())
-                put("p_label", deviceLabel)
-            }
-            val rpcRes = executePost("/rest/v1/rpc/claim_device_push_token", rpcBody.toString(), prefer = "return=minimal")
-            if (rpcRes != null) {
-                Log.d("FCM_TOKEN", "Jeton enregistré via claim_device_push_token")
-                return@withContext true
+            // 1) Fonction register_device_push_token : la possession du jeton est prouvée par le secret
+            //    d'installation (voir DeviceInstallation). Tant qu'elle n'est pas déployée, l'appel
+            //    échoue et on se replie sur l'ancien upsert, sans changement de comportement.
+            if (!installationSecret.isNullOrBlank()) {
+                val rpcBody = JSONObject().apply {
+                    put("p_installation_secret", installationSecret)
+                    put("p_token", fcmToken.trim())
+                    put("p_label", deviceLabel)
+                }
+                val rpcRes = executePost("/rest/v1/rpc/register_device_push_token", rpcBody.toString(), prefer = "return=minimal")
+                if (rpcRes != null) {
+                    Log.d("FCM_TOKEN", "Jeton enregistré via register_device_push_token")
+                    return@withContext true
+                }
             }
             // 2) Repli : ancien upsert REST (comportement actuel)
             val path = "/rest/v1/device_push_tokens?on_conflict=fcm_token"

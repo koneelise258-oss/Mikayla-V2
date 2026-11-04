@@ -174,7 +174,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             val supabase = SupabaseService.getInstance()
             val api = object : SupabasePushApi {
                 override fun getCurrentSessionUid(): String? = supabase.getCurrentSessionUid()
-                override suspend fun upsertDevicePushToken(fcmToken: String): Boolean = supabase.upsertDevicePushToken(fcmToken)
+                override suspend fun upsertDevicePushToken(fcmToken: String): Boolean =
+                    supabase.upsertDevicePushToken(fcmToken, installationSecret = DeviceInstallation.secret(appContext))
                 override suspend fun deleteDevicePushToken(fcmToken: String): Boolean = supabase.deleteDevicePushToken(fcmToken)
             }
             return FcmTokenSyncEngine.getInstance(storage, fetcher, api)

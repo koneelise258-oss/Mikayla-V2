@@ -1,3 +1,7 @@
+-- ############################################################################
+-- REMPLACÉE — NE PAS APPLIQUER. Intégrée et complétée (messages-media, lecture des avatars du
+-- partenaire) dans 20261105090000_mikayala_securite_coherente.sql. Conservée pour l'historique.
+-- ############################################################################
 -- ============================================================================
 -- PROPOSITION — NON APPLIQUÉE. Supprimer l'upload anonyme sans casser l'application.
 -- ============================================================================

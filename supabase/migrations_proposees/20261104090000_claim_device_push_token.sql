@@ -1,3 +1,10 @@
+-- ############################################################################
+-- REMPLACÉE — NE PAS APPLIQUER.
+-- Cette fonction ne vérifie pas la possession du jeton FCM : connaître le jeton d'un autre
+-- téléphone suffirait pour se l'attribuer. Remplacée par register_device_push_token
+-- (secret d'installation) dans 20261105090000_mikayala_securite_coherente.sql.
+-- Fichier conservé pour l'historique de l'audit.
+-- ############################################################################
 -- ============================================================================
 -- PROPOSITION — NON APPLIQUÉE. Dossier volontairement hors de supabase/migrations
 -- pour qu'aucun `supabase db push` ne l'exécute par erreur. À valider avant tout déploiement.
