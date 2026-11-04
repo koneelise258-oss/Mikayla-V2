@@ -662,6 +662,7 @@ fun SettingsScreen(
     }
 
     var section by remember { mutableStateOf<String?>(null) }
+    var showSignOutDialog by remember { mutableStateOf(false) }
     // Préférences de notification : source de vérité = NotificationPrefs (persistant, local à l'appareil)
     var notifMode by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.privacyMode(context)) }
     var notifSound by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.sound(context)) }
@@ -1263,6 +1264,14 @@ fun SettingsScreen(
             }
         }
 
+        if (section == "couple") {
+            item {
+                SettingsCategoryRow(Icons.Rounded.Logout, Color(0xFFC4605C), "Se déconnecter", "Quitte votre compte sur cet appareil. Le couple et les messages sont conservés.") {
+                    showSignOutDialog = true
+                }
+            }
+        }
+
         // --- 6. SECTION: MODES DE CONNEXION (2 OPTIONS) ---
 
         if (section == "connection") {
@@ -1482,6 +1491,33 @@ fun SettingsScreen(
             }
         }
         }
+    }
+
+    if (showSignOutDialog) {
+        var signingOut by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { if (!signingOut) showSignOutDialog = false },
+            title = { Text("Se déconnecter ?") },
+            text = { Text("Vous ne recevrez plus de notifications sur cet appareil jusqu'à votre reconnexion.") },
+            confirmButton = {
+                TextButton(enabled = !signingOut, onClick = {
+                    signingOut = true
+                    scope.launch {
+                        var ok = repository.signOut()
+                        if (!ok) ok = repository.signOut(force = true)
+                        signingOut = false
+                        showSignOutDialog = false
+                        if (ok) {
+                            // Redémarre l'interface : retour à l'écran de connexion
+                            (context as? android.app.Activity)?.recreate()
+                        } else {
+                            Toast.makeText(context, "Déconnexion impossible : vérifiez votre connexion Internet", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }) { Text(if (signingOut) "Déconnexion…" else "Se déconnecter", color = Color(0xFFC4605C)) }
+            },
+            dismissButton = { TextButton(enabled = !signingOut, onClick = { showSignOutDialog = false }) { Text("Annuler") } }
+        )
     }
 
     if (showSupabaseDialog) {

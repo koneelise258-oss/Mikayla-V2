@@ -676,7 +676,7 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
 
                             // Center Hub
                             drawCircle(color = Color(0xFF1E202A), radius = 26.dp.toPx())
-                            drawCircle(color = TextPrimary, radius = 6.dp.toPx())
+                            drawCircle(color = Color.White, radius = 6.dp.toPx())
                         }
 
                         // Top Pointer Arrow
