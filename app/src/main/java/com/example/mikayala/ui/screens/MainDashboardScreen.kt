@@ -66,6 +66,11 @@ fun MainDashboardScreen(
     var showNavDrawerSheet by remember { mutableStateOf(false) }
     // Recherche / favoris dans la conversation (menu ⋮)
     var chatSearchMode by remember { mutableStateOf<String?>(null) }
+    // Badge « non lus » de l'onglet Discussions : messages du partenaire pas encore lus
+    val dashboardMessages by repository.allMessages.collectAsState()
+    val unreadCount = remember(dashboardMessages) {
+        dashboardMessages.count { !it.isDeletedForEveryone && it.status != "read" && !repository.isMessageFromMe(it) }
+    }
     var showPartnerProfileSheet by remember { mutableStateOf(false) }
     var showOfflineP2PPage by remember { mutableStateOf(false) }
     var activeCallState by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) } // (isActive, isVideo)
@@ -436,7 +441,7 @@ fun MainDashboardScreen(
 
                         GlassmorphicFloatingNavBar(
                             items = listOf(
-                                GlassNavBarItem(0, "Discussions", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Rounded.Chat),
+                                GlassNavBarItem(0, "Discussions", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Rounded.Chat, badgeCount = if (selectedTab == 0) 0 else unreadCount),
                                 GlassNavBarItem(1, "Appels", Icons.Rounded.Call, Icons.Rounded.Call),
                                 GlassNavBarItem(2, "Couple", Icons.Rounded.FavoriteBorder, Icons.Rounded.Favorite),
                                 GlassNavBarItem(3, "Coffre", Icons.Rounded.Lock, Icons.Rounded.LockOpen),
