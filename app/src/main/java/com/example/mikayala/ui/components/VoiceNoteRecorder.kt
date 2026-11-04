@@ -257,9 +257,7 @@ fun VoiceNoteRecorder(
                                         .height(barHeight)
                                         .clip(RoundedCornerShape(2.dp))
                                         .background(
-                                            Brush.verticalGradient(
-                                                listOf(VibrantCyan, VibrantBlue)
-                                            )
+                                            AccentRose
                                         )
                                 )
                             }
@@ -566,10 +564,9 @@ fun VoiceNoteRecorder(
                         .fillMaxSize()
                         .background(
                             when {
-                                textInput.isNotBlank() -> Brush.linearGradient(listOf(Color(0xFF7FA8CC), Color(0xFF7FA8CC)))
-                                recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED -> Brush.linearGradient(listOf(VibrantCyan, VibrantBlue))
-                                recordingState == VoiceNoteState.RECORDING -> Brush.linearGradient(listOf(AccentRose, Color(0xFFC97B86)))
-                                else -> Brush.linearGradient(listOf(Color(0xFF25D366), Color(0xFF075E54))) // Vert WhatsApp élégant
+                                // Bouton d'envoi / micro : rose poudré uni (lavande pendant un enregistrement verrouillé)
+                                recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED -> androidx.compose.ui.graphics.SolidColor(AccentViolet)
+                                else -> androidx.compose.ui.graphics.SolidColor(AccentRose)
                             }
                         )
                         .clickable(

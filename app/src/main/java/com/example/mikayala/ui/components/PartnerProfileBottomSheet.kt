@@ -119,7 +119,7 @@ fun PartnerProfileBottomSheet(
                             modifier = Modifier
                                 .size(88.dp)
                                 .clip(CircleShape)
-                                .background(Brush.radialGradient(listOf(VibrantCyan.copy(alpha = 0.3f), Color.Transparent)))
+                                .background(com.example.mikayala.theme.MikayalaColors.accentSoft)
                                 .border(2.dp, VibrantCyan, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {

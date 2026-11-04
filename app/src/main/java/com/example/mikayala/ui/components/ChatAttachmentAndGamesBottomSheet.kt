@@ -94,8 +94,7 @@ fun ChatAttachmentAndGamesBottomSheet(
                     // Tab 0: Pièces jointes
                     Surface(
                         shape = CircleShape,
-                        color = if (selectedTab == 0) CardDarkElevated else Color.Transparent,
-                        border = if (selectedTab == 0) BorderStroke(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.3f), Color.White.copy(alpha = 0.05f)))) else null,
+                        color = if (selectedTab == 0) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
                         modifier = Modifier
                             .weight(1f)
                             .clickable { selectedTab = 0 }
@@ -124,8 +123,7 @@ fun ChatAttachmentAndGamesBottomSheet(
                     // Tab 1: Jeux de Chat
                     Surface(
                         shape = CircleShape,
-                        color = if (selectedTab == 1) CardDarkElevated else Color.Transparent,
-                        border = if (selectedTab == 1) BorderStroke(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.3f), Color.White.copy(alpha = 0.05f)))) else null,
+                        color = if (selectedTab == 1) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
                         modifier = Modifier
                             .weight(1f)
                             .clickable { selectedTab = 1 }
@@ -349,30 +347,12 @@ private fun AttachmentSquircleButton(item: AttachmentGridItem) {
             // Squircle Button Container with Subtle Gradient and Inner Light Glow
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = CardDarkElevated,
-                border = BorderStroke(
-                    1.dp,
-                    Brush.verticalGradient(
-                        listOf(
-                            item.gradientColors.first().copy(alpha = 0.4f),
-                            Color.White.copy(alpha = 0.08f)
-                        )
-                    )
-                ),
-                shadowElevation = 1.dp,
+                // Pastille unie teintée de la couleur de l'action (sans reflet ni halo)
+                color = item.gradientColors.first().copy(alpha = 0.16f),
                 modifier = Modifier.size(56.dp)
             ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    item.gradientColors.first().copy(alpha = 0.22f),
-                                    com.example.mikayala.theme.MikayalaColors.surfaceSunken
-                                )
-                            )
-                        ),
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
