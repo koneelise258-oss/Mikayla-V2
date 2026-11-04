@@ -231,3 +231,13 @@ class AppIconManagerTest {
         assertEquals(10, m.ICONS.map { it.alias }.toSet().size)
     }
 }
+
+class ChatDatesTest {
+    private val d = com.example.mikayala.util.ChatDates
+    private val now = java.util.Calendar.getInstance().apply { set(2026, 10, 4, 15, 0, 0) }.timeInMillis
+
+    @Test fun aujourdhui() { assertEquals("Aujourd'hui", d.label(now - 60_000, now)) }
+    @Test fun hier() { assertEquals("Hier", d.label(now - 24L * 3600_000, now)) }
+    @Test fun memeJour() { assertTrue(d.sameDay(now, now - 3600_000)) }
+    @Test fun autreAnnee() { assertTrue(d.label(now - 400L * 24 * 3600_000, now).contains("2025")) }
+}

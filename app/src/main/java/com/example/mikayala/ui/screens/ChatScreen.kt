@@ -26,6 +26,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -335,6 +336,7 @@ fun ChatScreen(
             }
 
             // Message List
+            val chatCurrentUid = remember(messages.size) { repository.getCurrentUserId() }
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -344,11 +346,34 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(top = 10.dp, bottom = 10.dp)
             ) {
-                items(messages, key = { it.id }) { message ->
+                if (messages.isEmpty()) {
+                    item(key = "empty_chat") {
+                        com.example.mikayala.ui.components.SoftEmptyState(
+                            icon = Icons.Rounded.ChatBubbleOutline,
+                            title = "Votre conversation commence ici",
+                            message = "Écrivez un premier message, envoyez une note vocale ou une photo. Seuls vous deux pouvez lire cet espace."
+                        )
+                    }
+                }
+                itemsIndexed(messages, key = { _, m -> m.id }) { index, message ->
+                    // Séparateur de date (Aujourd'hui / Hier / date) lorsque le jour change
+                    val previous = if (index > 0) messages[index - 1] else null
+                    if (previous == null || !com.example.mikayala.util.ChatDates.sameDay(previous.createdAt, message.createdAt)) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                            Surface(shape = RoundedCornerShape(10.dp), color = com.example.mikayala.theme.MikayalaColors.surfaceElevated) {
+                                Text(
+                                    text = com.example.mikayala.util.ChatDates.label(message.createdAt),
+                                    fontSize = 12.sp,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
                     MessageBubble(
                         message = message,
                         repository = repository,
-                        currentUserId = repository.getCurrentUserId(),
+                        currentUserId = chatCurrentUid,
                         timeFormatted = timeFormat.format(Date(message.createdAt)),
                         userSettings = userSettings,
                         onLongPress = { selectedMessageForOptions = message },
