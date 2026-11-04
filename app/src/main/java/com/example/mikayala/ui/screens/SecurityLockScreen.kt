@@ -73,16 +73,8 @@ fun SecurityLockScreen(
     }
 
     // Concentric ripple animation for biometric fingerprint scanner
-    val infiniteTransition = rememberInfiniteTransition(label = "biometric_ripple")
-    val rippleScale by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "ripple_scale"
-    )
+    // Animation de pulsation en boucle retirée (style Soft, économie de batterie)
+    val rippleScale = 1f
 
     fun handlePinDigit(digit: String) {
         if (!settings.hasLocalPassword || settings.pinCode.isEmpty()) {
@@ -163,13 +155,7 @@ fun SecurityLockScreen(
                 .size(90.dp)
                 .clip(CircleShape)
                 .background(
-                    Brush.radialGradient(
-                        listOf(
-                            AccentRose.copy(alpha = 0.35f * rippleScale),
-                            AccentViolet.copy(alpha = 0.15f),
-                            Color.Transparent
-                        )
-                    )
+                    com.example.mikayala.theme.MikayalaColors.accentSoft
                 )
                 .clickable {
                     triggerBiometricAuth()

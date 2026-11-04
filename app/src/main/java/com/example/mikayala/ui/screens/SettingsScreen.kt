@@ -928,7 +928,7 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(Brush.radialGradient(listOf(AccentRose.copy(alpha = 0.3f), Color.Transparent))),
+                                .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(text = "❤️", fontSize = 18.sp)

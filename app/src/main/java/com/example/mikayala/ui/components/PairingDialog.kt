@@ -69,7 +69,7 @@ fun PairingDialog(
                         modifier = Modifier
                             .size(54.dp)
                             .clip(CircleShape)
-                            .background(Brush.radialGradient(listOf(AccentRose.copy(alpha = 0.3f), Color.Transparent))),
+                            .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(

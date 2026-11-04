@@ -160,7 +160,7 @@ fun OnboardingScreen(
     // Dark landing theme canvas
     val darkBg = DeepNight
     val cardBg = com.example.mikayala.theme.MikayalaColors.surface
-    val cardElevated = Color(0xFF242038)
+    val cardElevated = com.example.mikayala.theme.MikayalaColors.surfaceElevated
 
     Box(
         modifier = Modifier
@@ -873,7 +873,7 @@ fun JoinSpaceView(
         // QR Scanner Camera Button
         Button(
             onClick = onOpenScanner,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2545)),
+            colors = ButtonDefaults.buttonColors(containerColor = com.example.mikayala.theme.MikayalaColors.surfaceElevated),
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, AccentViolet.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
@@ -1436,7 +1436,7 @@ fun InteractiveQRCodeCanvas(
                 .size(34.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.White)
-                .border(BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFF9283C4), Color(0xFF9283C4)))), RoundedCornerShape(8.dp)),
+                .border(BorderStroke(0.5.dp, BorderSubtleWhite), RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             Image(
