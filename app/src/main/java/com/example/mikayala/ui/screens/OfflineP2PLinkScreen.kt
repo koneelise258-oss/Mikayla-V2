@@ -759,43 +759,15 @@ fun OfflineP2PLinkScreen(
                 }
 
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        P2PBeamToolCard(
-                            title = "Photo HD",
-                            subtitle = "Zéro compression",
-                            icon = Icons.Rounded.Image,
-                            onClick = {
-                                P2PSocketManager.sendFile(context, "Photo_Souvenir_${System.currentTimeMillis().toString().takeLast(4)}.jpg", "14.2 Mo", false)
-                                Toast.makeText(context, "Photo transmise instantanément !", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        P2PBeamToolCard(
-                            title = "Note Vocale",
-                            subtitle = "Qualité FLAC",
-                            icon = Icons.Rounded.Mic,
-                            onClick = {
-                                P2PSocketManager.sendFile(context, "Note_Vocale_Intime.flac", "3.8 Mo", true)
-                                Toast.makeText(context, "Audio haute définition transmis !", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        P2PBeamToolCard(
-                            title = "Vidéo 4K",
-                            subtitle = "Beam Rapide",
-                            icon = Icons.Rounded.Videocam,
-                            onClick = {
-                                P2PSocketManager.sendFile(context, "Video_Couple_Mikayala.mp4", "88.4 Mo", false)
-                                Toast.makeText(context, "Vidéo 4K transmise !", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    // Les boutons « Photo / Vocal / Vidéo 4K » envoyaient seulement un nom de fichier fictif
+                    // et une taille inventée (aucun fichier réel) : retirés. Le transfert réel de fichiers en P2P
+                    // reste à développer ; les messages texte en P2P fonctionnent.
+                    Text(
+                        text = "Envoi de photos, vocaux et vidéos sans Internet : bientôt disponible. Les messages texte fonctionnent déjà en liaison directe.",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
                 }
 
                 // Chat Input Field over P2P

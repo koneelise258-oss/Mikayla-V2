@@ -1351,7 +1351,7 @@ fun SettingsScreen(
                                 }
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Liaison directe d'appareil à appareil (Wi-Fi Direct / Hotspot local). 0 Mo de data mobile, vitesse 50+ Mo/s.",
+                                    text = "Liaison directe entre vos deux téléphones, sans Internet (Wi-Fi local). Messages texte pour l'instant.",
                                     fontSize = 11.sp,
                                     color = TextSecondary,
                                     lineHeight = 15.sp

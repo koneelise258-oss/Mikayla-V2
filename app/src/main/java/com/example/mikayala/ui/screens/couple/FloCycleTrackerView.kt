@@ -579,7 +579,7 @@ fun FloCycleTrackerView(
                     ) {
                         Column {
                             Text(text = "Durée du cycle", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = "Moyenne : 28 jours", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = "Actuellement : ${cycleInfo.cycleLengthDays} jours", fontSize = 11.sp, color = TextSecondary)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { if (tempCycleLength > 20) tempCycleLength-- }) {

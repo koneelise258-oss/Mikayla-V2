@@ -42,14 +42,10 @@ fun P2PDirectStudioOverlay(
     val context = LocalContext.current
     var isConnectedP2P by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(true) }
-    var currentBand by remember { mutableStateOf("5 GHz (Ultra-Rapide)") }
+    var currentBand by remember { mutableStateOf("Wi-Fi local") }
     var directMessageText by remember { mutableStateOf("") }
-    val offlineTransfers = remember {
-        mutableStateListOf(
-            "Photo_Intime_01.jpg • 100% • 42 Mo/s ⚡",
-            "Vocal_Secret_Mikayala.aac • 100% • 38 Mo/s 🎙️"
-        )
-    }
+    // Historique des transferts : vide au départ (les anciennes entrées étaient fictives)
+    val offlineTransfers = remember { mutableStateListOf<String>() }
 
     // Radar pulse animation
     val infiniteTransition = rememberInfiniteTransition(label = "radar_pulse")
@@ -193,7 +189,7 @@ fun P2PDirectStudioOverlay(
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Canal P2P sécurisé • Débit 45 Mo/s • 0 Mo Data",
+                                text = "Liaison directe sans Internet",
                                 fontSize = 12.sp,
                                 color = OnlinePresenceGreen
                             )
@@ -224,12 +220,8 @@ fun P2PDirectStudioOverlay(
                         shape = RoundedCornerShape(14.dp),
                         color = CardDark,
                         border = BorderStroke(0.5.dp, BorderSubtleWhite),
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
-                                currentBand = if (currentBand.contains("5 GHz")) "2.4 GHz (Longue Portée)" else "5 GHz (Ultra-Rapide)"
-                                Toast.makeText(context, "Bande Wi-Fi Direct : $currentBand", Toast.LENGTH_SHORT).show()
-                            }
+                        // Information seulement : l'ancien sélecteur de bande Wi-Fi ne changeait rien
+                        modifier = Modifier.weight(1f)
                     ) {
                         Row(
                             modifier = Modifier.padding(12.dp),
@@ -244,29 +236,8 @@ fun P2PDirectStudioOverlay(
                         }
                     }
 
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = AccentRose.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
-                                offlineTransfers.add(0, "Fichier_Envoyé_${System.currentTimeMillis().toString().takeLast(4)}.dat • 100% • 48 Mo/s 🚀")
-                                Toast.makeText(context, "Fichier envoyé instantanément en P2P !", Toast.LENGTH_SHORT).show()
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.FileUpload, contentDescription = null, tint = AccentRose, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text("Envoi Éclair", fontSize = 10.sp, color = AccentRose)
-                                Text("Beam Photo / Fichier", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            }
-                        }
-                    }
+                    // Bouton « Envoi Éclair » retiré : il simulait un transfert de fichier sans rien envoyer
+
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -308,9 +279,9 @@ fun P2PDirectStudioOverlay(
                                     repository.sendMessage(
                                         content = "📡 [P2P Direct] " + directMessageText.trim()
                                     )
-                                    offlineTransfers.add(0, "Message P2P transmis à Mikayala ✓✓")
+                                    offlineTransfers.add(0, "Message envoyé ✓")
                                     directMessageText = ""
-                                    Toast.makeText(context, "Message transmis en direct par liaison locale !", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Message envoyé", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         ) {
