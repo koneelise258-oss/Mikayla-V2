@@ -136,6 +136,37 @@ jobs:
           echo "Résumé des tests :"
           for f in app/build/test-results/testDebugUnitTest/*.xml; do grep -o 'testsuite name="[^"]*" tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' "$f"; done
 
+      # Analyse statique Android Lint : erreurs (API trop récente pour Android 7, autorisations, ressources…)
+      - name: Android Lint
+        continue-on-error: true
+        run: |
+          ./gradlew --no-daemon lintDebug -Dlint.baselines.continue=true || true
+          R=app/build/reports/lint-results-debug.xml
+          if [ -f "$R" ]; then
+            echo "=== LINT ERREURS ==="
+            python3 - "$R" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          from collections import Counter
+          sev = Counter(); ids = Counter()
+          for i in root.findall('issue'):
+              sev[i.get('severity')] += 1
+              if i.get('severity') in ('Error', 'Fatal'):
+                  ids[i.get('id')] += 1
+                  loc = i.find('location')
+                  f = (loc.get('file') or '').split('/app/src/')[-1] if loc is not None else ''
+                  print(f"LINTERR {i.get('id')} | {f}:{loc.get('line') if loc is not None else ''} | {i.get('message')[:160]}")
+          print("LINTSUM", dict(sev))
+          print("LINTIDS", dict(ids))
+          wanted = ('NewApi','InlinedApi','MissingPermission','UnspecifiedRegisterReceiverFlag','ScheduleExactAlarm','UnusedResources','ObsoleteSdkInt')
+          for i in root.findall('issue'):
+              if i.get('id') in wanted and i.get('severity') == 'Warning':
+                  loc = i.find('location')
+                  f = (loc.get('file') or '').split('/app/src/')[-1] if loc is not None else ''
+                  print(f"LINTWARN {i.get('id')} | {f}:{loc.get('line') if loc is not None else ''} | {i.get('message')[:140]}")
+          PY
+          fi
+
       # Empreinte du certificat (information publique) : doit être identique d'un APK à l'autre
       - name: Empreinte de signature
         id: cert
