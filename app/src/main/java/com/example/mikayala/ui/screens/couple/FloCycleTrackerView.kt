@@ -61,10 +61,11 @@ fun FloCycleTrackerView(
     val isPMS = cycleDay > (cycleInfo.cycleLengthDays - 4)
 
     val pregnancyChance = when {
-        cycleDay == ovulationDay -> "Chance très élevée 🔥 (Pic d'ovulation)"
-        isFertile -> "Chance élevée ✨ (Fenêtre fertile)"
-        isPeriod -> "Chance très faible"
-        else -> "Chance faible"
+        // Estimation calendaire simple (cycle - 14 jours) : jamais une certitude
+        cycleDay == ovulationDay -> "Fertilité estimée : maximale (ovulation estimée)"
+        isFertile -> "Fertilité estimée : élevée (période fertile estimée)"
+        isPeriod -> "Fertilité estimée : très faible"
+        else -> "Fertilité estimée : faible"
     }
 
     val primaryRingColor = when {
@@ -260,7 +261,7 @@ fun FloCycleTrackerView(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(text = "Prochaines Règles", fontSize = 11.sp, color = TextSecondary)
+                                    Text(text = "Prochaines règles (estimation)", fontSize = 11.sp, color = TextSecondary)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "Dans $daysUntilNext jours",
@@ -278,7 +279,7 @@ fun FloCycleTrackerView(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(text = "Pic Ovulation", fontSize = 11.sp, color = TextSecondary)
+                                    Text(text = "Ovulation estimée", fontSize = 11.sp, color = TextSecondary)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "Jour $ovulationDay du cycle",
@@ -289,6 +290,13 @@ fun FloCycleTrackerView(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        // Avertissement obligatoire : estimations, ni avis médical ni contraception
+                        com.example.mikayala.ui.components.SoftBanner(
+                            message = "Ces dates sont des estimations calculées à partir de la durée moyenne du cycle. Ce n'est ni un avis médical ni une méthode de contraception.",
+                            isError = false
+                        )
 
                         Spacer(modifier = Modifier.height(16.dp))
 
