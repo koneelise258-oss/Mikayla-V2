@@ -437,18 +437,17 @@ fun MainDashboardScreen(
 
                         GlassmorphicFloatingNavBar(
                             items = listOf(
-                                GlassNavBarItem(0, "Chat", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Rounded.Chat),
+                                GlassNavBarItem(0, "Discussions", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Rounded.Chat),
                                 GlassNavBarItem(1, "Appels", Icons.Rounded.Call, Icons.Rounded.Call),
                                 GlassNavBarItem(2, "Couple", Icons.Rounded.FavoriteBorder, Icons.Rounded.Favorite),
                                 GlassNavBarItem(3, "Coffre", Icons.Rounded.Lock, Icons.Rounded.LockOpen),
-                                GlassNavBarItem(4, "Réglages", Icons.Rounded.Tune, Icons.Rounded.Settings)
+                                GlassNavBarItem(4, "Paramètres", Icons.Rounded.Settings, Icons.Rounded.Settings)
                             ),
                             selectedIndex = selectedTab,
                             onItemSelected = {
                                 selectedTab = it
                                 if (it != 0) showNavBarInChat = false
-                            },
-                            modifier = Modifier.navigationBarsPadding()
+                            }
                         )
                     }
                 }

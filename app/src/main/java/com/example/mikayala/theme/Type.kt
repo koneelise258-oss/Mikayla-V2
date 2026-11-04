@@ -18,10 +18,18 @@ val Poppins = FontFamily(
     Font(R.font.poppins_semibold, FontWeight.Black)
 )
 
-private fun TextStyle.poppins() = copy(fontFamily = Poppins)
+/** Police choisie dans Paramètres > Apparence (fontFamilyPreference). */
+fun fontFamilyFor(preference: String): FontFamily = when (preference) {
+    "serif" -> FontFamily.Serif
+    "monospace" -> FontFamily.Monospace
+    "cursive", "handwritten" -> FontFamily.Cursive
+    "system" -> FontFamily.Default
+    else -> Poppins
+}
 
-/** Typographie de toute l'application : styles Material par défaut, en Poppins. */
-val Typography = Typography().let { t ->
+/** Typographie de toute l'application : styles Material par défaut, dans la police choisie. */
+fun typographyFor(family: FontFamily): Typography = Typography().let { t ->
+    fun TextStyle.poppins() = copy(fontFamily = family)
     Typography(
         displayLarge = t.displayLarge.poppins(),
         displayMedium = t.displayMedium.poppins(),
@@ -40,3 +48,5 @@ val Typography = Typography().let { t ->
         labelSmall = t.labelSmall.poppins()
     )
 }
+
+val Typography = typographyFor(Poppins)

@@ -38,6 +38,8 @@ private fun schemeFor(p: MikayalaPalette) = if (p.isDark) darkColorScheme(
 @Composable
 fun MikayalaTheme(
     darkTheme: Boolean = true,
+    fontPreference: String = "default",
+    fontSizeScale: String = "medium",
     content: @Composable () -> Unit
 ) {
     val palette = if (darkTheme) SoftDark else SoftLight
@@ -66,10 +68,20 @@ fun MikayalaTheme(
         }
     }
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalMikayalaPalette provides palette) {
+    // Taille du texte (Paramètres > Apparence) : multiplie l'échelle système, sans l'ignorer
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val scaledDensity = androidx.compose.ui.unit.Density(
+        density.density,
+        density.fontScale * com.example.mikayala.data.UiPreferencesStore.fontScaleFactor(fontSizeScale)
+    )
+    val typography = androidx.compose.runtime.remember(fontPreference) { typographyFor(fontFamilyFor(fontPreference)) }
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalMikayalaPalette provides palette,
+        androidx.compose.ui.platform.LocalDensity provides scaledDensity
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography,
+            typography = typography,
             content = content
         )
     }

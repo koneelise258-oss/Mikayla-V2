@@ -64,7 +64,9 @@ fun VoiceNoteRecorder(
     onCameraClick: () -> Unit,
     onEmojiClick: () -> Unit,
     showEmojiBar: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Paramètres > Discussions > « Touche Entrée pour envoyer ». */
+    enterIsSend: Boolean = false
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -153,7 +155,13 @@ fun VoiceNoteRecorder(
                             value = textInput,
                             onValueChange = onTextInputChange,
                             placeholder = { Text("Message", color = TextMuted, fontSize = 15.sp) },
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                imeAction = if (enterIsSend) androidx.compose.ui.text.input.ImeAction.Send else androidx.compose.ui.text.input.ImeAction.Default
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onSend = { if (textInput.isNotBlank()) currentOnSendText() }
+                            ),
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedContainerColor = Color.Transparent,

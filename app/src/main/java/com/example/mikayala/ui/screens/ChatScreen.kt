@@ -467,6 +467,7 @@ fun ChatScreen(
 
             // Barre de saisie & Enregistreur vocal WhatsApp haute fidélité
             VoiceNoteRecorder(
+                enterIsSend = userSettings.enterIsSend,
                 manager = voiceNoteManager,
                 textInput = textInput,
                 onTextInputChange = { input ->

@@ -118,6 +118,11 @@ class MikayalaRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
 
     init {
+        // Préférences d'interface de l'appareil : restaurées avant tout, puis enregistrées à chaque changement
+        _userSettings.value = com.example.mikayala.data.UiPreferencesStore.load(prefs, _userSettings.value)
+        repositoryScope.launch {
+            _userSettings.collect { com.example.mikayala.data.UiPreferencesStore.save(prefs, it) }
+        }
         val storedUserId = prefs.getString("user_id", "") ?: ""
         val storedToken = prefs.getString("access_token", "") ?: ""
         val storedEmail = prefs.getString("user_email", "") ?: ""
@@ -141,8 +146,6 @@ class MikayalaRepository(private val context: Context) {
         }
 
         val storedNotifPrivacyMode = prefs.getString("notification_privacy_mode", "romantic") ?: "romantic"
-        // Thème : préférence locale à l'appareil, restaurée avant même la connexion
-        _userSettings.value = _userSettings.value.copy(isDarkMode = prefs.getBoolean("is_dark_mode", _userSettings.value.isDarkMode))
         if (storedUserId.isNotEmpty()) {
             _userSettings.value = _userSettings.value.copy(
                 userId = storedUserId,
@@ -1354,8 +1357,10 @@ class MikayalaRepository(private val context: Context) {
                     @Suppress("DEPRECATION")
                     Bitmap.CompressFormat.WEBP
                 }
-                originalBitmap.compress(compressFormat, 85, stream)
+                val (toSend, quality) = preparePhotoForUpload(originalBitmap)
+                toSend.compress(compressFormat, quality, stream)
                 val bytes = stream.toByteArray()
+                if (toSend !== originalBitmap) toSend.recycle()
                 originalBitmap.recycle()
 
                 if (bytes.isEmpty()) {
@@ -1435,8 +1440,10 @@ class MikayalaRepository(private val context: Context) {
                     @Suppress("DEPRECATION")
                     Bitmap.CompressFormat.WEBP
                 }
-                bitmap.compress(compressFormat, 85, stream)
+                val (toSend, quality) = preparePhotoForUpload(bitmap)
+                toSend.compress(compressFormat, quality, stream)
                 val bytes = stream.toByteArray()
+                if (toSend !== bitmap) toSend.recycle()
 
                 val messageId = UUID.randomUUID().toString()
                 val storagePath = "$coupleId/photos/$messageId.webp"
@@ -1999,6 +2006,11 @@ class MikayalaRepository(private val context: Context) {
         _userSettings.value = _userSettings.value.copy(isDarkMode = enabled)
     }
 
+    /** Mise à jour directe d'une préférence (pages Paramètres) : enregistrée automatiquement. */
+    fun updateUiSettings(transform: (UserSettingsEntity) -> UserSettingsEntity) {
+        _userSettings.value = transform(_userSettings.value)
+    }
+
     fun updatePrivacySettings(
         biometricEnabled: Boolean,
         antiScreenshotEnabled: Boolean,
@@ -2489,7 +2501,8 @@ class MikayalaRepository(private val context: Context) {
         if (!supabaseService.hasActiveSession()) {
             supabaseService.ensureAnonymousSession()
         }
-        if (supabaseService.hasActiveSession()) {
+        // Dernière connexion (Paramètres > Confidentialité) : « nobody » = on ne publie pas notre activité
+        if (supabaseService.hasActiveSession() && _userSettings.value.lastSeenPrivacy != "nobody") {
             supabaseService.touchUserActivity()
         }
 
@@ -2699,7 +2712,24 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun markMessagesRead(coupleId: String) {
+        // Accusés de lecture désactivés (Paramètres > Confidentialité) : on n'envoie pas le statut « lu »
+        if (!_userSettings.value.readReceiptsEnabled) return
         supabaseService.markMessagesRead(coupleId)
+    }
+
+    /**
+     * Qualité d'envoi des photos (Paramètres > Discussions) : « hd » ou « standard ».
+     * Redimensionne aussi les très grandes photos : envoi plus rapide, moins de mémoire sur les petits téléphones.
+     */
+    private fun preparePhotoForUpload(src: Bitmap): Pair<Bitmap, Int> {
+        val hd = _userSettings.value.photoUploadQuality != "standard"
+        val maxSide = if (hd) 2560 else 1600
+        val quality = if (hd) 85 else 72
+        val longest = maxOf(src.width, src.height)
+        if (longest <= maxSide) return src to quality
+        val ratio = maxSide.toFloat() / longest
+        val scaled = Bitmap.createScaledBitmap(src, (src.width * ratio).toInt().coerceAtLeast(1), (src.height * ratio).toInt().coerceAtLeast(1), true)
+        return scaled to quality
     }
 
     suspend fun syncWithSupabase() {
@@ -2948,7 +2978,8 @@ class MikayalaRepository(private val context: Context) {
             remove("display_name")
             apply()
         }
-        _userSettings.value = com.example.mikayala.data.model.UserSettingsEntity(isDarkMode = prefs.getBoolean("is_dark_mode", true))
+        // Déconnexion : le compte est effacé, les préférences de l'appareil sont conservées
+        _userSettings.value = com.example.mikayala.data.UiPreferencesStore.load(prefs, com.example.mikayala.data.model.UserSettingsEntity())
         return@withContext success
     }
 }

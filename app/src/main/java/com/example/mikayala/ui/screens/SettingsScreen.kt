@@ -61,10 +61,7 @@ fun SettingsScreen(
     var showProfileModal by remember { mutableStateOf(false) }
     var showWallpaperModal by remember { mutableStateOf(false) }
     var showAppIconModal by remember { mutableStateOf(false) }
-    var showFontModal by remember { mutableStateOf(false) }
     var showBubbleStyleModal by remember { mutableStateOf(false) }
-    var showPrivacyModal by remember { mutableStateOf(false) }
-    var showChatPrefsModal by remember { mutableStateOf(false) }
     var showStorageModal by remember { mutableStateOf(false) }
     var showPinDialog by remember { mutableStateOf(false) }
     var showDecoyPinDialog by remember { mutableStateOf(false) }
@@ -540,133 +537,7 @@ fun SettingsScreen(
     }
 
     // 4. Font & Typography Modal
-    if (showFontModal) {
-        val fonts = listOf(
-            Pair("default", "Moderne Sans-Serif (Standard)"),
-            Pair("serif", "Serif Romantique Élégante (Playfair)"),
-            Pair("handwritten", "Manuscrite Douce Intime"),
-            Pair("monospace", "Cyber Minimaliste (Code & Tech)"),
-            Pair("cursive", "Cursive Passionnée")
-        )
-        val sizes = listOf(
-            Pair("small", "Compacte (13sp)"),
-            Pair("medium", "Standard (15sp)"),
-            Pair("large", "Confortable (17sp)"),
-            Pair("xlarge", "Grande (19sp)")
-        )
 
-        Dialog(onDismissRequest = { showFontModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(text = "Police d'Écriture & Typographie ✍️", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Ajustez la typographie de tous les textes de l'application.", fontSize = 12.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Live Preview Box
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0x33141C2B),
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(text = "Aperçu en direct :", fontSize = 10.sp, color = AccentViolet, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "« Chaque seconde avec toi est une preuve d'amour éternel. » ❤️",
-                                fontSize = when (settings.fontSizeScale) {
-                                    "small" -> 13.sp
-                                    "large" -> 17.sp
-                                    "xlarge" -> 19.sp
-                                    else -> 15.sp
-                                },
-                                fontFamily = when (settings.fontFamilyPreference) {
-                                    "serif" -> FontFamily.Serif
-                                    "monospace" -> FontFamily.Monospace
-                                    "cursive" -> FontFamily.Cursive
-                                    else -> FontFamily.Default
-                                },
-                                color = TextPrimary
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(text = "Style de Police :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    fonts.forEach { (id, name) ->
-                        val isSelected = settings.fontFamilyPreference == id
-                        Surface(
-                            onClick = { repository.updateFontFamily(id) },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) CardDarkElevated else Color.Transparent,
-                            border = BorderStroke(1.dp, if (isSelected) AccentViolet else BorderSubtleWhite),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(text = name, fontSize = 13.sp, color = if (isSelected) Color.White else TextSecondary)
-                                if (isSelected) {
-                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = AccentViolet, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(text = "Taille du Texte :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        sizes.forEach { (id, label) ->
-                            val isSelected = settings.fontSizeScale == id
-                            Surface(
-                                onClick = { repository.updateFontSize(id) },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) AccentViolet else Color(0x22141C2B),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = id.replaceFirstChar { it.uppercase() },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) Color.White else TextSecondary,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 8.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { showFontModal = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentViolet),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Terminé", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-    }
 
     // 5. Bubble Style Modal
     if (showBubbleStyleModal) {
@@ -737,324 +608,10 @@ fun SettingsScreen(
     }
 
     // 6. WhatsApp-Style Privacy & Security Modal
-    if (showPrivacyModal) {
-        var bioEnabled by remember { mutableStateOf(settings.biometricEnabled) }
-        var antiScreen by remember { mutableStateOf(settings.antiScreenshotEnabled) }
-        var blurSwitch by remember { mutableStateOf(settings.screenBlurOnSwitch) }
-        var readReceipts by remember { mutableStateOf(settings.readReceiptsEnabled) }
-        var lastSeen by remember { mutableStateOf(settings.lastSeenPrivacy) }
-        var disappearingDays by remember { mutableIntStateOf(settings.disappearingMessagesDays) }
 
-        Dialog(onDismissRequest = { showPrivacyModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item {
-                        Text(text = "Confidentialité & Sécurité (Style WhatsApp) 🔒", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = "Contrôlez vos données, présence et chiffrement.", fontSize = 12.sp, color = TextSecondary)
-                    }
-
-                    item {
-                        // Biometric Auth (Empreinte digitale & Reconnaissance faciale)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Biométrie (Empreinte & Reconnaissance Faciale) 👆👤", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Déverrouillez rapidement l'application via votre capteur", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = bioEnabled,
-                                onCheckedChange = { bioEnabled = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Read Receipts
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Confirmations de lecture (Coches bleues)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Afficher les doubles coches bleues lors de la lecture", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = readReceipts,
-                                onCheckedChange = { readReceipts = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = VibrantCyan)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Anti-Screenshot
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Protection Anti-Capture d'Écran 🛡️", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Bloque les screenshots et masque les aperçus récents", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = antiScreen,
-                                onCheckedChange = { antiScreen = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Blur On Switch
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Flou automatique en arrière-plan", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Masque l'écran lors du changement d'application", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = blurSwitch,
-                                onCheckedChange = { blurSwitch = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentViolet)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Last Seen
-                        Text(text = "Présence en ligne & Dernière connexion :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(
-                                Pair("couple_only", "Mon Couple"),
-                                Pair("everyone", "Tout le monde"),
-                                Pair("nobody", "Personne")
-                            ).forEach { (id, label) ->
-                                val isSelected = lastSeen == id
-                                Surface(
-                                    onClick = { lastSeen = id },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = if (isSelected) AccentRose else Color(0x22141C2B),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) Color.White else TextSecondary,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(vertical = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-                        // Disappearing Messages
-                        Text(text = "Messages Éphémères Automatiques :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(
-                                Pair(0, "Désactivé"),
-                                Pair(1, "24h"),
-                                Pair(7, "7 jours"),
-                                Pair(90, "90 jours")
-                            ).forEach { (days, label) ->
-                                val isSelected = disappearingDays == days
-                                Surface(
-                                    onClick = { disappearingDays = days },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = if (isSelected) VibrantCyan else Color(0x22141C2B),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) Color.White else TextSecondary,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(vertical = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-                        Button(
-                            onClick = {
-                                repository.updatePrivacySettings(
-                                    biometricEnabled = bioEnabled,
-                                    antiScreenshotEnabled = antiScreen,
-                                    screenBlurOnSwitch = blurSwitch,
-                                    lastSeenPrivacy = lastSeen,
-                                    readReceiptsEnabled = readReceipts,
-                                    disappearingDays = disappearingDays
-                                )
-                                showPrivacyModal = false
-                                Toast.makeText(context, "Paramètres de confidentialité mis à jour !", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Enregistrer", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // 7. WhatsApp-Style Chats & Media Modal
-    if (showChatPrefsModal) {
-        var enterSend by remember { mutableStateOf(settings.enterIsSend) }
-        var galleryVis by remember { mutableStateOf(settings.mediaVisibilityInGallery) }
-        var autoDownload by remember { mutableStateOf(settings.autoDownloadMedia) }
-        var uploadQuality by remember { mutableStateOf(settings.photoUploadQuality) }
 
-        Dialog(onDismissRequest = { showChatPrefsModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Text(text = "Préférences de Discussions & Médias 💬", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-
-                    // Enter is send
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Touche Entrée pour envoyer", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                            Text(text = "La touche Entrée envoie immédiatement le message", fontSize = 11.sp, color = TextSecondary)
-                        }
-                        Switch(
-                            checked = enterSend,
-                            onCheckedChange = { enterSend = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = VibrantCyan)
-                        )
-                    }
-
-                    // Gallery visibility
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Visibilité dans la Galerie 📷", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                            Text(text = "Afficher les médias reçus dans la galerie du téléphone", fontSize = 11.sp, color = TextSecondary)
-                        }
-                        Switch(
-                            checked = galleryVis,
-                            onCheckedChange = { galleryVis = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                        )
-                    }
-
-                    // Upload quality
-                    Text(text = "Qualité d'Envoi des Photos & Vidéos :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            Pair("hd", "Qualité HD Originale ✨"),
-                            Pair("standard", "Standard Économique")
-                        ).forEach { (id, label) ->
-                            val isSelected = uploadQuality == id
-                            Surface(
-                                onClick = { uploadQuality = id },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) VibrantCyan else Color(0x22141C2B),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) Color.White else TextSecondary,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 8.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // Backup & Export
-                    Button(
-                        onClick = {
-                            Toast.makeText(context, "Sauvegarde chiffrée créée avec succès ! 💾", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CardDarkElevated),
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.CloudUpload, contentDescription = null, tint = VibrantCyan, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sauvegarder les discussions maintenant 💾", fontSize = 12.sp, color = Color.White)
-                    }
-
-                    // Clear chat
-                    Button(
-                        onClick = {
-                            repository.clearAllMessages()
-                            Toast.makeText(context, "Toutes les discussions ont été effacées !", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x33FF5252)),
-                        border = BorderStroke(1.dp, Color(0xFFFF5252)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Effacer toutes les discussions 🧹", fontSize = 12.sp, color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = {
-                            repository.updateChatPreferences(enterSend, galleryVis, autoDownload, uploadQuality)
-                            showChatPrefsModal = false
-                            Toast.makeText(context, "Préférences de discussion enregistrées !", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Enregistrer", fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                }
-            }
-        }
-    }
 
     // 9. Storage Manager Modal
     if (showStorageModal) {
@@ -1639,15 +1196,6 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (section == "conversations") {
-                        SettingRow(
-                            icon = Icons.Rounded.Chat,
-                            iconTint = VibrantCyan,
-                            title = "Paramètres de discussion",
-                            subtitle = "Touche Entrée, visibilité galerie, téléchargement auto, qualité photo",
-                            onClick = { showChatPrefsModal = true }
-                        )
-                    }
-                    if (section == "conversations") {
                     SettingRow(
                         icon = Icons.Rounded.Wallpaper,
                         iconTint = VibrantCyan,
@@ -1664,16 +1212,6 @@ fun SettingsScreen(
                         title = "Changer l'Icône de l'Application",
                         subtitle = "10 icônes au choix pour l'écran d'accueil",
                         onClick = { showAppIconModal = true }
-                    )
-                    }
-
-                    if (section == "conversations") {
-                    SettingRow(
-                        icon = Icons.Rounded.TextFields,
-                        iconTint = AccentViolet,
-                        title = "Police d'Écriture & Typographie",
-                        subtitle = "Moderne, Serif romantique, Cursive et taille de texte",
-                        onClick = { showFontModal = true }
                     )
                     }
 
@@ -1812,63 +1350,99 @@ fun SettingsScreen(
         // --- 4. SECTION: CONFIDENTIALITÉ & SÉCURITÉ (STYLE WHATSAPP) ---
 
         if (section == "privacy") {
-        item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingRow(
-                        icon = Icons.Rounded.Security,
-                        iconTint = VibrantCyan,
-                        title = "Confidentialité WhatsApp Complète",
-                        subtitle = "Présence, coches bleues, messages éphémères, anti-screenshot",
-                        onClick = { showPrivacyModal = true }
+            item { SettingsGroupTitle("Visibilité") }
+            item {
+                Column {
+                    SettingsSwitchRow(
+                        title = "Accusés de lecture",
+                        subtitle = "Votre partenaire voit quand vous avez lu ses messages",
+                        checked = settings.readReceiptsEnabled,
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(readReceiptsEnabled = on) } }
                     )
-
-                    SettingRow(
-                        icon = Icons.Rounded.Password,
-                        iconTint = AccentRose,
-                        title = "Code PIN Réel Principal",
-                        subtitle = "Changer le code secret de déverrouillage",
-                        onClick = { showPinDialog = true }
-                    )
-
-                    SettingRow(
-                        icon = Icons.Rounded.Calculate,
-                        iconTint = AccentViolet,
-                        title = "Code PIN Leurre (Camouflage Calculatrice)",
-                        subtitle = "Ouvre une fausse calculatrice fonctionnelle",
-                        onClick = { showDecoyPinDialog = true }
-                    )
-
-                    SettingRow(
-                        icon = Icons.Rounded.Timer,
-                        iconTint = AccentGold,
-                        title = "Délai d'Auto-Verrouillage",
-                        subtitle = when (settings.lockTimeoutSeconds) {
-                            0 -> "Immédiat"
-                            60 -> "1 minute"
-                            300 -> "5 minutes"
-                            else -> "Désactivé"
-                        },
-                        onClick = {
-                            val next = when (settings.lockTimeoutSeconds) {
-                                0 -> 60
-                                60 -> 300
-                                300 -> -1
-                                else -> 0
-                            }
-                            repository.updateLockTimeout(next)
-                        }
+                    SettingsSwitchRow(
+                        title = "Dernière connexion",
+                        subtitle = if (settings.lastSeenPrivacy != "nobody") "Votre activité récente est partagée avec votre partenaire" else "Votre activité n'est plus publiée",
+                        checked = settings.lastSeenPrivacy != "nobody",
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(lastSeenPrivacy = if (on) "couple_only" else "nobody") } }
                     )
                 }
             }
-        }
+            item { SettingsGroupTitle("Protection de l'écran") }
+            item {
+                SettingsSwitchRow(
+                    title = "Bloquer les captures d'écran",
+                    subtitle = "Empêche captures et enregistrements, et masque l'application dans les applications récentes",
+                    checked = settings.antiScreenshotEnabled || settings.screenBlurOnSwitch,
+                    onCheckedChange = { on -> repository.updateUiSettings { it.copy(antiScreenshotEnabled = on, screenBlurOnSwitch = on) } }
+                )
+            }
+            item { SettingsGroupTitle("Verrouillage") }
+            item {
+                Column {
+                    SettingsSwitchRow(
+                        title = "Déverrouillage par empreinte",
+                        subtitle = if (settings.hasLocalPassword) "Proposé sur l'écran de verrouillage" else "Définissez d'abord un code PIN",
+                        checked = settings.biometricEnabled,
+                        enabled = settings.hasLocalPassword,
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(biometricEnabled = on) } }
+                    )
+                    Text(
+                        text = "Verrouiller après",
+                        fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+                    )
+                    listOf(0 to "Quelques secondes", 60 to "1 minute", 300 to "5 minutes", -1 to "Jamais").forEach { (secs, label) ->
+                        SettingsRadioRow(
+                            selected = settings.lockTimeoutSeconds == secs,
+                            title = label,
+                            subtitle = if (secs == 0) "Dès que vous quittez l'application (5 secondes de grâce)" else "",
+                            onClick = { repository.updateLockTimeout(secs) }
+                        )
+                    }
+                    SettingsCategoryRow(Icons.Rounded.Password, AccentRose, "Code PIN", if (settings.hasLocalPassword) "Modifier le code de déverrouillage" else "Créer un code de déverrouillage") { showPinDialog = true }
+                    SettingsCategoryRow(Icons.Rounded.Calculate, AccentViolet, "Code leurre", "Un second code qui ouvre une calculatrice fonctionnelle") { showDecoyPinDialog = true }
+                }
+            }
         }
 
+        if (section == "conversations") {
+            item { SettingsGroupTitle("Saisie et envoi") }
+            item {
+                Column {
+                    SettingsSwitchRow(
+                        title = "Touche Entrée pour envoyer",
+                        subtitle = "La touche du clavier envoie le message au lieu d'aller à la ligne",
+                        checked = settings.enterIsSend,
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(enterIsSend = on) } }
+                    )
+                    Text("Qualité des photos envoyées", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    SettingsRadioRow(settings.photoUploadQuality != "standard", "Haute qualité", "Jusqu'à 2560 px, plus lourd") {
+                        repository.updateUiSettings { it.copy(photoUploadQuality = "hd") }
+                    }
+                    SettingsRadioRow(settings.photoUploadQuality == "standard", "Économie de données", "Jusqu'à 1600 px, envoi plus rapide") {
+                        repository.updateUiSettings { it.copy(photoUploadQuality = "standard") }
+                    }
+                }
+            }
+            item { SettingsGroupTitle("Texte") }
+            item {
+                Column {
+                    Text("Taille du texte", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                    listOf("small" to "Petite", "medium" to "Normale", "large" to "Grande", "xlarge" to "Très grande").forEach { (id, label) ->
+                        SettingsRadioRow(settings.fontSizeScale == id, label, "") { repository.updateFontSize(id) }
+                    }
+                    Text("Police", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    listOf("default" to "Poppins (par défaut)", "system" to "Police du téléphone", "serif" to "Élégante (serif)", "cursive" to "Manuscrite").forEach { (id, label) ->
+                        SettingsRadioRow(settings.fontFamilyPreference == id, label, "") { repository.updateFontFamily(id) }
+                    }
+                }
+            }
+            item { SettingsGroupTitle("Historique") }
+            item {
+                SettingsCategoryRow(Icons.Rounded.DeleteSweep, Color(0xFFC4605C), "Effacer toutes les discussions", "Supprime l'historique de cet appareil (une confirmation sera demandée)") {
+                    showClearChatDialog = true
+                }
+            }
+        }
 
         // --- 6. SECTION: MODES DE CONNEXION (2 OPTIONS) ---
 
@@ -2250,7 +1824,7 @@ private fun SettingsRadioRow(selected: Boolean, title: String, subtitle: String,
         Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(text = title, fontSize = 15.sp, color = TextPrimary)
-            Text(text = subtitle, fontSize = 12.sp, color = TextSecondary)
+            if (subtitle.isNotBlank()) Text(text = subtitle, fontSize = 12.sp, color = TextSecondary)
         }
     }
 }
