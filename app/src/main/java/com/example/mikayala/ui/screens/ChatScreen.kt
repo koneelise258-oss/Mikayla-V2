@@ -162,6 +162,12 @@ fun ChatScreen(
     val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
     val userSettings by repository.userSettings.collectAsState()
 
+    // Sélection multiple (long appui > Sélectionner)
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
+    val selectionMode = selectedIds.isNotEmpty()
+    androidx.activity.compose.BackHandler(enabled = selectionMode) { selectedIds = emptySet() }
+
     // Recherche et favoris (menu ⋮ de l'en-tête)
     var searchQuery by remember(searchMode) { mutableStateOf("") }
     val shownMessages = remember(messages, searchMode, searchQuery) {
@@ -349,6 +355,43 @@ fun ChatScreen(
                 }
             }
 
+            // Barre d'actions de la sélection multiple
+            if (selectionMode) {
+                Surface(color = com.example.mikayala.theme.MikayalaColors.surface, modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { selectedIds = emptySet() }) { Icon(Icons.Rounded.Close, contentDescription = "Annuler la sélection", tint = TextPrimary) }
+                        Text("${selectedIds.size} sélectionné${if (selectedIds.size > 1) "s" else ""}", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, modifier = Modifier.weight(1f))
+                        IconButton(onClick = {
+                            val text = shownMessages.filter { it.id in selectedIds && it.content.isNotBlank() }.joinToString("\n") { it.content }
+                            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Mikayala", text))
+                            Toast.makeText(context, "Messages copiés", Toast.LENGTH_SHORT).show()
+                            selectedIds = emptySet()
+                        }) { Icon(Icons.Rounded.ContentCopy, contentDescription = "Copier", tint = TextPrimary) }
+                        IconButton(onClick = {
+                            selectedIds.forEach { repository.toggleStarred(it) }
+                            selectedIds = emptySet()
+                        }) { Icon(Icons.Rounded.StarBorder, contentDescription = "Favori", tint = TextPrimary) }
+                        IconButton(onClick = { confirmBulkDelete = true }) { Icon(Icons.Rounded.Delete, contentDescription = "Supprimer", tint = TextPrimary) }
+                    }
+                }
+            }
+            if (confirmBulkDelete) {
+                AlertDialog(
+                    onDismissRequest = { confirmBulkDelete = false },
+                    title = { Text("Supprimer ${selectedIds.size} message${if (selectedIds.size > 1) "s" else ""} ?") },
+                    text = { Text("Ils seront masqués sur cet appareil uniquement.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            selectedIds.forEach { repository.deleteMessage(it, forEveryone = false) }
+                            selectedIds = emptySet()
+                            confirmBulkDelete = false
+                        }) { Text("Supprimer pour moi", color = Color(0xFFC4605C)) }
+                    },
+                    dismissButton = { TextButton(onClick = { confirmBulkDelete = false }) { Text("Annuler") } }
+                )
+            }
+
             // Barre de recherche / favoris
             if (searchMode != null) {
                 Surface(color = com.example.mikayala.theme.MikayalaColors.surface, modifier = Modifier.fillMaxWidth()) {
@@ -421,19 +464,38 @@ fun ChatScreen(
                             }
                         }
                     }
-                    MessageBubble(
-                        message = message,
-                        repository = repository,
-                        currentUserId = chatCurrentUid,
-                        timeFormatted = timeFormat.format(Date(message.createdAt)),
-                        userSettings = userSettings,
-                        onLongPress = { selectedMessageForOptions = message },
-                        onReply = { replyToMessage = message },
-                        onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) },
-                        onViewOnceClicked = {
-                            repository.markViewOnceAsViewed(message.id)
+                    val isSelected = message.id in selectedIds
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent)
+                    ) {
+                        MessageBubble(
+                            message = message,
+                            repository = repository,
+                            currentUserId = chatCurrentUid,
+                            timeFormatted = timeFormat.format(Date(message.createdAt)),
+                            userSettings = userSettings,
+                            onLongPress = {
+                                if (selectionMode) selectedIds = if (isSelected) selectedIds - message.id else selectedIds + message.id
+                                else selectedMessageForOptions = message
+                            },
+                            onReply = { replyToMessage = message },
+                            onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) },
+                            onViewOnceClicked = {
+                                repository.markViewOnceAsViewed(message.id)
+                            }
+                        )
+                        // En mode sélection, un appui sélectionne ou désélectionne au lieu d'ouvrir le message
+                        if (selectionMode) {
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clickable { selectedIds = if (isSelected) selectedIds - message.id else selectedIds + message.id }
+                            )
                         }
-                    )
+                    }
                 }
 
                 // Partner presence indicators in chat
@@ -716,6 +778,7 @@ fun ChatScreen(
                     selectedMessageForOptions = null
                 },
                 onToggleStar = { repository.toggleStarred(message.id) },
+                onSelect = { selectedIds = setOf(message.id) },
                 onTogglePin = { repository.togglePinned(message.id) },
                 onSaveToVault = { repository.saveMessageToVault(message) },
                 onDeleteForMe = { repository.deleteMessage(message.id, false) },

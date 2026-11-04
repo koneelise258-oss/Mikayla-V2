@@ -41,7 +41,9 @@ fun MessageOptionBottomSheet(
     onSaveToVault: () -> Unit,
     onDeleteForMe: () -> Unit,
     onDeleteForEveryone: () -> Unit,
-    onToggleReaction: (String) -> Unit
+    onToggleReaction: (String) -> Unit,
+    /** Passe en sélection multiple avec ce message déjà sélectionné. */
+    onSelect: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showInfoDialog by remember { mutableStateOf(false) }
@@ -140,6 +142,18 @@ fun MessageOptionBottomSheet(
                 iconColor = AccentViolet,
                 onClick = {
                     onReply()
+                    onDismiss()
+                }
+            )
+
+            // Option: Sélection multiple
+            OptionItem(
+                icon = Icons.Rounded.Checklist,
+                title = "Sélectionner",
+                subtitle = "Choisir plusieurs messages à copier, mettre en favori ou supprimer",
+                iconColor = AccentViolet,
+                onClick = {
+                    onSelect()
                     onDismiss()
                 }
             )
