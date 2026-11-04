@@ -268,7 +268,7 @@ fun SecurityLockScreen(
                                 Surface(
                                     shape = CircleShape,
                                     color = CardDark,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
                                     modifier = Modifier
                                         .size(64.dp)
                                         .clickable { handlePinDigit(item) }

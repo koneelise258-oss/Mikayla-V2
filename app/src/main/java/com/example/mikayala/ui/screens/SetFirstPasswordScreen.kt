@@ -161,7 +161,7 @@ fun SetFirstPasswordScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     color = CardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite)
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite)
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -370,7 +370,7 @@ fun SetFirstPasswordScreen(
                                     Surface(
                                         shape = CircleShape,
                                         color = CardDark,
-                                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                         modifier = Modifier
                                             .size(64.dp)
                                             .clickable { handleDigit(item) }

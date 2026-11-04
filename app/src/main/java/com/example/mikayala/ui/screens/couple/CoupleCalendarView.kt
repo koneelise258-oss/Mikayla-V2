@@ -81,7 +81,7 @@ fun CoupleCalendarView(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
@@ -263,7 +263,7 @@ fun CoupleCalendarView(
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MatteCardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.padding(20.dp), contentAlignment = Alignment.Center) {
@@ -310,7 +310,7 @@ fun CoupleCalendarView(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -358,7 +358,7 @@ fun CoupleCalendarView(
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = CardDarkElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite)
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite)
                     ) {
                         Text(
                             text = countdownText,
@@ -420,7 +420,7 @@ private fun EventCardItem(
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MatteCardDark,
-        border = BorderStroke(1.dp, BorderSubtleWhite),
+        border = BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -482,7 +482,7 @@ private fun EventFormDialog(
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = MatteCardDark,
-            border = BorderStroke(1.dp, BorderSubtleWhite),
+            border = BorderStroke(0.5.dp, BorderSubtleWhite),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -514,7 +514,7 @@ private fun EventFormDialog(
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {

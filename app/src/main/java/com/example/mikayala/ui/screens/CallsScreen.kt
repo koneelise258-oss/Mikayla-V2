@@ -189,7 +189,7 @@ private fun CallLogItem(
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = CardDark,
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(

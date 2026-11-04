@@ -54,7 +54,7 @@ fun PairingDialog(
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = CardModalSurface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
             modifier = Modifier.fillMaxWidth()
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {

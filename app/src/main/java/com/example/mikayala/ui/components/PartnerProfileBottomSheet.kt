@@ -104,7 +104,7 @@ fun PartnerProfileBottomSheet(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -247,7 +247,7 @@ fun PartnerProfileBottomSheet(
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = CardDarkElevated,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -283,7 +283,7 @@ fun PartnerProfileBottomSheet(
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -359,7 +359,7 @@ fun PartnerProfileBottomSheet(
                                         Surface(
                                             shape = RoundedCornerShape(10.dp),
                                             color = CardDarkElevated,
-                                            border = BorderStroke(1.dp, BorderSubtleWhite),
+                                            border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                             modifier = Modifier.size(70.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
@@ -407,7 +407,7 @@ fun PartnerProfileBottomSheet(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = CardDarkElevated,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
@@ -456,7 +456,7 @@ fun ContactActionButton(
         Surface(
             shape = CircleShape,
             color = CardDarkElevated,
-            border = BorderStroke(1.dp, BorderSubtleWhite),
+            border = BorderStroke(0.5.dp, BorderSubtleWhite),
             modifier = Modifier.size(46.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {

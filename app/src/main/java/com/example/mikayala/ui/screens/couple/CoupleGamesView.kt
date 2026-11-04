@@ -164,7 +164,7 @@ private fun ScratchCardGameSection(repository: MikayalaRepository) {
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -349,7 +349,7 @@ private fun TruthOrDareGameSection(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -518,7 +518,7 @@ private fun TruthOrDareGameSection(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -620,7 +620,7 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -763,7 +763,7 @@ private fun QuizGameSection(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.clickable { showAddDialog = true }
                 ) {
                     Row(
@@ -785,7 +785,7 @@ private fun QuizGameSection(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -870,7 +870,7 @@ private fun QuizGameSection(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -943,7 +943,7 @@ private fun LoveCouponsGameSection(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.clickable { showAddCouponDialog = true }
                 ) {
                     Row(
@@ -1044,7 +1044,7 @@ private fun LoveCouponsGameSection(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -1108,7 +1108,7 @@ private fun BucketListGameSection(
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1147,7 +1147,7 @@ private fun BucketListGameSection(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.clickable { showAddDialog = true }
                 ) {
                     Row(
@@ -1205,7 +1205,7 @@ private fun BucketListGameSection(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -1257,7 +1257,7 @@ private fun WouldYouRatherGameSection(
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1329,7 +1329,7 @@ private fun LoveCapsulesSection(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -1366,7 +1366,7 @@ private fun LoveCapsulesSection(
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = MatteCardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -1498,7 +1498,7 @@ private fun LoveCapsulesSection(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = DeepSurfaceBlack,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -1562,7 +1562,7 @@ private fun LoveCapsulesSection(
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = DeepSurfaceBlack,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(

@@ -86,7 +86,7 @@ fun FloCycleTrackerView(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
@@ -134,7 +134,7 @@ fun FloCycleTrackerView(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = CardDarkElevated,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.clickable { showSettingsDialog = true }
                             ) {
                                 Row(
@@ -257,7 +257,7 @@ fun FloCycleTrackerView(
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = CardDarkElevated,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -275,7 +275,7 @@ fun FloCycleTrackerView(
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = CardDarkElevated,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -317,7 +317,7 @@ fun FloCycleTrackerView(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -478,7 +478,7 @@ fun FloCycleTrackerView(
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = CardDarkElevated,
-                                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                     modifier = Modifier.clickable {
                                         Toast.makeText(context, "Super idée d'attention : $suggestion ! ❤️", Toast.LENGTH_SHORT).show()
                                     }
@@ -508,7 +508,7 @@ fun FloCycleTrackerView(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -534,7 +534,7 @@ fun FloCycleTrackerView(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = CardDarkElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
@@ -664,7 +664,7 @@ fun FloCycleTrackerView(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 600.dp)

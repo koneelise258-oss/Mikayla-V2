@@ -150,7 +150,7 @@ fun VaultScreen(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = CardModalSurface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -268,7 +268,7 @@ fun VaultScreen(
                     onClick = { selectedCategory = catKey },
                     shape = RoundedCornerShape(14.dp),
                     color = if (isSelected) AccentRose else CardDark,
-                    border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+                    border = if (isSelected) null else androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.weight(1f)
                 ) {
                     Box(
@@ -330,7 +330,7 @@ private fun VaultGridItem(
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
         color = CardDark,
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(

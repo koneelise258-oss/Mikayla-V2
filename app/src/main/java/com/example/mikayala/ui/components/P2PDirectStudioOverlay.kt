@@ -223,7 +223,7 @@ fun P2PDirectStudioOverlay(
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = CardDark,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier
                             .weight(1f)
                             .clickable {
@@ -275,7 +275,7 @@ fun P2PDirectStudioOverlay(
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = CardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -341,7 +341,7 @@ fun P2PDirectStudioOverlay(
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = CardDark,
-                            border = BorderStroke(1.dp, BorderSubtleWhite),
+                            border = BorderStroke(0.5.dp, BorderSubtleWhite),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(

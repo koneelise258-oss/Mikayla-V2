@@ -827,7 +827,7 @@ private fun MessageBubble(
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     shadowElevation = 1.dp,
                     modifier = Modifier.padding(bottom = 6.dp)
                 ) {
@@ -891,7 +891,7 @@ private fun MessageBubble(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MatteCardElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier
                             .widthIn(max = 280.dp)
                             .padding(bottom = 2.dp)
@@ -985,7 +985,7 @@ private fun MessageBubble(
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = CardDarkElevated,
-                            border = BorderStroke(1.dp, BorderSubtleWhite),
+                            border = BorderStroke(0.5.dp, BorderSubtleWhite),
                             shadowElevation = 1.dp,
                             modifier = Modifier.padding(bottom = 2.dp)
                         ) {
@@ -1337,7 +1337,7 @@ private fun MessageBubble(
                                         Surface(
                                             shape = RoundedCornerShape(8.dp),
                                             color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
-                                            border = BorderStroke(1.dp, BorderSubtleWhite),
+                                            border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                             modifier = Modifier
                                                 .size(56.dp)
                                                 .clickable {
@@ -1475,7 +1475,7 @@ private fun MessageBubble(
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = CardDarkElevated,
-                            border = BorderStroke(1.dp, BorderSubtleWhite),
+                            border = BorderStroke(0.5.dp, BorderSubtleWhite),
                             shadowElevation = 1.dp,
                             modifier = Modifier.padding(bottom = 3.dp)
                         ) {
@@ -1745,7 +1745,7 @@ fun ImageMessageItem(
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = CardDarkElevated,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 shadowElevation = 1.dp,
                 modifier = Modifier.padding(bottom = 2.dp)
             ) {
@@ -1920,7 +1920,7 @@ fun VideoMessageItem(
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = CardDarkElevated,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 shadowElevation = 1.dp,
                 modifier = Modifier.padding(bottom = 2.dp)
             ) {
@@ -2358,7 +2358,7 @@ fun CalendarEventMessageItem(
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(

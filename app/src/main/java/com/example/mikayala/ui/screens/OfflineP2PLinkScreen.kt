@@ -171,7 +171,7 @@ fun OfflineP2PLinkScreen(
                             onClick = { showQrScannerModal = false },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, BorderSubtleWhite)
+                            border = BorderStroke(0.5.dp, BorderSubtleWhite)
                         ) {
                             Text("Fermer", color = TextPrimary)
                         }
@@ -196,7 +196,7 @@ fun OfflineP2PLinkScreen(
         topBar = {
             Surface(
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -294,7 +294,7 @@ fun OfflineP2PLinkScreen(
                     Surface(
                         shape = RoundedCornerShape(18.dp),
                         color = MatteCardDark,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -613,7 +613,7 @@ fun OfflineP2PLinkScreen(
                             Surface(
                                 shape = RoundedCornerShape(18.dp),
                                 color = DeepSurfaceBlack,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -929,7 +929,7 @@ private fun P2PMetricCard(label: String, value: String, icon: String, modifier: 
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = DeepSurfaceBlack,
-        border = BorderStroke(1.dp, BorderSubtleWhite),
+        border = BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = modifier
     ) {
         Column(
@@ -956,7 +956,7 @@ private fun P2PBeamToolCard(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         color = MatteCardDark,
-        border = BorderStroke(1.dp, BorderSubtleWhite),
+        border = BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = modifier
     ) {
         Column(

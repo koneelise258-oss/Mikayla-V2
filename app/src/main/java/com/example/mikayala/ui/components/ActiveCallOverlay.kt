@@ -182,7 +182,7 @@ fun ActiveCallOverlay(
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = CardDarkBlur95,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite)
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite)
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -226,7 +226,7 @@ fun ActiveCallOverlay(
         Surface(
             shape = RoundedCornerShape(32.dp),
             color = CardDarkBlur95,
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
