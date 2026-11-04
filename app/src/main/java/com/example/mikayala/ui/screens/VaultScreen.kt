@@ -218,6 +218,8 @@ fun VaultScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(DeepNight)
+            .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
+            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(10.dp))

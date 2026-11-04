@@ -675,8 +675,11 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(DeepNight)
+            // Tablette : colonne centrée de 640 dp maximum, plus lisible qu'une liste étirée
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(top = 10.dp, bottom = 32.dp)
     ) {
         if (section != null) {

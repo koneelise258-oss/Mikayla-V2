@@ -60,6 +60,8 @@ fun CoupleSpaceScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MatteSlateBackground)
+            .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
+            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(10.dp))
