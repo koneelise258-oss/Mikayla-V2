@@ -111,7 +111,9 @@ object VideoExporter {
                         break
                     }
                     bufferInfo.presentationTimeUs = sampleTime - startUs
-                    bufferInfo.flags = extractor.sampleFlags
+                    // Conversion explicite des indicateurs de l'extracteur vers ceux du multiplexeur
+                    bufferInfo.flags = if ((extractor.sampleFlags and android.media.MediaExtractor.SAMPLE_FLAG_SYNC) != 0)
+                        android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
                     muxer.writeSampleData(dstTrack, buffer, bufferInfo)
                 }
                 extractor.advance()

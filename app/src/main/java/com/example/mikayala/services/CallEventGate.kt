@@ -38,8 +38,11 @@ class CallEventGate(
     }
 
     private fun purge(now: Long) {
-        seenEvents.entries.removeIf { now - it.value > dedupWindowMs }
-        terminatedCalls.entries.removeIf { now - it.value > terminatedTtlMs }
+        // Itérateur explicite (removeIf n'existe pas sur Android 6)
+        val a = seenEvents.entries.iterator()
+        while (a.hasNext()) if (now - a.next().value > dedupWindowMs) a.remove()
+        val b = terminatedCalls.entries.iterator()
+        while (b.hasNext()) if (now - b.next().value > terminatedTtlMs) b.remove()
     }
 
     /** true si cet événement exact a déjà été traité dans la fenêtre (à ignorer). */

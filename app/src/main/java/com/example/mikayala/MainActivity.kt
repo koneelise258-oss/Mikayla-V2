@@ -263,7 +263,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             AppNavigationState.MAIN_APP -> {
-                                val coupleSpace = repository.activeCoupleSpace.value
+                                val coupleSpace by repository.activeCoupleSpace.collectAsState()
                                 if (!coupleSpace.isPaired) {
                                     LaunchedEffect(Unit) {
                                         navigationState = AppNavigationState.ONBOARDING
