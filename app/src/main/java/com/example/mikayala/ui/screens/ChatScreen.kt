@@ -233,14 +233,10 @@ fun ChatScreen(
     // Pinned Message banner
     val pinnedMessage = messages.lastOrNull { it.isPinned }
 
-    val wallpaperBrush = remember(userSettings.chatTheme) {
-        when (userSettings.chatTheme) {
-            "sunset" -> Brush.verticalGradient(listOf(Color(0xFF2D0B38), Color(0xFF140727), Color(0xFF0F172A)))
-            "rose_gold" -> Brush.verticalGradient(listOf(Color(0xFF2A0A3D), Color(0xFF1C0A2A), Color(0xFF090D16)))
-            "cyber_cyan" -> Brush.verticalGradient(listOf(Color(0xFF052331), Color(0xFF071924), Color(0xFF070B12)))
-            "matte_black" -> Brush.verticalGradient(listOf(Color(0xFF030507), Color(0xFF080C12), Color(0xFF05070A)))
-            else -> Brush.verticalGradient(listOf(Color(0xFF0B0F19), Color(0xFF080C14), Color(0xFF05070A)))
-        }
+    // Fond de conversation Soft : teintes unies et douces, déclinées en clair et en sombre
+    val palette = com.example.mikayala.theme.MikayalaColors
+    val wallpaperBrush = remember(userSettings.chatTheme, palette.isDark) {
+        com.example.mikayala.theme.SoftChatStyles.wallpaper(userSettings.chatTheme, palette)
     }
 
     Box(
@@ -1449,13 +1445,7 @@ private fun MessageBubble(
             else -> {
                 // Text Message Bubble
                 Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
-                    val bubbleColors = when (userSettings.bubbleStyle) {
-                        "neon_cyan" -> listOf(Color(0xFF00B4D8), Color(0xFF0077B6))
-                        "dark_gold" -> listOf(Color(0xFFFFB703), Color(0xFFFB8500))
-                        "emerald_luxury" -> listOf(Color(0xFF2EC4B6), Color(0xFF0E7490))
-                        "frosted_glass" -> if (userSettings.isDarkMode) listOf(Color(0x44FFFFFF), Color(0x22FFFFFF)) else listOf(Color(0x99FFFFFF), Color(0x66FFFFFF))
-                        else -> listOf(Color(0xFFE91E63), Color(0xFFAD1457)) // default "gradient_pink"
-                    }
+                    val bubble = com.example.mikayala.theme.SoftChatStyles.bubble(userSettings.bubbleStyle, com.example.mikayala.theme.MikayalaColors, isSender)
 
                     Surface(
                         shape = RoundedCornerShape(
@@ -1464,25 +1454,16 @@ private fun MessageBubble(
                             bottomStart = if (isSender) 18.dp else 4.dp,
                             bottomEnd = if (isSender) 4.dp else 18.dp
                         ),
-                        color = Color.Transparent,
-                        border = BorderStroke(
-                            width = 1.dp,
-                            color = if (userSettings.bubbleStyle == "frosted_glass") Color.White.copy(alpha = 0.4f) else Color.Transparent
-                        ),
+                        color = bubble.background,
+                        border = if (bubble.outlined) BorderStroke(0.5.dp, BorderSubtleWhite) else null,
                         modifier = Modifier.widthIn(min = 80.dp, max = 300.dp)
                     ) {
-                        Column(
-                            modifier = if (isSender) {
-                                Modifier.background(Brush.linearGradient(bubbleColors))
-                            } else {
-                                Modifier.background(if (userSettings.isDarkMode) ChatBubbleReceiver else Color(0xFFE5E7EB))
-                            }.padding(horizontal = 14.dp, vertical = 10.dp)
-                        ) {
+                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                             Text(
                                 text = message.content,
-                                fontSize = 14.sp,
-                                color = if (isSender) Color.White else (if (userSettings.isDarkMode) TextPrimary else Color(0xFF1F2937)),
-                                lineHeight = 20.sp
+                                fontSize = 15.sp,
+                                color = bubble.text,
+                                lineHeight = 21.sp
                             )
                         }
                     }

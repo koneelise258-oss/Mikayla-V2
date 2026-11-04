@@ -59,9 +59,7 @@ fun SettingsScreen(
 
     // Dialog & BottomSheet state toggles
     var showProfileModal by remember { mutableStateOf(false) }
-    var showWallpaperModal by remember { mutableStateOf(false) }
     var showAppIconModal by remember { mutableStateOf(false) }
-    var showBubbleStyleModal by remember { mutableStateOf(false) }
     var showStorageModal by remember { mutableStateOf(false) }
     var showPinDialog by remember { mutableStateOf(false) }
     var showDecoyPinDialog by remember { mutableStateOf(false) }
@@ -95,8 +93,19 @@ fun SettingsScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let {
-            repository.updateWallpaper("custom_image", it.toString())
-            Toast.makeText(context, "Fond d'écran personnalisé appliqué ! 🖼️", Toast.LENGTH_SHORT).show()
+            // Copie dans l'application : l'autorisation de lecture de la galerie est temporaire,
+            // la photo resterait sinon illisible après un redémarrage.
+            val saved = try {
+                val dest = java.io.File(context.filesDir, "chat_wallpaper.jpg")
+                context.contentResolver.openInputStream(it)?.use { input -> dest.outputStream().use { out -> input.copyTo(out) } }
+                android.net.Uri.fromFile(dest).toString() + "?v=" + System.currentTimeMillis()
+            } catch (e: Exception) { null }
+            if (saved != null) {
+                repository.updateWallpaper("custom_image", saved)
+                Toast.makeText(context, "Fond de conversation appliqué", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Impossible de lire cette photo", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -354,116 +363,7 @@ fun SettingsScreen(
     }
 
     // 2. Wallpaper Picker Modal
-    if (showWallpaperModal) {
-        val wallpapers = listOf(
-            Triple("twilight", "Nébuleuse Nuit Étoilée 🌌", listOf(Color(0xFF0F172A), Color(0xFF1E1B4B))),
-            Triple("sunset", "Crépuscule Romantique 🌅", listOf(Color(0xFF4A154B), Color(0xFF831843))),
-            Triple("rose_gold", "Rose Gold & Aurore ✨", listOf(Color(0xFF2E1065), Color(0xFF701A75))),
-            Triple("cyber_cyan", "Matrix Cyber Cyan 💠", listOf(Color(0xFF083344), Color(0xFF064E3B))),
-            Triple("matte_black", "Obsidienne Pure OLED 🖤", listOf(Color(0xFF05070B), Color(0xFF111827)))
-        )
 
-        var localOpacity by remember(settings.wallpaperOpacity) { mutableFloatStateOf(settings.wallpaperOpacity) }
-        var localBlur by remember(settings.wallpaperBlur) { mutableFloatStateOf(settings.wallpaperBlur) }
-
-        Dialog(onDismissRequest = { showWallpaperModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(text = "Fond d'Écran du Chat & App 🖼️", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Personnalisez l'ambiance visuelle de vos discussions.", fontSize = 12.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Opacity & Blur Sliders
-                    Text(text = "Opacité du Fond : ${(localOpacity * 100).toInt()}%", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                    Slider(
-                        value = localOpacity,
-                        onValueChange = {
-                            localOpacity = it
-                            repository.updateWallpaperControls(localOpacity, localBlur)
-                        },
-                        valueRange = 0f..1f,
-                        colors = SliderDefaults.colors(thumbColor = VibrantCyan, activeTrackColor = VibrantCyan)
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(text = "Flou artistique (Blur) : ${localBlur.toInt()} dp", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                    Slider(
-                        value = localBlur,
-                        onValueChange = {
-                            localBlur = it
-                            repository.updateWallpaperControls(localOpacity, localBlur)
-                        },
-                        valueRange = 0f..25f,
-                        colors = SliderDefaults.colors(thumbColor = AccentRose, activeTrackColor = AccentRose)
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Import Custom Gallery Wallpaper Button
-                    Button(
-                        onClick = {
-                            wallpaperPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CardDarkElevated),
-                        border = BorderStroke(1.dp, VibrantCyan.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, tint = VibrantCyan, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Importer une photo de la Galerie 📱", fontSize = 13.sp, color = VibrantCyan, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(text = "Ou choisissez un thème prédéfini :", fontSize = 11.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        wallpapers.forEach { (id, title, colors) ->
-                            val isSelected = settings.chatTheme == id
-                            Surface(
-                                onClick = {
-                                    repository.updateWallpaper(id, "")
-                                    showWallpaperModal = false
-                                    Toast.makeText(context, "Fond d'écran '$title' appliqué !", Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(14.dp),
-                                color = Color.Transparent,
-                                border = BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) VibrantCyan else BorderSubtleWhite),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .background(Brush.horizontalGradient(colors))
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                    if (isSelected) {
-                                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = VibrantCyan, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // 3. App Icon & Camouflage Modal
     if (showAppIconModal) {
@@ -540,72 +440,7 @@ fun SettingsScreen(
 
 
     // 5. Bubble Style Modal
-    if (showBubbleStyleModal) {
-        val bubbleStyles = listOf(
-            Triple("gradient_pink", "Rose Rubis & Magenta Passion 💕", listOf(Color(0xFFE91E63), Color(0xFFAD1457))),
-            Triple("neon_cyan", "Cyan Néon & Bleu Nuit 💠", listOf(Color(0xFF00B4D8), Color(0xFF0077B6))),
-            Triple("dark_gold", "Or Impérial & Ambre 👑", listOf(Color(0xFFFFB703), Color(0xFFFB8500))),
-            Triple("emerald_luxury", "Émeraude Velours 🌿", listOf(Color(0xFF2EC4B6), Color(0xFF0E7490))),
-            Triple("frosted_glass", "Verre Dépoli Givré ❄️", listOf(Color(0x66FFFFFF), Color(0x33FFFFFF)))
-        )
 
-        Dialog(onDismissRequest = { showBubbleStyleModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(text = "Style des Bulles de Message 💬", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Sélectionnez l'effet visuel des bulles dans vos conversations.", fontSize = 12.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        bubbleStyles.forEach { (id, title, colors) ->
-                            val isSelected = settings.bubbleStyle == id
-                            Surface(
-                                onClick = {
-                                    repository.updateBubbleStyle(id)
-                                    showBubbleStyleModal = false
-                                    Toast.makeText(context, "Style de bulle '$title' activé !", Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (isSelected) CardDarkElevated else Color(0x22141C2B),
-                                border = BorderStroke(if (isSelected) 1.5.dp else 1.dp, if (isSelected) AccentRose else BorderSubtleWhite),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(Brush.linearGradient(colors))
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                                    }
-                                    if (isSelected) {
-                                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = AccentRose, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // 6. WhatsApp-Style Privacy & Security Modal
 
@@ -1195,16 +1030,6 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (section == "conversations") {
-                    SettingRow(
-                        icon = Icons.Rounded.Wallpaper,
-                        iconTint = VibrantCyan,
-                        title = "Fond d'Écran du Chat & App",
-                        subtitle = "Galerie de thèmes ou importer une photo personnalisée",
-                        onClick = { showWallpaperModal = true }
-                    )
-                    }
-
                     if (section == "appearance") {
                     SettingRow(
                         icon = Icons.Rounded.AppShortcut,
@@ -1212,16 +1037,6 @@ fun SettingsScreen(
                         title = "Changer l'Icône de l'Application",
                         subtitle = "10 icônes au choix pour l'écran d'accueil",
                         onClick = { showAppIconModal = true }
-                    )
-                    }
-
-                    if (section == "conversations") {
-                    SettingRow(
-                        icon = Icons.Rounded.BubbleChart,
-                        iconTint = AccentRose,
-                        title = "Style des Bulles de Discussion",
-                        subtitle = "Rose Rubis, Cyan Néon, Or Impérial, Verre Dépoli",
-                        onClick = { showBubbleStyleModal = true }
                     )
                     }
 
@@ -1420,6 +1235,37 @@ fun SettingsScreen(
                     }
                     SettingsRadioRow(settings.photoUploadQuality == "standard", "Économie de données", "Jusqu'à 1600 px, envoi plus rapide") {
                         repository.updateUiSettings { it.copy(photoUploadQuality = "standard") }
+                    }
+                }
+            }
+            item { SettingsGroupTitle("Apparence des messages") }
+            item {
+                Column {
+                    Text("Couleur de vos bulles", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                    com.example.mikayala.theme.SoftChatStyles.BUBBLES.forEach { (id, label) ->
+                        val sw = com.example.mikayala.theme.SoftChatStyles.bubble(id, com.example.mikayala.theme.MikayalaColors, true).background
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).background(sw).border(0.5.dp, BorderSubtleWhite, CircleShape))
+                            SettingsRadioRow(settings.bubbleStyle == id, label, "") { repository.updateBubbleStyle(id) }
+                        }
+                    }
+                    Text("Fond de conversation", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    com.example.mikayala.theme.SoftChatStyles.WALLPAPERS.forEach { (id, label) ->
+                        SettingsRadioRow(settings.chatTheme == id || (id == "twilight" && settings.chatTheme !in com.example.mikayala.theme.SoftChatStyles.WALLPAPERS.map { it.first } && settings.chatTheme != "custom_image"), label, "") {
+                            repository.updateWallpaper(id, "")
+                        }
+                    }
+                    SettingsRadioRow(settings.chatTheme == "custom_image", "Ma photo", if (settings.chatTheme == "custom_image") "Touchez pour en choisir une autre" else "Choisir une photo de la galerie") {
+                        wallpaperPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+                    if (settings.chatTheme == "custom_image") {
+                        Text("Visibilité de la photo : ${(settings.wallpaperOpacity * 100).toInt()} %", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+                        Slider(
+                            value = settings.wallpaperOpacity,
+                            onValueChange = { repository.updateWallpaperControls(it, 0f) },
+                            valueRange = 0.2f..1f,
+                            colors = SliderDefaults.colors(thumbColor = AccentRose, activeTrackColor = AccentRose)
+                        )
                     }
                 }
             }

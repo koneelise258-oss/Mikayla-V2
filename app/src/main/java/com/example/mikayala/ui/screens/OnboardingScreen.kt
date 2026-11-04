@@ -158,7 +158,7 @@ fun OnboardingScreen(
     val avatarPresets = listOf("💜", "🌹", "🪽", "🌟", "👑", "💖")
 
     // Dark landing theme canvas
-    val darkBg = Color(0xFF0E0B16)
+    val darkBg = DeepNight
     val cardBg = Color(0xFF1B182B)
     val cardElevated = Color(0xFF242038)
 

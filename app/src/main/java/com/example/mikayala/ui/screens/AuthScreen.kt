@@ -53,7 +53,7 @@ fun AuthScreen(
     var loadingMessage by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
-    val darkBg = Color(0xFF0E0B16)
+    val darkBg = DeepNight
     val cardBg = Color(0xFF1B182B)
 
     Box(
