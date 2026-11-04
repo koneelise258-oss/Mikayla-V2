@@ -8,6 +8,9 @@
 | Typographie | `theme/Type.kt` | Poppins embarquée (OFL), échelle Material ; police au choix (Poppins, système, serif, manuscrite). |
 | Taille du texte | `theme/Theme.kt` | Multiplicateur appliqué à toute l'app (petite / normale / grande / très grande), en plus du réglage Android. |
 | Styles de conversation | `theme/SoftChatStyles.kt` | 5 couleurs de bulles pastel pleines, 5 fonds unis + photo personnelle. |
+| Espacements, rayons, durées | `theme/Dimens.kt` | grille de 4 dp, marge d'écran 16 dp, largeur max 640 dp (tablette), rayons 8/12/18/24, animations 150–220 ms. |
+| Composants | `ui/components/SoftComponents.kt` | bouton principal, secondaire, texte, champ de saisie, en-tête de section, état vide, chargement, bandeau d'erreur/info, largeur de contenu. |
+| Boutons partagés | `ui/components/NeumorphicComponents.kt` | bouton icône rond et bouton d'action, plats (plus de halo coloré de 12 dp ni de dégradé). |
 | Navigation | `ui/components/GlassmorphicFloatingNavBar.kt` | Barre sobre : surface unie, filet, pastille de l'onglet actif, badge. Plus de flou ni d'ombre. |
 
 Règles appliquées : pas de dégradé fluo, pas de halo, pas d'animation en boucle décorative, ombres retirées des éléments principaux, fenêtres réservées aux confirmations et choix rapides.
@@ -30,6 +33,9 @@ Constat initial : la plupart des réglages n'étaient **ni enregistrés ni utili
 | Couleur des bulles / fond de conversation | non enregistrés, couleurs fluo | enregistrés, pastels Soft |
 | Photo de fond | perdue au redémarrage (autorisation galerie temporaire) | copiée dans l'app |
 | Icône de l'application | factice | 10 icônes réelles (alias Android) |
+| Stockage | chiffres inventés (« 1,2 Mo », « 4,6 Mo »), « Vider le cache » ne faisait rien | page : tailles mesurées sur l'appareil, vrai vidage du cache |
+| « Pense à moi » | affichait « envoyé » sans rien envoyer | vraie notification au partenaire |
+| Se déconnecter | absent (seule la dissociation du couple déconnectait) | ajouté dans Mon compte, avec confirmation |
 | Notifications (son, vibration, catégories, aperçu) | partiellement factice | réels (mission précédente) |
 
 Retirés de l'interface (fonction absente du code, à développer plus tard — rien n'a été supprimé côté données) :
@@ -49,7 +55,10 @@ Fenêtres conservées (choix rapide ou confirmation) : code PIN, code leurre, ju
 | Navigation | barre Soft, visible par défaut, libellés Discussions / Appels / Couple / Coffre / Paramètres |
 | Conversation | bulles pastel lisibles en clair et sombre, fond uni doux |
 | Connexion / onboarding | halos décoratifs retirés, fond du thème |
-| Tous les écrans | couleurs du thème actif, Poppins |
+| Espace Couple | onglets lisibles : Notre histoire, Jeux, Calendrier, Cycle |
+| Cycle | dates présentées comme estimations + avertissement « ni avis médical ni contraception » |
+| Coffre, Appels | états vides explicites ; grille du coffre adaptative (plus de colonnes sur tablette) |
+| Tous les écrans | couleurs du thème, Poppins, texte blanc forcé remplacé (71 endroits), 128 couleurs fluo adoucies, ombres limitées à 1–2 dp, 81 bordures affinées |
 
 ## 4. Fonctionnalités conservées
 Messagerie (réponses, réactions, édition, suppression, épinglage), notes vocales, photos/vidéos/documents, appels (signalisation), coffre, cycle, jeux, calendrier, P2P, jumelage, codes PIN et calculatrice leurre, notifications : aucun point d'entrée retiré. Les deux boutons carrés de l'en-tête sont désormais dans le menu ⋮.
