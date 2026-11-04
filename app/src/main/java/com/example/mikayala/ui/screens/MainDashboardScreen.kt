@@ -61,7 +61,8 @@ fun MainDashboardScreen(
     val context = LocalContext.current
     // Tabs: 0: Chat, 1: Appels, 2: Espace Couple, 3: Coffre, 4: Réglages
     var selectedTab by remember { mutableIntStateOf(0) }
-    var showNavBarInChat by remember { mutableStateOf(false) }
+    // Barre de navigation visible par défaut (masquable depuis le menu ⋮ pour le plein écran)
+    var showNavBarInChat by remember { mutableStateOf(true) }
     var showNavDrawerSheet by remember { mutableStateOf(false) }
     var showPartnerProfileSheet by remember { mutableStateOf(false) }
     var showOfflineP2PPage by remember { mutableStateOf(false) }
@@ -116,16 +117,6 @@ fun MainDashboardScreen(
     val isPartnerTyping by repository.isPartnerTyping.collectAsState()
     val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse_green_dot")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dot_alpha"
-    )
 
     // Background Realtime Sync for Supabase (Messages, Shared Vault, Call Signals)
     LaunchedEffect(coupleSpace.pairingCode, coupleSpace.isPaired) {
@@ -160,8 +151,7 @@ fun MainDashboardScreen(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 Surface(
-                    color = MatteCardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    color = DeepNight,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -176,34 +166,6 @@ fun MainDashboardScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Left Squircle Buttons (Navigation & Nav Bar Toggle)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                NeumorphicSquircleButton(
-                                    icon = Icons.Rounded.Widgets,
-                                    contentDescription = "Navigation & Espaces",
-                                    onClick = { showNavDrawerSheet = true },
-                                    size = 44.dp,
-                                    iconSize = 22.dp,
-                                    tint = VibrantCyan
-                                )
-
-                                if (selectedTab == 0) {
-                                    NeumorphicSquircleButton(
-                                        icon = if (showNavBarInChat) Icons.Rounded.Navigation else Icons.Rounded.Explore,
-                                        contentDescription = if (showNavBarInChat) "Masquer la barre" else "Afficher la barre",
-                                        onClick = {
-                                            showNavBarInChat = !showNavBarInChat
-                                            val msg = if (showNavBarInChat) "Barre de navigation affichée 🧭" else "Plein écran Chat activé 💬"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        size = 44.dp,
-                                        iconSize = 20.dp,
-                                        tint = if (showNavBarInChat) VibrantCyan else TextSecondary,
-                                        backgroundColor = if (showNavBarInChat) CardDarkElevated else MatteSquircle
-                                    )
-                                }
-                            }
-
                             // Center Title / Active Partner (WhatsApp style info click)
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -217,8 +179,7 @@ fun MainDashboardScreen(
                                     modifier = Modifier
                                         .size(34.dp)
                                         .clip(CircleShape)
-                                        .background(Brush.radialGradient(listOf(VibrantCyan.copy(alpha = 0.3f), Color.Transparent)))
-                                        .border(1.5.dp, VibrantCyan, CircleShape),
+                                        .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
@@ -266,7 +227,7 @@ fun MainDashboardScreen(
                                                 .clip(CircleShape)
                                                 .background(
                                                     if (isOnline && !isPartnerRecording && !isPartnerTyping) {
-                                                        OnlinePresenceGreen.copy(alpha = pulseAlpha)
+                                                        OnlinePresenceGreen
                                                     } else {
                                                         dotColor
                                                     }
@@ -301,6 +262,32 @@ fun MainDashboardScreen(
                                     iconSize = 20.dp,
                                     tint = TextSecondary
                                 )
+                                // Menu ⋮ : regroupe les actions secondaires (auparavant deux boutons carrés)
+                                Box {
+                                    var menuOpen by remember { mutableStateOf(false) }
+                                    IconButton(onClick = { menuOpen = true }) {
+                                        Icon(Icons.Rounded.MoreVert, contentDescription = "Plus d'options", tint = TextSecondary)
+                                    }
+                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text("Espaces et raccourcis") },
+                                            leadingIcon = { Icon(Icons.Rounded.Widgets, contentDescription = null) },
+                                            onClick = { menuOpen = false; showNavDrawerSheet = true }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Profil de mon partenaire") },
+                                            leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                                            onClick = { menuOpen = false; showPartnerProfileSheet = true }
+                                        )
+                                        if (selectedTab == 0) {
+                                            DropdownMenuItem(
+                                                text = { Text(if (showNavBarInChat) "Plein écran (masquer la barre)" else "Afficher la barre de navigation") },
+                                                leadingIcon = { Icon(if (showNavBarInChat) Icons.Rounded.Fullscreen else Icons.Rounded.FullscreenExit, contentDescription = null) },
+                                                onClick = { menuOpen = false; showNavBarInChat = !showNavBarInChat }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -313,8 +300,8 @@ fun MainDashboardScreen(
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0x1F141C2B),
-                                border = BorderStroke(0.7.dp, Color.White.copy(alpha = 0.08f)),
+                                color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.height(30.dp)
                             ) {
                                 Row(
@@ -327,7 +314,7 @@ fun MainDashboardScreen(
                                     // Option 1: En Ligne (Discreet)
                                     Surface(
                                         shape = CircleShape,
-                                        color = if (isOnline) Color(0x3800E5FF) else Color.Transparent,
+                                        color = if (isOnline) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
                                         modifier = Modifier
                                             .clip(CircleShape)
                                             .clickable {
@@ -352,7 +339,7 @@ fun MainDashboardScreen(
                                                 text = "En Ligne",
                                                 fontSize = 11.sp,
                                                 fontWeight = if (isOnline) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (isOnline) Color.White else TextSecondary
+                                                color = if (isOnline) TextPrimary else TextSecondary
                                             )
                                         }
                                     }
@@ -360,7 +347,7 @@ fun MainDashboardScreen(
                                     // Option 2: Hors-Ligne (Discreet)
                                     Surface(
                                         shape = CircleShape,
-                                        color = if (!isOnline) Color(0x38FF4081) else Color.Transparent,
+                                        color = if (!isOnline) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
                                         modifier = Modifier
                                             .clip(CircleShape)
                                             .clickable {
@@ -383,7 +370,7 @@ fun MainDashboardScreen(
                                                 text = "Hors-Ligne",
                                                 fontSize = 11.sp,
                                                 fontWeight = if (!isOnline) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (!isOnline) Color.White else TextSecondary
+                                                color = if (!isOnline) TextPrimary else TextSecondary
                                             )
                                         }
                                     }
