@@ -2047,14 +2047,15 @@ class MikayalaRepository(private val context: Context) {
 
     private inline fun <reified T> restoreList(key: String, flow: MutableStateFlow<List<T>>) {
         val raw = prefs.getString(key, null) ?: return
-        try { flow.value = localGamesJson.decodeFromString<List<T>>(raw) } catch (e: Exception) {
+        try { flow.value = localGamesJson.decodeFromString(kotlinx.serialization.serializer<List<T>>(), raw) } catch (e: Exception) {
             Log.w("MikayalaRepo", "Lecture impossible de $key : ${e.message}")
         }
     }
 
     private inline fun <reified T> persistList(key: String, flow: MutableStateFlow<List<T>>) {
+        val ser = kotlinx.serialization.serializer<List<T>>()
         repositoryScope.launch {
-            flow.collect { list -> prefs.edit().putString(key, localGamesJson.encodeToString(list)).apply() }
+            flow.collect { list: List<T> -> prefs.edit().putString(key, localGamesJson.encodeToString(ser, list)).apply() }
         }
     }
 
