@@ -412,7 +412,7 @@ fun ChatScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (repository.isMessageFromMe(reply)) "Réponse à vous-même" else "Réponse à Mikayala",
+                                    text = if (repository.isMessageFromMe(reply)) "Réponse à vous-même" else "Réponse à ${userSettings.partnerNickname.ifBlank { "votre partenaire" }}",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = AccentRose

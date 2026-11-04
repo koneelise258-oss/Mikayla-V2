@@ -637,7 +637,7 @@ fun MainDashboardScreen(
         // Active Call Overlay if active
         activeCallState?.let { (_, isVideo) ->
             ActiveCallOverlay(
-                partnerName = "Mikayala",
+                partnerName = userSettings.partnerNickname.ifBlank { "Mon partenaire" },
                 isVideo = isVideo,
                 onEndCall = { duration ->
                     repository.addCallLog(isVideo = isVideo, durationSeconds = duration)

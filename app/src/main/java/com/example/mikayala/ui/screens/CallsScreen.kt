@@ -38,6 +38,7 @@ fun CallsScreen(
     val coroutineScope = rememberCoroutineScope()
     val callLogs by repository.allCallLogs.collectAsState()
     val dateFormat = remember { SimpleDateFormat("dd MMM, HH:mm", Locale.FRANCE) }
+    val callsSettings by repository.userSettings.collectAsState()
 
     Column(
         modifier = Modifier
@@ -66,25 +67,24 @@ fun CallsScreen(
                         modifier = Modifier
                             .size(50.dp)
                             .clip(CircleShape)
-                            .background(Brush.radialGradient(listOf(AccentRose.copy(alpha = 0.3f), Color.Transparent)))
-                            .border(2.dp, AccentRose, CircleShape),
+                            .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(text = "👩‍🦰", fontSize = 26.sp)
+                        Icon(Icons.Rounded.Person, contentDescription = null, tint = AccentRose, modifier = Modifier.size(26.dp))
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column {
                         Text(
-                            text = "Mikayala ❤️",
+                            text = callsSettings.partnerNickname.ifBlank { "Mon partenaire" },
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Ligne privée P2P active",
+                            text = "Appel audio ou vidéo",
                             fontSize = 12.sp,
                             color = AccentViolet
                         )
@@ -124,7 +124,7 @@ fun CallsScreen(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(AccentRose, AccentViolet)))
+                            .background(AccentRose)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Videocam,
