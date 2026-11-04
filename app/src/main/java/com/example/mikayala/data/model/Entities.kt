@@ -230,7 +230,9 @@ data class UserSettingsEntity(
     val cyclePartnerAlertsEnabled: Boolean = true,
     val loveWidgetEnabled: Boolean = true,
     val connectionMode: ConnectionMode = ConnectionMode.ONLINE,
-    val isDarkMode: Boolean = true
+    val isDarkMode: Boolean = true,
+    /** Thème : suit le réglage clair/sombre du téléphone (prioritaire sur isDarkMode). */
+    val followSystemTheme: Boolean = false
 )
 
 @Immutable

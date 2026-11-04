@@ -54,7 +54,7 @@ fun SplashScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(SplashBackground)
+            .background(com.example.mikayala.theme.MikayalaColors.background)
     ) {
         Image(
             painter = painterResource(id = R.drawable.ic_mikayala_logo),
@@ -85,18 +85,16 @@ fun SplashScreen(
                 fontFamily = com.example.mikayala.theme.Poppins,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.5.sp,
-                color = Color.White
+                color = com.example.mikayala.theme.MikayalaColors.textPrimary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Messagerie privée du couple",
                 fontSize = 12.sp,
                 fontFamily = com.example.mikayala.theme.Poppins,
-                color = Color(0xFF9BA3B5)
+                color = com.example.mikayala.theme.MikayalaColors.textSecondary
             )
         }
     }
 }
 
-/** Même valeur que @color/mikayala_splash_background. */
-private val SplashBackground = Color(0xFF1E2128)

@@ -15,6 +15,7 @@ object UiPreferencesStore {
 
     fun load(prefs: SharedPreferences, base: UserSettingsEntity): UserSettingsEntity = base.copy(
         isDarkMode = prefs.getBoolean("is_dark_mode", base.isDarkMode),
+        followSystemTheme = prefs.getBoolean(P + "follow_system_theme", base.followSystemTheme),
         biometricEnabled = prefs.getBoolean(P + "biometric", base.biometricEnabled),
         lockTimeoutSeconds = prefs.getInt(P + "lock_timeout", base.lockTimeoutSeconds),
         screenBlurOnSwitch = prefs.getBoolean(P + "screen_blur", base.screenBlurOnSwitch),
@@ -40,6 +41,7 @@ object UiPreferencesStore {
     fun save(prefs: SharedPreferences, s: UserSettingsEntity) {
         prefs.edit()
             .putBoolean("is_dark_mode", s.isDarkMode)
+            .putBoolean(P + "follow_system_theme", s.followSystemTheme)
             .putBoolean(P + "biometric", s.biometricEnabled)
             .putInt(P + "lock_timeout", s.lockTimeoutSeconds)
             .putBoolean(P + "screen_blur", s.screenBlurOnSwitch)

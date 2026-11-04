@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
             }
 
             MikayalaTheme(
-                darkTheme = userSettings.isDarkMode,
+                darkTheme = if (userSettings.followSystemTheme) androidx.compose.foundation.isSystemInDarkTheme() else userSettings.isDarkMode,
                 fontPreference = userSettings.fontFamilyPreference,
                 fontSizeScale = userSettings.fontSizeScale
             ) {

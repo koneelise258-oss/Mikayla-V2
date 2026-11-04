@@ -881,7 +881,7 @@ fun SettingsScreen(
                     SettingsCategoryRow(Icons.Rounded.Chat, VibrantCyan, "Conversations", "Fond d'écran, bulles, police, médias") { section = "conversations" }
                     SettingsCategoryRow(Icons.Rounded.Call, VibrantCyan, "Appels", "Notifications d'appel, micro et caméra") { section = "calls" }
                     SettingsCategoryRow(Icons.Rounded.Storage, TextSecondary, "Stockage et données", "Espace utilisé, cache, sauvegardes") { section = "storage" }
-                    SettingsCategoryRow(Icons.Rounded.Palette, AccentRose, "Apparence", "Thème sombre ou clair, icône de l'application") { section = "appearance" }
+                    SettingsCategoryRow(Icons.Rounded.Palette, AccentRose, "Apparence", "Thème clair, sombre ou automatique, icône") { section = "appearance" }
                     SettingsCategoryRow(Icons.Rounded.CalendarMonth, AccentRose, "Calendrier et cycle", "Anniversaire, rappels, notifications du cycle") { section = "calendar_cycle" }
                     SettingsCategoryRow(Icons.Rounded.SportsEsports, AccentGold, "Jeux", "Notifications d'invitation et de tour") { section = "games" }
                     SettingsCategoryRow(Icons.Rounded.WifiTethering, AccentViolet, "P2P et connexion locale", "En ligne ou hors-ligne (liaison directe)") { section = "connection" }
@@ -1012,43 +1012,25 @@ fun SettingsScreen(
 
                     // App theme mode switch (Mode Sombre / Clair)
                     if (section == "appearance") {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color.Transparent,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(AccentGold.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (settings.isDarkMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
-                                    contentDescription = null,
-                                    tint = AccentGold,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Mode Sombre de l'Application", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                                Text(text = if (settings.isDarkMode) "Activé (Apparence sombre)" else "Désactivé (Apparence claire)", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = settings.isDarkMode,
-                                onCheckedChange = { repository.updateDarkMode(it) },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
+                        Text("Thème", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                        val themeChoice = when {
+                            settings.followSystemTheme -> "system"
+                            settings.isDarkMode -> "dark"
+                            else -> "light"
                         }
-                    }
+                        listOf(
+                            Triple("light", "Clair", "Fond crème, texte anthracite"),
+                            Triple("dark", "Sombre", "Fond anthracite, texte clair"),
+                            Triple("system", "Comme le téléphone", "Suit automatiquement le réglage d'Android")
+                        ).forEach { (id, label, desc) ->
+                            SettingsRadioRow(themeChoice == id, label, desc) {
+                                when (id) {
+                                    "system" -> repository.updateUiSettings { it.copy(followSystemTheme = true) }
+                                    "dark" -> repository.updateUiSettings { it.copy(followSystemTheme = false, isDarkMode = true) }
+                                    else -> repository.updateUiSettings { it.copy(followSystemTheme = false, isDarkMode = false) }
+                                }
+                            }
+                        }
                     }
                 }
             }

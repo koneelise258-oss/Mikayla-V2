@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Fond de l'écran de démarrage (identique à l'écran Compose pour une transition sans saut) -->
-    <color name="mikayala_splash_background">#FF1E2128</color>
+    <color name="mikayala_splash_background">#FFFAF7F2</color>
     <!-- Fonds des icônes adaptatives (le premier plan PNG est plein cadre ; ces couleurs servent de secours) -->
     <color name="ic_launcher_bg_main">#FFFFFFFF</color>
     <color name="ic_launcher_bg_a">#FFC94FB8</color>
     <color name="ic_launcher_bg_b">#FFC94FB8</color>
     <color name="ic_launcher_bg_c">#FFFFFFFF</color>
-    <color name="ic_launcher_bg_d">#FF1E2128</color>
+    <color name="ic_launcher_bg_d">#FFFAF7F2</color>
     <color name="ic_launcher_bg_e">#FFFFFFFF</color>
     <color name="ic_launcher_bg_f">#FFEF6670</color>
     <color name="ic_launcher_bg_n1">#FFC850C0</color>
