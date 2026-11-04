@@ -79,7 +79,7 @@ fun OfflineP2PLinkScreen(
     // On enter host role, automatically start hosting
     LaunchedEffect(selectedRole) {
         if (selectedRole == 0 && p2pState !is P2PState.Connected) {
-            val payload = P2PSocketManager.startHosting(context, "Mon Appareil (Émetteur)")
+            val payload = P2PSocketManager.startHosting(context, repository.userSettings.value.displayName.ifBlank { "Partenaire" })
             qrPayloadData = payload
             qrBitmap = QRCodeGenerator.generateQRCode(payload, 500)
         }
@@ -153,7 +153,7 @@ fun OfflineP2PLinkScreen(
                         QRScanner(
                             onCodeScanned = { scannedCode ->
                                 showQrScannerModal = false
-                                val success = P2PSocketManager.connectViaQrCode(context, scannedCode)
+                                val success = P2PSocketManager.connectViaQrCode(context, scannedCode, repository.userSettings.value.displayName.ifBlank { "Partenaire" })
                                 if (!success) {
                                     Toast.makeText(context, "Format QR Code non reconnu", Toast.LENGTH_SHORT).show()
                                 }
@@ -657,7 +657,7 @@ fun OfflineP2PLinkScreen(
                                             ipAddress = hostIpInput.trim(),
                                             port = P2PSocketManager.DEFAULT_PORT,
                                             pinCode = pinCodeInput.trim(),
-                                            clientName = "Mon Appareil (Récepteur)"
+                                            clientName = repository.userSettings.value.displayName.ifBlank { "Partenaire" }
                                         )
                                     } else {
                                         Toast.makeText(context, "Veuillez entrer le code PIN à 6 chiffres", Toast.LENGTH_SHORT).show()
