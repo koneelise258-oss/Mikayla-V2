@@ -242,7 +242,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             return when (privacyMode) {
                 "weather_camouflage" -> Pair("Météo ☀️", "Ciel dégagé • 21°C")
                 "system_camouflage" -> Pair("Système ⚙️", "Mise à jour système prête")
-                "discreet" -> Pair("Mikayala 🔒", "Nouveau message chiffré")
+                "discreet" -> Pair("Mikayala 🔒", "Nouveau message")
                 else -> Pair(rawSender.ifBlank { "Mon Amour" }, formattedText)
             }
         }

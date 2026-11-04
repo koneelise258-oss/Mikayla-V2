@@ -57,16 +57,7 @@ fun PartnerProfileBottomSheet(
 
     val isOnline = userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse_profile_dot")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dot_alpha"
-    )
+    val pulseAlpha = 1f // point de présence fixe (plus de clignotement)
 
     val mediaMessages = remember(messages) {
         messages.filter { it.type == "image" || it.type == "video" || it.type == "audio" }
@@ -119,16 +110,25 @@ fun PartnerProfileBottomSheet(
                             modifier = Modifier
                                 .size(88.dp)
                                 .clip(CircleShape)
-                                .background(com.example.mikayala.theme.MikayalaColors.accentSoft)
-                                .border(2.dp, VibrantCyan, CircleShape),
+                                .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Person,
-                                contentDescription = "Avatar Partenaire",
-                                tint = VibrantCyan,
-                                modifier = Modifier.size(50.dp)
-                            )
+                            // Vraie photo du partenaire si elle existe, sinon icône neutre
+                            if (userSettings.partnerAvatarUrl.isNotBlank()) {
+                                coil.compose.AsyncImage(
+                                    model = userSettings.partnerAvatarUrl,
+                                    contentDescription = "Photo de votre partenaire",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Rounded.Person,
+                                    contentDescription = "Photo de votre partenaire",
+                                    tint = AccentRose,
+                                    modifier = Modifier.size(50.dp)
+                                )
+                            }
                         }
 
                         // Online Presence Dot / Badge
@@ -263,13 +263,13 @@ fun PartnerProfileBottomSheet(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Chiffrement de bout en bout",
+                            text = "Espace privé du couple",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
                         Text(
-                            text = "Les messages et appels sont chiffrés. Personne d'autre ne peut les lire.",
+                            text = "Les échanges sont réservés à vous deux par les règles d'accès du serveur et transitent en connexion sécurisée (HTTPS). Ils ne sont pas chiffrés de bout en bout.",
                             fontSize = 11.sp,
                             color = TextSecondary
                         )

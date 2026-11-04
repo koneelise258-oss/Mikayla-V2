@@ -189,12 +189,21 @@ fun MainDashboardScreen(
                                         .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Person,
-                                        contentDescription = "Avatar",
-                                        tint = VibrantCyan,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    if (userSettings.partnerAvatarUrl.isNotBlank()) {
+                                        coil.compose.AsyncImage(
+                                            model = userSettings.partnerAvatarUrl,
+                                            contentDescription = "Photo de votre partenaire",
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Person,
+                                            contentDescription = "Photo de votre partenaire",
+                                            tint = AccentRose,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
@@ -557,7 +566,7 @@ fun MainDashboardScreen(
                     // List of 5 Main Navigation Spaces
                     val navTabs = listOf(
                         Triple(0, "💬 Chat Confidentiel", "Messagerie privée & vocaux"),
-                        Triple(1, "📞 Appels P2P Directs", "Appels vidéo & audio chiffrés"),
+                        Triple(1, "📞 Appels", "Appels audio et vidéo, historique"),
                         Triple(2, "💖 Espace de Couple", "Love Time, 8 Jeux & Calendrier"),
                         Triple(3, "🔐 Coffre-Fort Secret", "Photos & souvenirs protégés"),
                         Triple(4, "⚙️ Paramètres & Code PIN", "Thèmes & Sécurité")

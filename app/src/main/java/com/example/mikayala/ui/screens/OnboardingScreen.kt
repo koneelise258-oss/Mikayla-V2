@@ -451,7 +451,7 @@ fun LandingView(
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "L'application privée, chiffrée & fusionnelle créée exclusivement pour vous deux ❤️",
+            text = "L'application privée créée pour vous deux",
             fontSize = 13.sp,
             color = TextSecondary,
             textAlign = TextAlign.Center,

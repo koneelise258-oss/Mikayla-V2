@@ -161,7 +161,7 @@ class VoiceAndPushUnitTest {
 
         val discreet = MyFirebaseMessagingService.resolveMessageDisplay("chat_message", "discreet", rawSender, "Texte secret")
         assertEquals("Mikayala 🔒", discreet.first)
-        assertEquals("Nouveau message chiffré", discreet.second)
+        assertEquals("Nouveau message", discreet.second)
 
         val audioMsg = MyFirebaseMessagingService.resolveMessageDisplay("audio", "romantic", rawSender, "")
         assertEquals("Alex", audioMsg.first)

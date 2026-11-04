@@ -96,7 +96,7 @@ fun AuthScreen(
             )
 
             Text(
-                text = "Votre sanctuaire de couple chiffré et intime",
+                text = "Votre espace privé, rien qu'à vous deux",
                 fontSize = 13.sp,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,

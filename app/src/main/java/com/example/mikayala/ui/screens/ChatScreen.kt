@@ -694,7 +694,7 @@ fun ChatScreen(
                         documentLauncher.launch("*/*")
                     } catch (e: Exception) {
                         repository.sendMessage(content = "Nos_Billets_Weekend_Rome.pdf 📄 (2.4 Mo)", type = "document")
-                        Toast.makeText(context, "Document chiffré partagé", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Document envoyé", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onSendAudio = {
@@ -1240,7 +1240,7 @@ private fun MessageBubble(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(text = "Document chiffré 📄", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = "Document 📄", fontSize = 11.sp, color = TextSecondary)
                             Text(text = message.content, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                         }
                     }

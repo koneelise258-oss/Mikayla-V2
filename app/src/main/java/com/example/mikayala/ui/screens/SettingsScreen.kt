@@ -734,7 +734,7 @@ fun SettingsScreen(
                 Column {
                     listOf(
                         Triple("romantic", "Nom et aperçu", "Affiche le prénom de l'expéditeur et le début du message"),
-                        Triple("discreet", "Discret", "Affiche « Mikayala » et « Nouveau message chiffré »"),
+                        Triple("discreet", "Discret", "Affiche « Mikayala » et « Nouveau message »"),
                         Triple("weather_camouflage", "Camouflage météo", "Affiche une fausse notification météo"),
                         Triple("system_camouflage", "Camouflage système", "Affiche « Mise à jour système prête »")
                     ).forEach { (id, title, desc) ->
@@ -1272,7 +1272,7 @@ fun SettingsScreen(
                                 }
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Connexion via Internet (Wi-Fi / 4G / 5G). Synchronisation cloud continue et appels audio/visio chiffrés.",
+                                    text = "Connexion via Internet (Wi-Fi ou données mobiles). Messages synchronisés en continu.",
                                     fontSize = 11.sp,
                                     color = TextSecondary,
                                     lineHeight = 15.sp
