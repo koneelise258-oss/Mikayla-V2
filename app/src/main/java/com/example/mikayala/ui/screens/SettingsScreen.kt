@@ -175,7 +175,7 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0x22141C2B))
+                            .background(com.example.mikayala.theme.MikayalaColors.surfaceSunken)
                             .padding(4.dp)
                     ) {
                         Surface(
@@ -1305,7 +1305,7 @@ fun SettingsScreen(
                     // Option 1: Mode En Ligne
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = if (isOnline) CardDarkElevated else Color(0x22141C2B),
+                        color = if (isOnline) CardDarkElevated else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                         border = BorderStroke(1.2.dp, if (isOnline) VibrantCyan.copy(alpha = 0.6f) else BorderSubtleWhite),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1384,7 +1384,7 @@ fun SettingsScreen(
                     // Option 2: Mode Liaison Hors-Ligne
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = if (!isOnline) CardDarkElevated else Color(0x22141C2B),
+                        color = if (!isOnline) CardDarkElevated else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                         border = BorderStroke(1.2.dp, if (!isOnline) AccentRose.copy(alpha = 0.6f) else BorderSubtleWhite),
                         modifier = Modifier
                             .fillMaxWidth()

@@ -81,7 +81,7 @@ fun ChatAttachmentAndGamesBottomSheet(
             // Segmented Header Bar for Switching Between Attachments and Chat Games
             Surface(
                 shape = CircleShape,
-                color = Color(0x331E2A3A),
+                color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                 border = BorderStroke(0.8.dp, BorderSubtleWhite),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -369,7 +369,7 @@ private fun AttachmentSquircleButton(item: AttachmentGridItem) {
                             Brush.radialGradient(
                                 colors = listOf(
                                     item.gradientColors.first().copy(alpha = 0.22f),
-                                    Color(0x22141C2B)
+                                    com.example.mikayala.theme.MikayalaColors.surfaceSunken
                                 )
                             )
                         ),

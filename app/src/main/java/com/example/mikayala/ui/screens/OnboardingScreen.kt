@@ -159,7 +159,7 @@ fun OnboardingScreen(
 
     // Dark landing theme canvas
     val darkBg = DeepNight
-    val cardBg = Color(0xFF1B182B)
+    val cardBg = com.example.mikayala.theme.MikayalaColors.surface
     val cardElevated = Color(0xFF242038)
 
     Box(
@@ -560,7 +560,7 @@ fun LandingOptionCard(
 ) {
     Surface(
         shape = RoundedCornerShape(22.dp),
-        color = Color(0xFF1B182B),
+        color = com.example.mikayala.theme.MikayalaColors.surface,
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.35f)),
         modifier = Modifier
             .fillMaxWidth()
@@ -678,8 +678,8 @@ fun CreateSpaceView(
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF1B182B),
-                    unfocusedContainerColor = Color(0xFF1B182B),
+                    focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                    unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                     focusedBorderColor = VibrantCyan,
                     unfocusedBorderColor = BorderSubtleWhite,
                     focusedTextColor = Color.White,
@@ -711,7 +711,7 @@ fun CreateSpaceView(
                         modifier = Modifier
                             .size(50.dp)
                             .clip(CircleShape)
-                            .background(if (isSelected) VibrantCyan.copy(alpha = 0.25f) else Color(0xFF1B182B))
+                            .background(if (isSelected) VibrantCyan.copy(alpha = 0.25f) else com.example.mikayala.theme.MikayalaColors.surface)
                             .border(
                                 BorderStroke(2.dp, if (isSelected) VibrantCyan else BorderSubtleWhite),
                                 CircleShape
@@ -736,7 +736,7 @@ fun CreateSpaceView(
             // Pairing Code Banner
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF1B182B),
+                color = com.example.mikayala.theme.MikayalaColors.surface,
                 border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -877,8 +877,8 @@ fun JoinSpaceView(
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1B182B),
-                unfocusedContainerColor = Color(0xFF1B182B),
+                focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentRose,
                 unfocusedBorderColor = BorderSubtleWhite,
                 focusedTextColor = Color.White,
@@ -899,8 +899,8 @@ fun JoinSpaceView(
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1B182B),
-                unfocusedContainerColor = Color(0xFF1B182B),
+                focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentRose,
                 unfocusedBorderColor = BorderSubtleWhite,
                 focusedTextColor = Color.White,
@@ -1030,7 +1030,7 @@ fun LinkTabletView(
             val isP1 = selectedOwner == "partner1"
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = if (isP1) AccentViolet.copy(alpha = 0.2f) else Color(0xFF1B182B),
+                color = if (isP1) AccentViolet.copy(alpha = 0.2f) else com.example.mikayala.theme.MikayalaColors.surface,
                 border = BorderStroke(1.dp, if (isP1) AccentViolet else BorderSubtleWhite),
                 modifier = Modifier
                     .weight(1f)
@@ -1053,7 +1053,7 @@ fun LinkTabletView(
             val isP2 = selectedOwner == "partner2"
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = if (isP2) AccentRose.copy(alpha = 0.2f) else Color(0xFF1B182B),
+                color = if (isP2) AccentRose.copy(alpha = 0.2f) else com.example.mikayala.theme.MikayalaColors.surface,
                 border = BorderStroke(1.dp, if (isP2) AccentRose else BorderSubtleWhite),
                 modifier = Modifier
                     .weight(1f)
@@ -1085,8 +1085,8 @@ fun LinkTabletView(
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1B182B),
-                unfocusedContainerColor = Color(0xFF1B182B),
+                focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentViolet,
                 unfocusedBorderColor = BorderSubtleWhite,
                 focusedTextColor = Color.White,
@@ -1204,8 +1204,8 @@ fun RecoveryView(
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1B182B),
-                unfocusedContainerColor = Color(0xFF1B182B),
+                focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = WarningGold,
                 unfocusedBorderColor = BorderSubtleWhite,
                 focusedTextColor = Color.White,
@@ -1332,7 +1332,7 @@ fun CameraScannerModal(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF1B182B),
+            color = com.example.mikayala.theme.MikayalaColors.surface,
             border = BorderStroke(1.dp, VibrantCyan),
             modifier = Modifier.fillMaxWidth()
         ) {

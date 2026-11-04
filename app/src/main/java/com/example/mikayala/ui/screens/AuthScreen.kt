@@ -54,7 +54,7 @@ fun AuthScreen(
     val scrollState = rememberScrollState()
 
     val darkBg = DeepNight
-    val cardBg = Color(0xFF1B182B)
+    val cardBg = com.example.mikayala.theme.MikayalaColors.surface
 
     Box(
         modifier = Modifier

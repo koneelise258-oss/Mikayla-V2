@@ -1132,7 +1132,7 @@ private fun MessageBubble(
                             val isSelected = selectedOptionIndex == idx
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) Color(0x33FFD600) else Color(0x22141C2B),
+                                color = if (isSelected) Color(0x33FFD600) else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                                 border = BorderStroke(1.dp, if (isSelected) Color(0xFFFFD600) else BorderSubtleWhite),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1336,7 +1336,7 @@ private fun MessageBubble(
                                         val cellValue = board[idx]
                                         Surface(
                                             shape = RoundedCornerShape(8.dp),
-                                            color = Color(0x331E2A3A),
+                                            color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                                             border = BorderStroke(1.dp, BorderSubtleWhite),
                                             modifier = Modifier
                                                 .size(56.dp)
@@ -1388,7 +1388,7 @@ private fun MessageBubble(
                             val isChosen = selectedChoice == part
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (isChosen) Color(0x334CAF50) else Color(0x22141C2B),
+                                color = if (isChosen) Color(0x334CAF50) else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                                 border = BorderStroke(1.dp, if (isChosen) Color(0xFF4CAF50) else BorderSubtleWhite),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1630,7 +1630,7 @@ fun ImageMessageItem(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color(0xFF1E293B)),
+                        .background(com.example.mikayala.theme.MikayalaColors.surfaceElevated),
                     contentAlignment = Alignment.Center
                 ) {
                     if (!message.mediaUrl.isNullOrEmpty()) {
@@ -1823,7 +1823,7 @@ fun VideoMessageItem(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF0F172A)),
+                    .background(com.example.mikayala.theme.MikayalaColors.surfaceSunken),
                 contentAlignment = Alignment.Center
             ) {
                 if (!message.mediaUrl.isNullOrEmpty()) {
@@ -1832,7 +1832,7 @@ fun VideoMessageItem(
                             .fillMaxSize()
                             .background(
                                 Brush.verticalGradient(
-                                    listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+                                    listOf(com.example.mikayala.theme.MikayalaColors.surfaceElevated, com.example.mikayala.theme.MikayalaColors.surfaceSunken)
                                 )
                             ),
                         contentAlignment = Alignment.Center
@@ -2357,7 +2357,7 @@ fun CalendarEventMessageItem(
 
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = Color(0x22141C2B),
+                color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                 border = BorderStroke(1.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
