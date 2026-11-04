@@ -81,6 +81,18 @@ fun FloCycleTrackerView(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 36.dp)
     ) {
+        // Pas encore de dates saisies : aucune prédiction inventée, invitation à renseigner le cycle
+        if (!cycleInfo.isConfigured) {
+            item {
+                com.example.mikayala.ui.components.SoftEmptyState(
+                    icon = Icons.Rounded.Spa,
+                    title = "Commencez le suivi",
+                    message = "Indiquez la date de vos dernières règles et la durée habituelle de votre cycle. Les estimations apparaîtront ensuite. Ces données restent sur cet appareil.",
+                    actionLabel = "Renseigner mon cycle",
+                    onAction = { showSettingsDialog = true }
+                )
+            }
+        } else {
         // 1. FLO DIAL HERO CARD
         item {
             Surface(
@@ -496,7 +508,9 @@ fun FloCycleTrackerView(
                 }
             }
         }
-    }
+    
+        }
+}
 
     // DIALOG: FLO CYCLE PARAMETERS
     if (showSettingsDialog) {

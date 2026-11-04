@@ -2059,7 +2059,58 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
+    private inline fun <reified T> restoreValue(key: String, flow: MutableStateFlow<T>) {
+        val raw = prefs.getString(key, null) ?: return
+        try { flow.value = localGamesJson.decodeFromString(kotlinx.serialization.serializer<T>(), raw) } catch (e: Exception) {
+            Log.w("MikayalaRepo", "Lecture impossible de $key : ${e.message}")
+        }
+    }
+
+    private inline fun <reified T> persistValue(key: String, flow: MutableStateFlow<T>) {
+        val ser = kotlinx.serialization.serializer<T>()
+        repositoryScope.launch {
+            flow.collect { v: T -> prefs.edit().putString(key, localGamesJson.encodeToString(ser, v)).apply() }
+        }
+    }
+
+    /**
+     * Rappels locaux (calendrier et cycle) : programmés à l'enregistrement et reprogrammés
+     * au démarrage du téléphone (BootReceiver). Avant, aucune alarme n'était jamais programmée.
+     */
+    fun rescheduleAllReminders() {
+        _events.value.forEach { scheduleEventReminder(it) }
+        scheduleCycleReminder()
+    }
+
+    private fun scheduleEventReminder(e: com.example.mikayala.data.model.CoupleEventEntity) {
+        // Événement sans heure (minuit) : rappel le jour même à 9 h
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = e.date }
+        if (cal.get(java.util.Calendar.HOUR_OF_DAY) == 0 && cal.get(java.util.Calendar.MINUTE) == 0) {
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 9)
+        }
+        com.example.mikayala.util.CycleAndCalendarScheduler.scheduleCalendarEventReminder(
+            context = context,
+            eventId = e.id,
+            eventTitle = e.title,
+            eventTimeMillis = cal.timeInMillis,
+            eventDateFormatted = java.text.SimpleDateFormat("EEEE d MMMM", java.util.Locale.FRANCE).format(java.util.Date(e.date))
+        )
+    }
+
+    private fun scheduleCycleReminder() {
+        val c = _cycleInfo.value
+        if (!c.isConfigured || c.cycleLengthDays <= 0) return
+        val day = 86_400_000L
+        var next = c.lastPeriodStartDate
+        val now = System.currentTimeMillis()
+        while (next - 2 * day <= now) next += c.cycleLengthDays * day
+        com.example.mikayala.util.CycleAndCalendarScheduler.scheduleCycleTwoDaysBefore(context, next)
+    }
+
     private fun restoreAndPersistLocalGames() {
+        // Calendrier et cycle : enregistrés sur l'appareil (perdus à chaque fermeture auparavant)
+        restoreList("local_events", _events); persistList("local_events", _events)
+        restoreValue("local_cycle_info", _cycleInfo); persistValue("local_cycle_info", _cycleInfo)
         restoreList("local_game_coupons", _coupons); persistList("local_game_coupons", _coupons)
         restoreList("local_game_bucket", _bucketList); persistList("local_game_bucket", _bucketList)
         restoreList("local_game_quiz", _quizItems); persistList("local_game_quiz", _quizItems)
@@ -2187,12 +2238,14 @@ class MikayalaRepository(private val context: Context) {
             note = note
         )
         _events.value = _events.value + newEvent
+        scheduleEventReminder(newEvent)
     }
 
     fun updateEvent(id: String, title: String, date: Long, category: String, note: String = "") {
         _events.value = _events.value.map {
             if (it.id == id) it.copy(title = title, date = date, category = category, note = note) else it
         }
+        _events.value.firstOrNull { it.id == id }?.let { scheduleEventReminder(it) }
     }
 
     fun deleteEvent(id: String) {
@@ -2310,8 +2363,10 @@ class MikayalaRepository(private val context: Context) {
             periodDurationDays = periodDuration,
             currentPhase = phase,
             daysUntilNextPeriod = daysUntilNext,
-            partnerCareAdvice = advice
+            partnerCareAdvice = advice,
+            isConfigured = true
         )
+        scheduleCycleReminder()
     }
 
     fun saveCycleDailyLog(log: CycleDailyLogEntity) {

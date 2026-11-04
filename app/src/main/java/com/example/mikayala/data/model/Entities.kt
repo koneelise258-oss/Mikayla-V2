@@ -108,6 +108,7 @@ data class CoupleDilemmaEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class CycleDailyLogEntity(
     val dateKey: String, // "YYYY-MM-DD"
     val flow: String = "none", // "none", "spotting", "light", "medium", "heavy"
@@ -121,6 +122,7 @@ data class CycleDailyLogEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class MenstrualCycleInfo(
     val lastPeriodStartDate: Long = System.currentTimeMillis() - 14L * 86400000L,
     val cycleLengthDays: Int = 28,
@@ -129,7 +131,9 @@ data class MenstrualCycleInfo(
     val currentPhase: String = "Fertilité & Ovulation ✨",
     val daysUntilNextPeriod: Int = 14,
     val partnerCareAdvice: String = "Moment de grande complicité et d'énergie. Parfait pour une sortie romantique imprévue ou un massage relaxant !",
-    val dailyLogs: Map<String, CycleDailyLogEntity> = emptyMap()
+    val dailyLogs: Map<String, CycleDailyLogEntity> = emptyMap(),
+    /** false tant que la personne n'a pas saisi ses dates : aucune prédiction n'est alors affichée. */
+    val isConfigured: Boolean = false
 )
 
 @Immutable
@@ -262,6 +266,7 @@ data class QuizItemEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class CoupleEventEntity(
     val id: String,
     val title: String,
