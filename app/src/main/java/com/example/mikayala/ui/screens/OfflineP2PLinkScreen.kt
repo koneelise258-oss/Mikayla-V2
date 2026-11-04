@@ -176,15 +176,7 @@ fun OfflineP2PLinkScreen(
                             Text("Fermer", color = TextPrimary)
                         }
 
-                        GlowingGradientButton(
-                            text = "Démo Rapide ⚡",
-                            icon = Icons.Rounded.FlashOn,
-                            onClick = {
-                                showQrScannerModal = false
-                                P2PSocketManager.simulateConnectionForDemo(context)
-                            },
-                            modifier = Modifier.weight(1.3f)
-                        )
+                        // (bouton de connexion simulée retiré : il affichait « connecté » sans aucune connexion)
                     }
                 }
             }
@@ -521,14 +513,7 @@ fun OfflineP2PLinkScreen(
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // Demo / Instant connection button
-                            GlowingGradientButton(
-                                text = "Tester Connexion Immédiate ⚡",
-                                icon = Icons.Rounded.FlashOn,
-                                onClick = {
-                                    P2PSocketManager.simulateConnectionForDemo(context)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            // (bouton de connexion simulée retiré : il affichait « connecté » sans aucune connexion)
                         }
                     }
                 }

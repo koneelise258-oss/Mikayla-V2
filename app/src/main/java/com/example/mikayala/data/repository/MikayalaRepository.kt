@@ -180,23 +180,25 @@ class MikayalaRepository(private val context: Context) {
         loadLocalMessagesCache()
 
         // Bind P2P socket receiver to store incoming P2P messages locally
-        com.example.mikayala.util.P2PSocketManager.onP2PMessageReceived = { senderName, content, isFile, type ->
-            val (myUserId, partnerId) = resolveCoupleMembers()
-            val coupleId = _coupleSpace.value.id
-            val p2pMsgId = "p2p_rcvd_${System.currentTimeMillis()}"
-            val rcvdMsg = MessageEntity(
-                id = p2pMsgId,
-                coupleId = coupleId,
-                senderId = partnerId,
-                receiverId = myUserId,
-                content = content,
-                type = type ?: "text",
-                createdAt = System.currentTimeMillis(),
-                status = "delivered",
-                deliveredAt = System.currentTimeMillis()
-            )
-            _messages.value = (_messages.value + rcvdMsg).sortedBy { it.createdAt }
-            saveLocalMessagesCache()
+        com.example.mikayala.util.P2PSocketManager.onP2PMessageReceived = { msgId, createdAt, _, content ->
+            // Même identifiant que chez l'expéditeur : quand Internet revient, la copie du serveur
+            // remplace celle-ci au lieu de créer un doublon. Ordre conservé grâce à la date d'origine.
+            if (_messages.value.none { it.id == msgId }) {
+                val (myUserId, partnerId) = resolveCoupleMembers()
+                val rcvdMsg = MessageEntity(
+                    id = msgId,
+                    coupleId = _coupleSpace.value.id,
+                    senderId = partnerId,
+                    receiverId = myUserId,
+                    content = content,
+                    type = "text",
+                    createdAt = createdAt,
+                    status = "delivered",
+                    deliveredAt = System.currentTimeMillis()
+                )
+                _messages.value = (_messages.value + rcvdMsg).sortedBy { it.createdAt }
+                saveLocalMessagesCache()
+            }
         }
 
         com.example.mikayala.util.P2PSocketManager.onP2PStatusUpdated = { msgId, status ->
@@ -1131,10 +1133,8 @@ class MikayalaRepository(private val context: Context) {
                 saveLocalMessagesCache()
 
                 // 2. Envoi via socket P2P local si connecté (la confirmation d'état reste pending jusqu'à confirmation d'insertion)
-                if (hasP2P) {
-                    val sizeFormatted = String.format("%.1f Mo", fileSize / (1024f * 1024f)).replace(',', '.')
-                    com.example.mikayala.util.P2PSocketManager.sendFile(context, "Vocal_${messageId.take(6)}.m4a", sizeFormatted, isAudio = true)
-                }
+                // Le P2P ne transporte que le texte : le vocal reste en attente et part au retour d'Internet
+                // (avant : seul un nom de fichier était envoyé, sans le son).
 
                 // 3. Envoi via Supabase si réseau disponible
                 if (hasNetwork) {
