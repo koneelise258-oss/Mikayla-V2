@@ -1,305 +1,98 @@
 package com.example.mikayala.ui.components
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.CallEnd
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mikayala.theme.*
-import kotlinx.coroutines.delay
-import kotlin.math.roundToInt
 
+/**
+ * Écran d'appel HONNÊTE.
+ * Mikayala gère la signalisation (sonnerie, refus, annulation, historique) mais pas encore le transport
+ * audio/vidéo (WebRTC non intégré). L'ancien écran simulait un appel en cours (minuteur, caméra, micro,
+ * « Appel Vidéo HD P2P Chiffré ») sans aucune communication réelle : il est remplacé par cet écran.
+ */
 @Composable
 fun ActiveCallOverlay(
-    partnerName: String = "Mikayala",
+    partnerName: String = "Mon partenaire",
     isVideo: Boolean = true,
+    isIncoming: Boolean = false,
     onEndCall: (durationSeconds: Int) -> Unit
 ) {
-    var isMuted by remember { mutableStateOf(false) }
-    var isCameraOff by remember { mutableStateOf(false) }
-    var isSpeakerOn by remember { mutableStateOf(true) }
-    var isFrontCamera by remember { mutableStateOf(true) }
-
-    var callDurationSeconds by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            callDurationSeconds++
-        }
-    }
-
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
-
-    val formattedDuration = remember(callDurationSeconds) {
-        val mins = callDurationSeconds / 60
-        val secs = callDurationSeconds % 60
-        String.format("%02d:%02d", mins, secs)
-    }
-
+    val bg = Color(0xFF1B1A1E)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepNight)
+            .background(bg)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center
     ) {
-        // Video / Audio Canvas
-        if (isVideo && !isCameraOff) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(24.dp)
+        ) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0xFF1E1430),
-                                Color(0xFF0F0B18),
-                                Color(0xFF2B143E)
-                            )
-                        )
-                    ),
+                modifier = Modifier.size(112.dp).clip(CircleShape).background(Color(0xFF3A2C30)),
                 contentAlignment = Alignment.Center
             ) {
-                // Partner simulated HD video feed
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .size(110.dp)
-                            .clip(CircleShape)
-                            .border(3.dp, AccentRose, CircleShape)
-                            .background(CardElevated),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "👩‍🦰", fontSize = 56.sp)
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = partnerName,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Appel Vidéo HD P2P Chiffré • $formattedDuration",
-                        fontSize = 13.sp,
-                        color = AccentViolet
-                    )
-                }
-
-                // Draggable Picture-in-Picture (PiP) Window of Self
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                        .align(Alignment.TopEnd)
-                        .padding(top = 40.dp, end = 20.dp)
-                        .size(width = 110.dp, height = 155.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(CardElevated)
-                        .border(1.5.dp, AccentViolet, RoundedCornerShape(16.dp))
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                offsetX += dragAmount.x
-                                offsetY += dragAmount.y
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "🧑", fontSize = 34.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = "Vous", fontSize = 11.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                    }
-                }
+                Icon(Icons.Rounded.Person, contentDescription = null, tint = Color(0xFFE6A3AD), modifier = Modifier.size(56.dp))
             }
-        } else {
-            // Audio Only Interface
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(120.dp)
-                        .clip(CircleShape)
-                        .background(Brush.radialGradient(listOf(AccentRose.copy(alpha = 0.3f), Color.Transparent)))
-                        .border(2.dp, AccentRose, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = "🎙️", fontSize = 48.sp)
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
+            Spacer(Modifier.height(20.dp))
+            Text(partnerName, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFEEEAE5))
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = (if (isVideo) "Appel vidéo" else "Appel vocal") + " · " +
+                    (if (isIncoming) "appel reçu" else "sonnerie chez votre partenaire…"),
+                fontSize = 15.sp,
+                color = Color(0xFFADA7A1)
+            )
+            Spacer(Modifier.height(28.dp))
+            Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFF26252A), modifier = Modifier.widthIn(max = 340.dp)) {
                 Text(
-                    text = partnerName,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Appel Vocal Privé • $formattedDuration",
-                    fontSize = 14.sp,
-                    color = AccentViolet
+                    text = "Le son et la vidéo des appels ne sont pas encore disponibles dans Mikayala. " +
+                        "La sonnerie, le refus et l'historique fonctionnent.",
+                    fontSize = 13.sp,
+                    color = Color(0xFFADA7A1),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(14.dp)
                 )
             }
-        }
-
-        // Top Status Bar Overlay
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = CardDarkBlur95,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite)
+            Spacer(Modifier.height(48.dp))
+            IconButton(
+                onClick = { onEndCall(0) },
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(Color(0xFFC4605C))
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(OnlinePresenceGreen)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = formattedDuration,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
+                Icon(Icons.Rounded.CallEnd, contentDescription = "Raccrocher", tint = Color.White, modifier = Modifier.size(32.dp))
             }
-
-            if (isVideo) {
-                IconButton(
-                    onClick = { isFrontCamera = !isFrontCamera },
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(CardDarkBlur95)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.FlipCameraIos,
-                        contentDescription = "Inverser caméra",
-                        tint = TextPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-
-        // Bottom Controls Bar
-        Surface(
-            shape = RoundedCornerShape(32.dp),
-            color = CardDarkBlur95,
-            border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 24.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Mute Mic
-                IconButton(
-                    onClick = { isMuted = !isMuted },
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(CircleShape)
-                        .background(if (isMuted) Color.White.copy(alpha = 0.2f) else HoverStateWhite)
-                ) {
-                    Icon(
-                        imageVector = if (isMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic,
-                        contentDescription = "Micro",
-                        tint = if (isMuted) Color(0xFFFF5252) else TextPrimary
-                    )
-                }
-
-                if (isVideo) {
-                    // Mute Camera
-                    IconButton(
-                        onClick = { isCameraOff = !isCameraOff },
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(if (isCameraOff) Color.White.copy(alpha = 0.2f) else HoverStateWhite)
-                    ) {
-                        Icon(
-                            imageVector = if (isCameraOff) Icons.Rounded.VideocamOff else Icons.Rounded.Videocam,
-                            contentDescription = "Caméra",
-                            tint = if (isCameraOff) Color(0xFFFF5252) else TextPrimary
-                        )
-                    }
-                }
-
-                // Speaker
-                IconButton(
-                    onClick = { isSpeakerOn = !isSpeakerOn },
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(CircleShape)
-                        .background(if (isSpeakerOn) AccentViolet.copy(alpha = 0.2f) else HoverStateWhite)
-                ) {
-                    Icon(
-                        imageVector = if (isSpeakerOn) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeDown,
-                        contentDescription = "Haut-parleur",
-                        tint = if (isSpeakerOn) AccentViolet else TextPrimary
-                    )
-                }
-
-                // Hang Up (Red button)
-                IconButton(
-                    onClick = { onEndCall(callDurationSeconds) },
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFF5252))
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.CallEnd,
-                        contentDescription = "Raccrocher",
-                        tint = Color.White,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-            }
+            Spacer(Modifier.height(8.dp))
+            Text("Raccrocher", fontSize = 13.sp, color = Color(0xFFADA7A1))
         }
     }
 }

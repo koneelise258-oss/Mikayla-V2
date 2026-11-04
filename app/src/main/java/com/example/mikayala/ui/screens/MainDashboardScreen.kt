@@ -74,6 +74,15 @@ fun MainDashboardScreen(
     var showPartnerProfileSheet by remember { mutableStateOf(false) }
     var showOfflineP2PPage by remember { mutableStateOf(false) }
     var activeCallState by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) } // (isActive, isVideo)
+    var callIsIncoming by remember { mutableStateOf(false) }
+    val callScope = rememberCoroutineScope()
+    // Appel sortant : prévient réellement le partenaire (sonnerie) avant d'afficher l'écran d'appel.
+    // Avant, les boutons de l'en-tête affichaient l'écran sans rien envoyer.
+    val startOutgoingCall: (Boolean) -> Unit = { isVideo ->
+        callIsIncoming = false
+        activeCallState = Pair(true, isVideo)
+        callScope.launch { repository.initiateSupabaseCall(isVideo) }
+    }
 
     // Launcher pour demander la permission audio si AUTO_ANSWER est demandé sans permission
     val recordAudioLauncher = rememberLauncherForActivityResult(
@@ -81,6 +90,7 @@ fun MainDashboardScreen(
     ) { isGranted ->
         if (isGranted) {
             val isVideo = pendingIntentExtras?.getBoolean("IS_VIDEO", false) ?: false
+            callIsIncoming = true
             activeCallState = Pair(true, isVideo)
         } else {
             Toast.makeText(context, "Permission microphone requise pour décrocher l'appel", Toast.LENGTH_SHORT).show()
@@ -105,6 +115,7 @@ fun MainDashboardScreen(
                 ) == PackageManager.PERMISSION_GRANTED
 
                 if (hasAudioPerm) {
+                    callIsIncoming = true
                     activeCallState = Pair(true, isVideo)
                 } else {
                     recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -265,7 +276,7 @@ fun MainDashboardScreen(
                                 NeumorphicSquircleButton(
                                     icon = Icons.Rounded.Videocam,
                                     contentDescription = "Appel Vidéo",
-                                    onClick = { activeCallState = Pair(true, true) },
+                                    onClick = { startOutgoingCall(true) },
                                     size = 44.dp,
                                     iconSize = 20.dp,
                                     tint = VibrantCyan
@@ -273,7 +284,7 @@ fun MainDashboardScreen(
                                 NeumorphicSquircleButton(
                                     icon = Icons.Rounded.Call,
                                     contentDescription = "Appel Audio",
-                                    onClick = { activeCallState = Pair(true, false) },
+                                    onClick = { startOutgoingCall(false) },
                                     size = 44.dp,
                                     iconSize = 20.dp,
                                     tint = TextSecondary
@@ -487,13 +498,13 @@ fun MainDashboardScreen(
                     when (tab) {
                         0 -> ChatScreen(
                             repository = repository,
-                            onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) },
+                            onStartCall = { isVideo -> startOutgoingCall(isVideo) },
                             searchMode = chatSearchMode,
                             onCloseSearch = { chatSearchMode = null }
                         )
                         1 -> CallsScreen(
                             repository = repository,
-                            onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) }
+                            onStartCall = { isVideo -> startOutgoingCall(isVideo) }
                         )
                         2 -> CoupleSpaceScreen(repository = repository)
                         3 -> VaultScreen(repository = repository)
@@ -657,7 +668,7 @@ fun MainDashboardScreen(
             com.example.mikayala.ui.components.PartnerProfileBottomSheet(
                 repository = repository,
                 onDismiss = { showPartnerProfileSheet = false },
-                onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) },
+                onStartCall = { isVideo -> startOutgoingCall(isVideo) },
                 onOpenSearch = { selectedTab = 0; chatSearchMode = "search" }
             )
         }
@@ -667,8 +678,10 @@ fun MainDashboardScreen(
             ActiveCallOverlay(
                 partnerName = userSettings.partnerNickname.ifBlank { "Mon partenaire" },
                 isVideo = isVideo,
+                isIncoming = callIsIncoming,
                 onEndCall = { duration ->
-                    repository.addCallLog(isVideo = isVideo, durationSeconds = duration)
+                    // Appel sortant déjà inscrit à l'historique au lancement : on n'ajoute que les appels reçus
+                    if (callIsIncoming) repository.addCallLog(isVideo = isVideo, durationSeconds = duration)
                     activeCallState = null
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                         repository.endOutgoingCall(duration)

@@ -97,10 +97,7 @@ fun CallsScreen(
                     // Audio Call Button
                     IconButton(
                         onClick = {
-                            coroutineScope.launch {
-                                repository.initiateSupabaseCall(false)
-                                onStartCall(false)
-                            }
+                            onStartCall(false) // la sonnerie est envoyée par l'écran principal
                         },
                         modifier = Modifier
                             .size(44.dp)
@@ -118,10 +115,7 @@ fun CallsScreen(
                     // Video Call Button
                     IconButton(
                         onClick = {
-                            coroutineScope.launch {
-                                repository.initiateSupabaseCall(true)
-                                onStartCall(true)
-                            }
+                            onStartCall(true)
                         },
                         modifier = Modifier
                             .size(44.dp)
