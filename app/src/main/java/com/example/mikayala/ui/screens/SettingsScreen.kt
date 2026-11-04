@@ -297,7 +297,17 @@ fun SettingsScreen(
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = "👸", fontSize = 32.sp)
+                                // Vraie photo du partenaire si elle existe, sinon icône neutre (plus d'emoji imposé)
+                                if (settings.partnerAvatarUrl.isNotBlank()) {
+                                    coil.compose.AsyncImage(
+                                        model = settings.partnerAvatarUrl,
+                                        contentDescription = "Photo de votre partenaire",
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(Icons.Rounded.Person, contentDescription = "Photo de votre partenaire", tint = AccentRose, modifier = Modifier.size(36.dp))
+                                }
                             }
                             Surface(
                                 shape = CircleShape,
