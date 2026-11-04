@@ -1086,10 +1086,17 @@ fun SettingsScreen(
                     SettingRow(
                         icon = Icons.Rounded.Vibration,
                         iconTint = VibrantCyan,
-                        title = "Vibration 'Pense à moi' (Love Pulse) 💓",
-                        subtitle = "Envoyer un battement de cœur tactile instantané",
+                        title = "Pense à moi",
+                        subtitle = "Envoie une notification « je pense à toi » à votre partenaire",
                         onClick = {
-                            Toast.makeText(context, "Pulsation d'amour envoyée à ${settings.partnerNickname} ! 💓✨", Toast.LENGTH_SHORT).show()
+                            scope.launch {
+                                val sent = repository.sendLovePulse()
+                                Toast.makeText(
+                                    context,
+                                    if (sent) "Envoyé à ${settings.partnerNickname} 💓" else "Envoi impossible : vérifiez la connexion et le jumelage",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     )
                     }

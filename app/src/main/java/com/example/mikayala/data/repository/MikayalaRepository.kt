@@ -2006,6 +2006,26 @@ class MikayalaRepository(private val context: Context) {
         _userSettings.value = _userSettings.value.copy(isDarkMode = enabled)
     }
 
+    /**
+     * « Pense à moi » : envoie une vraie notification au partenaire (type love_bomb, géré par send-fcm
+     * et MyFirebaseMessagingService). Retourne false si le couple n'est pas apparié ou si l'envoi échoue.
+     */
+    suspend fun sendLovePulse(): Boolean {
+        val couple = _coupleSpace.value
+        val (myUserId, partnerId) = resolveCoupleMembers()
+        if (!couple.isPaired || couple.id.isBlank() || partnerId.isBlank() || myUserId == partnerId) return false
+        val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
+        return supabaseService.sendFcmPush(
+            coupleId = couple.id,
+            recipientId = partnerId,
+            type = "love_bomb",
+            title = "Mikayala",
+            body = "$myName pense à vous 💓",
+            extraData = mapOf("partnerName" to myName, "kissCount" to "1"),
+            hidePreview = false
+        )
+    }
+
     /** Mise à jour directe d'une préférence (pages Paramètres) : enregistrée automatiquement. */
     fun updateUiSettings(transform: (UserSettingsEntity) -> UserSettingsEntity) {
         _userSettings.value = transform(_userSettings.value)
