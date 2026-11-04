@@ -429,55 +429,14 @@ fun LandingView(
     ) {
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Glowing Animated Logo Header
-        val infiniteTransition = rememberInfiniteTransition(label = "logo_pulse")
-        val pulseScale by infiniteTransition.animateFloat(
-            initialValue = 0.96f,
-            targetValue = 1.05f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2200, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "pulse_scale"
-        )
-
-        Box(
+        // Logo statique (ancienne animation « pulsation » et halo lumineux retirés)
+        Image(
+            painter = painterResource(id = R.drawable.ic_mikayala_logo),
+            contentDescription = "Mikayala",
             modifier = Modifier
-                .size(108.dp)
-                .scale(pulseScale)
-                .clip(RoundedCornerShape(30.dp))
-                .background(
-                    Brush.radialGradient(
-                        listOf(
-                            AccentViolet.copy(alpha = 0.5f),
-                            AccentRose.copy(alpha = 0.2f),
-                            Color.Transparent
-                        )
-                    )
-                )
-                .border(
-                    BorderStroke(
-                        2.dp,
-                        Brush.linearGradient(
-                            listOf(
-                                Color(0xFF9283C4),
-                                Color(0xFF9283C4),
-                                Color(0xFF9283C4)
-                            )
-                        )
-                    ),
-                    RoundedCornerShape(30.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_mikayala_logo),
-                contentDescription = "Mikayala Logo Papillon Liquid Glass",
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(RoundedCornerShape(26.dp))
-            )
-        }
+                .size(88.dp)
+                .clip(RoundedCornerShape(24.dp))
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 

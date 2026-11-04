@@ -77,55 +77,14 @@ fun AuthScreen(
         ) {
             Spacer(modifier = Modifier.height(30.dp))
 
-            // Glowing Animated Logo Header
-            val infiniteTransition = rememberInfiniteTransition(label = "auth_logo_pulse")
-            val pulseScale by infiniteTransition.animateFloat(
-                initialValue = 0.96f,
-                targetValue = 1.05f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(2200, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "auth_pulse_scale"
-            )
-
-            Box(
+            // Logo statique (ancienne animation « pulsation » et halo lumineux retirés)
+            Image(
+                painter = painterResource(id = R.drawable.ic_mikayala_logo),
+                contentDescription = "Mikayala",
                 modifier = Modifier
-                    .size(118.dp)
-                    .scale(pulseScale)
-                    .clip(RoundedCornerShape(32.dp))
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                AccentViolet.copy(alpha = 0.5f),
-                                AccentRose.copy(alpha = 0.2f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .border(
-                        BorderStroke(
-                            2.dp,
-                            Brush.linearGradient(
-                                listOf(
-                                    Color(0xFF9283C4),
-                                    Color(0xFF9283C4),
-                                    Color(0xFF9283C4)
-                                )
-                            )
-                        ),
-                        RoundedCornerShape(32.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_mikayala_logo),
-                    contentDescription = "Mikayala Logo Papillon Liquid Glass",
-                    modifier = Modifier
-                        .size(110.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                )
-            }
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(26.dp))
+            )
 
             Spacer(modifier = Modifier.height(28.dp))
 
