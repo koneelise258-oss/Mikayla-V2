@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -69,6 +70,25 @@ fun SettingsScreen(
     var showAnniversaryDialog by remember { mutableStateOf(false) }
     var showOnboardingScreen by remember { mutableStateOf(false) }
     var showSupabaseDialog by remember { mutableStateOf(false) }
+
+    val isAnyModalOrSubScreenOpen = showProfileModal || showAppIconModal ||
+            showPinDialog || showDecoyPinDialog || showPairingDialog ||
+            showDissolveDialog || showClearChatDialog || showOfflineP2PScreen ||
+            showAnniversaryDialog || showOnboardingScreen || showSupabaseDialog
+
+    BackHandler(enabled = isAnyModalOrSubScreenOpen) {
+        showProfileModal = false
+        showAppIconModal = false
+        showPinDialog = false
+        showDecoyPinDialog = false
+        showPairingDialog = false
+        showDissolveDialog = false
+        showClearChatDialog = false
+        showOfflineP2PScreen = false
+        showAnniversaryDialog = false
+        showOnboardingScreen = false
+        showSupabaseDialog = false
+    }
 
     if (showOnboardingScreen) {
         OnboardingScreen(

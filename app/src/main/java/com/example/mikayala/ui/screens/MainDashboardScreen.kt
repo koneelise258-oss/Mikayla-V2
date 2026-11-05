@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -82,6 +83,18 @@ fun MainDashboardScreen(
         callIsIncoming = false
         activeCallState = Pair(true, isVideo)
         callScope.launch { repository.initiateSupabaseCall(isVideo) }
+    }
+
+    BackHandler(enabled = showNavDrawerSheet || showPartnerProfileSheet || showOfflineP2PPage || selectedTab != 0) {
+        if (showNavDrawerSheet) {
+            showNavDrawerSheet = false
+        } else if (showPartnerProfileSheet) {
+            showPartnerProfileSheet = false
+        } else if (showOfflineP2PPage) {
+            showOfflineP2PPage = false
+        } else if (selectedTab != 0) {
+            selectedTab = 0
+        }
     }
 
     // Launcher pour demander la permission audio si AUTO_ANSWER est demandé sans permission
