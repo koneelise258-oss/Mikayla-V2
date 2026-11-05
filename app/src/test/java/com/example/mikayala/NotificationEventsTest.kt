@@ -270,4 +270,77 @@ class ChatGamesTest {
     @Test fun quizReponse() { assertEquals("La mer", g.quizReply(g.with("Notre voyage", "La mer"))) }
     @Test fun carteGrattee() { assertFalse(g.isDone(null)); assertTrue(g.isDone(g.with(null, "1"))) }
     @Test fun roueResultat() { assertEquals(3, g.wheelResult(g.with("a|b|c|d", "3"))) }
+    @Test fun roueSyncPreserveOptionsEtResultat() {
+        val initialMedia = "Massage 💆|Dîner 🍷|Film 🎬|Baiser 💋"
+        assertEquals(initialMedia, g.base(initialMedia))
+        assertNull(g.wheelResult(initialMedia))
+
+        val winningIndex = 2
+        val syncedMedia = g.with(initialMedia, winningIndex.toString())
+        assertEquals("Massage 💆|Dîner 🍷|Film 🎬|Baiser 💋§2", syncedMedia)
+        assertEquals(initialMedia, g.base(syncedMedia))
+        assertEquals(2, g.wheelResult(syncedMedia))
+
+        // Rejouer avec un nouveau résultat
+        val newWinningIndex = 0
+        val replayedMedia = g.with(syncedMedia, newWinningIndex.toString())
+        assertEquals("Massage 💆|Dîner 🍷|Film 🎬|Baiser 💋§0", replayedMedia)
+        assertEquals(initialMedia, g.base(replayedMedia))
+        assertEquals(0, g.wheelResult(replayedMedia))
+    }
+}
+
+class ChatSearchAndFilterTest {
+    data class DummyMessage(
+        val id: String,
+        val content: String,
+        val replyToContent: String? = null,
+        val isStarred: Boolean = false,
+        val deletedFor: List<String> = emptyList()
+    )
+
+    private val messages = listOf(
+        DummyMessage("m1", "Je t'aime mon amour", isStarred = true),
+        DummyMessage("m2", "À quelle heure le dîner ce soir ?", isStarred = false),
+        DummyMessage("m3", "Génial !", replyToContent = "Je t'aime mon amour", isStarred = false),
+        DummyMessage("m4", "Bonne nuit ma chérie 💖", isStarred = true),
+        DummyMessage("m5", "Message supprimé pour moi", deletedFor = listOf("user1"))
+    )
+
+    @Test
+    fun `filtrage des messages favoris`() {
+        val starred = messages.filter { it.isStarred }
+        assertEquals(2, starred.size)
+        assertEquals(listOf("m1", "m4"), starred.map { it.id })
+    }
+
+    @Test
+    fun `recherche par texte direct et replyTo`() {
+        val query = "amour"
+        val results = messages.filter {
+            it.content.contains(query, ignoreCase = true) ||
+            (it.replyToContent?.contains(query, ignoreCase = true) == true)
+        }
+        assertEquals(2, results.size)
+        assertEquals(listOf("m1", "m3"), results.map { it.id })
+    }
+
+    @Test
+    fun `recherche avec casse differente`() {
+        val query = "DÎNER"
+        val results = messages.filter {
+            it.content.contains(query, ignoreCase = true)
+        }
+        assertEquals(1, results.size)
+        assertEquals("m2", results[0].id)
+    }
+
+    @Test
+    fun `recherche sans correspondance renvoie liste vide`() {
+        val query = "introuvable12345"
+        val results = messages.filter {
+            it.content.contains(query, ignoreCase = true)
+        }
+        assertTrue(results.isEmpty())
+    }
 }

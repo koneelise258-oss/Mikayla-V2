@@ -22,8 +22,10 @@ import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import com.example.mikayala.util.ChatGames
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -158,9 +160,29 @@ fun ChatScreen(
 
     val rawMessages by repository.allMessages.collectAsState()
     val myUserId = remember { repository.getCurrentUserId() }
-    val messages = remember(rawMessages, myUserId) {
+    val baseMessages = remember(rawMessages, myUserId) {
         rawMessages.filter { !it.deletedFor.contains(myUserId) }
     }
+
+    var searchQuery by remember { mutableStateOf("") }
+
+    val messages = remember(baseMessages, searchMode, searchQuery) {
+        when (searchMode) {
+            "starred" -> baseMessages.filter { it.isStarred }
+            "search" -> {
+                if (searchQuery.isBlank()) {
+                    baseMessages
+                } else {
+                    baseMessages.filter {
+                        it.content.contains(searchQuery, ignoreCase = true) ||
+                        (it.replyToContent?.contains(searchQuery, ignoreCase = true) == true)
+                    }
+                }
+            }
+            else -> baseMessages
+        }
+    }
+
     val isPartnerTyping by repository.isPartnerTyping.collectAsState()
     val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
     val userSettings by repository.userSettings.collectAsState()
@@ -174,9 +196,12 @@ fun ChatScreen(
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showEmojiBar by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = selectedMessageIds.isNotEmpty() || showEmojiBar || showAttachmentSheet) {
+    BackHandler(enabled = selectedMessageIds.isNotEmpty() || searchMode != null || showEmojiBar || showAttachmentSheet) {
         if (selectedMessageIds.isNotEmpty()) {
             selectedMessageIds = emptySet()
+        } else if (searchMode != null) {
+            searchQuery = ""
+            onCloseSearch()
         } else if (showEmojiBar) {
             showEmojiBar = false
         } else if (showAttachmentSheet) {
@@ -364,6 +389,128 @@ fun ChatScreen(
                                 selectedMessageIds = emptySet()
                             }) {
                                 Icon(Icons.Rounded.Delete, contentDescription = "Supprimer", tint = AccentRose, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Search or Starred Filter Banner
+            AnimatedVisibility(visible = searchMode != null) {
+                Surface(
+                    color = CardDarkElevated,
+                    border = BorderStroke(1.dp, if (searchMode == "starred") AccentGold.copy(alpha = 0.5f) else VibrantCyan.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    if (searchMode == "starred") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Star,
+                                    contentDescription = "Favoris",
+                                    tint = AccentGold,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Messages favoris ⭐ (${messages.size})",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    searchQuery = ""
+                                    onCloseSearch()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Fermer",
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        // search mode
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = "Rechercher",
+                                tint = VibrantCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    color = TextPrimary,
+                                    fontSize = 14.sp
+                                ),
+                                modifier = Modifier.weight(1f),
+                                decorationBox = { innerTextField ->
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = "Rechercher dans la conversation...",
+                                            fontSize = 13.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            )
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { searchQuery = "" },
+                                    modifier = Modifier.size(26.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Effacer",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${messages.size}",
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            IconButton(
+                                onClick = {
+                                    searchQuery = ""
+                                    onCloseSearch()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Fermer la recherche",
+                                    tint = AccentRose,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }
@@ -1349,6 +1496,7 @@ private fun MessageBubble(
             "wheel", "roue" -> {
                 WheelOfFortuneMessageItem(
                     message = message,
+                    repository = repository,
                     isSender = isSender,
                     timeFormatted = timeFormatted,
                     reactionsMap = reactionsMap
@@ -2358,17 +2506,38 @@ internal fun autoCapitalizeMessageInput(input: String, previousText: String): St
 @Composable
 fun WheelOfFortuneMessageItem(
     message: MessageEntity,
+    repository: MikayalaRepository,
     isSender: Boolean,
     timeFormatted: String,
     reactionsMap: List<String> = emptyList()
 ) {
-    val items = remember(message.mediaUrl) {
-        val parsed = message.mediaUrl?.split("|")?.filter { it.isNotBlank() } ?: emptyList()
+    val coroutineScope = rememberCoroutineScope()
+    val baseMedia = remember(message.mediaUrl) {
+        ChatGames.base(message.mediaUrl)
+    }
+    val items = remember(baseMedia) {
+        val parsed = baseMedia.split("|").map { it.trim() }.filter { it.isNotBlank() }
         if (parsed.isNotEmpty()) parsed else listOf("Massage 💆", "Dîner 🍷", "Film 🎬", "Dîner 🍳", "Baiser 💋", "Vérité 🤫")
     }
+
+    val syncedResultIndex = remember(message.mediaUrl) {
+        ChatGames.wheelResult(message.mediaUrl)
+    }
+
     var targetRotation by remember { mutableFloatStateOf(0f) }
-    var selectedResult by remember { mutableStateOf<String?>(null) }
     var isSpinning by remember { mutableStateOf(false) }
+
+    // If an initial result exists on mount or updates via sync, align the wheel rotation
+    LaunchedEffect(syncedResultIndex, items.size) {
+        if (syncedResultIndex != null && syncedResultIndex in items.indices && !isSpinning) {
+            val segmentAngle = 360f / items.size
+            // Pointer is at TopCenter (offset 0 / 270 relative to standard canvas 0 at right).
+            // Canvas segment index center is at (index + 0.5) * segmentAngle - 90 deg.
+            // When rotated by rotation R, segment center is at (index + 0.5) * segmentAngle - 90 + R = 270 => R = 360 - (index + 0.5) * segmentAngle.
+            val targetDegree = (360f - (syncedResultIndex + 0.5f) * segmentAngle + 360f) % 360f
+            targetRotation = targetDegree
+        }
+    }
 
     val animatedRotation by animateFloatAsState(
         targetValue = targetRotation,
@@ -2379,9 +2548,18 @@ fun WheelOfFortuneMessageItem(
             val normalizedDegree = (targetRotation % 360 + 360) % 360
             val segmentAngle = 360f / items.size
             val winningIndex = (((360 - normalizedDegree + segmentAngle / 2) % 360) / segmentAngle).toInt() % items.size
-            selectedResult = items[winningIndex]
+            val newState = ChatGames.with(message.mediaUrl, winningIndex.toString())
+            coroutineScope.launch {
+                repository.playGameMove(message.id, newState, "Roue de la Fortune")
+            }
         }
     )
+
+    val currentResultLabel = remember(syncedResultIndex, items) {
+        if (syncedResultIndex != null && syncedResultIndex in items.indices) {
+            items[syncedResultIndex]
+        } else null
+    }
 
     Surface(
         shape = RoundedCornerShape(20.dp),
@@ -2454,7 +2632,7 @@ fun WheelOfFortuneMessageItem(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (selectedResult != null) {
+            if (currentResultLabel != null) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0x33FF007F),
@@ -2462,7 +2640,7 @@ fun WheelOfFortuneMessageItem(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Résultat : $selectedResult 🎉",
+                        text = "Résultat : $currentResultLabel 🎉",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
@@ -2473,11 +2651,11 @@ fun WheelOfFortuneMessageItem(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
+            val hasAlreadySpun = syncedResultIndex != null
             Button(
                 onClick = {
                     if (!isSpinning) {
                         isSpinning = true
-                        selectedResult = null
                         val randomExtraSpins = (5..10).random() * 360f
                         val randomDegree = (0..359).random().toFloat()
                         targetRotation += randomExtraSpins + randomDegree
@@ -2489,7 +2667,11 @@ fun WheelOfFortuneMessageItem(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = if (isSpinning) "La roue tourne... 🎡" else "Tourner la Roue ! 🎡",
+                    text = when {
+                        isSpinning -> "La roue tourne... 🎡"
+                        hasAlreadySpun -> "Rejouer la Roue ! 🎡"
+                        else -> "Tourner la Roue ! 🎡"
+                    },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White

@@ -21,6 +21,7 @@ class MikayalaRepository(private val context: Context) {
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     val supabaseService = SupabaseService.getInstance()
+    private val localGamesJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
     fun syncPendingPushToken() {
         repositoryScope.launch {
@@ -2080,7 +2081,6 @@ class MikayalaRepository(private val context: Context) {
      * auparavant seulement tant que l'application restait ouverte). Ils ne sont pas encore partagés
      * avec le partenaire : cela demande des tables Supabase dédiées (décision à prendre).
      */
-    private val localGamesJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
     private inline fun <reified T> restoreList(key: String, flow: MutableStateFlow<List<T>>) {
         val raw = prefs.getString(key, null) ?: return
