@@ -68,7 +68,7 @@ fun SetFirstPasswordScreen(
                     if (updated == firstPin) {
                         repository.updatePinCode(updated)
                         repository.setPairingSetupCompleted(true)
-                        Toast.makeText(context, "Code secret enregistré avec succès ! 🔒", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Code secret enregistré avec succès", Toast.LENGTH_SHORT).show()
                         onPasswordSet()
                     } else {
                         isError = true
@@ -161,7 +161,7 @@ fun SetFirstPasswordScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     color = CardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite)
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite)
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -218,7 +218,7 @@ fun SetFirstPasswordScreen(
                         text = "Définir un code 🔒",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                 }
 
@@ -316,7 +316,7 @@ fun SetFirstPasswordScreen(
                             .clip(CircleShape)
                             .background(
                                 if (isFilled) {
-                                    if (isError) Color(0xFFFF5252) else AccentRose
+                                    if (isError) Color(0xFFC4605C) else AccentRose
                                 } else CardDark
                             )
                             .border(
@@ -370,7 +370,7 @@ fun SetFirstPasswordScreen(
                                     Surface(
                                         shape = CircleShape,
                                         color = CardDark,
-                                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                         modifier = Modifier
                                             .size(64.dp)
                                             .clickable { handleDigit(item) }

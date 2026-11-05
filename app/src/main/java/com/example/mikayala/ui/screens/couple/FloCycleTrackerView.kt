@@ -61,18 +61,19 @@ fun FloCycleTrackerView(
     val isPMS = cycleDay > (cycleInfo.cycleLengthDays - 4)
 
     val pregnancyChance = when {
-        cycleDay == ovulationDay -> "Chance très élevée 🔥 (Pic d'ovulation)"
-        isFertile -> "Chance élevée ✨ (Fenêtre fertile)"
-        isPeriod -> "Chance très faible"
-        else -> "Chance faible"
+        // Estimation calendaire simple (cycle - 14 jours) : jamais une certitude
+        cycleDay == ovulationDay -> "Fertilité estimée : maximale (ovulation estimée)"
+        isFertile -> "Fertilité estimée : élevée (période fertile estimée)"
+        isPeriod -> "Fertilité estimée : très faible"
+        else -> "Fertilité estimée : faible"
     }
 
     val primaryRingColor = when {
         isPeriod -> AccentRose
         cycleDay == ovulationDay -> VibrantCyan
-        isFertile -> Color(0xFF00E5FF)
+        isFertile -> Color(0xFF7FA8CC)
         isPMS -> WarningGold
-        else -> Color(0xFF9C27B0)
+        else -> Color(0xFF9283C4)
     }
 
     LazyColumn(
@@ -80,12 +81,24 @@ fun FloCycleTrackerView(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 36.dp)
     ) {
+        // Pas encore de dates saisies : aucune prédiction inventée, invitation à renseigner le cycle
+        if (!cycleInfo.isConfigured) {
+            item {
+                com.example.mikayala.ui.components.SoftEmptyState(
+                    icon = Icons.Rounded.Spa,
+                    title = "Commencez le suivi",
+                    message = "Indiquez la date de vos dernières règles et la durée habituelle de votre cycle. Les estimations apparaîtront ensuite. Ces données restent sur cet appareil.",
+                    actionLabel = "Renseigner mon cycle",
+                    onAction = { showSettingsDialog = true }
+                )
+            }
+        } else {
         // 1. FLO DIAL HERO CARD
         item {
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
@@ -133,7 +146,7 @@ fun FloCycleTrackerView(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = CardDarkElevated,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.clickable { showSettingsDialog = true }
                             ) {
                                 Row(
@@ -256,11 +269,11 @@ fun FloCycleTrackerView(
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = CardDarkElevated,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(text = "Prochaines Règles", fontSize = 11.sp, color = TextSecondary)
+                                    Text(text = "Prochaines règles (estimation)", fontSize = 11.sp, color = TextSecondary)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "Dans $daysUntilNext jours",
@@ -274,11 +287,11 @@ fun FloCycleTrackerView(
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = CardDarkElevated,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(text = "Pic Ovulation", fontSize = 11.sp, color = TextSecondary)
+                                    Text(text = "Ovulation estimée", fontSize = 11.sp, color = TextSecondary)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "Jour $ovulationDay du cycle",
@@ -289,6 +302,13 @@ fun FloCycleTrackerView(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        // Avertissement obligatoire : estimations, ni avis médical ni contraception
+                        com.example.mikayala.ui.components.SoftBanner(
+                            message = "Ces dates sont des estimations calculées à partir de la durée moyenne du cycle. Ce n'est ni un avis médical ni une méthode de contraception.",
+                            isError = false
+                        )
 
                         Spacer(modifier = Modifier.height(16.dp))
 
@@ -309,7 +329,7 @@ fun FloCycleTrackerView(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -470,9 +490,9 @@ fun FloCycleTrackerView(
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = CardDarkElevated,
-                                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                     modifier = Modifier.clickable {
-                                        Toast.makeText(context, "Super idée d'attention : $suggestion ! ❤️", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Super idée d'attention : $suggestion", Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
                                     Text(
@@ -488,7 +508,9 @@ fun FloCycleTrackerView(
                 }
             }
         }
-    }
+    
+        }
+}
 
     // DIALOG: FLO CYCLE PARAMETERS
     if (showSettingsDialog) {
@@ -500,7 +522,7 @@ fun FloCycleTrackerView(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -526,7 +548,7 @@ fun FloCycleTrackerView(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = CardDarkElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
@@ -571,7 +593,7 @@ fun FloCycleTrackerView(
                     ) {
                         Column {
                             Text(text = "Durée du cycle", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = "Moyenne : 28 jours", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = "Actuellement : ${cycleInfo.cycleLengthDays} jours", fontSize = 11.sp, color = TextSecondary)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { if (tempCycleLength > 20) tempCycleLength-- }) {
@@ -656,7 +678,7 @@ fun FloCycleTrackerView(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 600.dp)
@@ -786,7 +808,7 @@ fun FloCycleTrackerView(
                                 )
                                 repository.saveCycleDailyLog(newLog)
                                 showLogDayDialog = false
-                                Toast.makeText(context, "Journal enregistré ! 🌸", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Journal enregistré", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1.3f)
                         )

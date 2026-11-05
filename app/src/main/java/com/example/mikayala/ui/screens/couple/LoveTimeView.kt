@@ -62,7 +62,7 @@ fun LoveTimeView(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
@@ -114,7 +114,7 @@ fun LoveTimeView(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = CardDarkElevated,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.clickable { showEditSettingsDialog = true }
                             ) {
                                 Row(
@@ -233,7 +233,7 @@ fun LoveTimeView(
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = CardDarkElevated.copy(alpha = 0.6f),
-                            border = BorderStroke(1.dp, BorderSubtleWhite),
+                            border = BorderStroke(0.5.dp, BorderSubtleWhite),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
@@ -285,7 +285,7 @@ fun LoveTimeView(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.clickable { showAddMilestoneDialog = true }
                 ) {
                     Row(
@@ -412,7 +412,7 @@ fun LoveTimeView(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -468,7 +468,7 @@ fun LoveTimeView(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = CardDarkElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
@@ -546,11 +546,11 @@ fun LoveTimeView(
                                 repository.updateLoveTimeSettings(
                                     anniversaryDate = tempDateMillis,
                                     partner1Name = tempPartner1.ifBlank { "Moi" },
-                                    partner2Name = tempPartner2.ifBlank { "Mikayala" },
+                                    partner2Name = tempPartner2.ifBlank { "Partenaire 2" },
                                     loveQuote = tempQuote.ifBlank { "Pour toujours et à jamais." }
                                 )
                                 showEditSettingsDialog = false
-                                Toast.makeText(context, "Love Time mis à jour ! ❤️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Love Time mis à jour", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.weight(1.3f)
                         )
@@ -570,7 +570,7 @@ fun LoveTimeView(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -675,7 +675,7 @@ private fun TimeUnitBox(label: String, value: String, modifier: Modifier = Modif
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = CardDarkElevated,
-        border = BorderStroke(1.dp, BorderSubtleWhite),
+        border = BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = modifier
     ) {
         Column(

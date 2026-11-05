@@ -124,7 +124,8 @@ class VoiceRecorderManager(private val context: Context) {
             mediaRecorder?.apply {
                 if (isPaused) {
                     try {
-                        resume()
+                        // pause()/resume() n'existent qu'à partir d'Android 7
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) resume()
                     } catch (ignored: Exception) {}
                     isPaused = false
                 }

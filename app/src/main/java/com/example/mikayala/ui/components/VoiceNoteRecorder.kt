@@ -64,7 +64,9 @@ fun VoiceNoteRecorder(
     onCameraClick: () -> Unit,
     onEmojiClick: () -> Unit,
     showEmojiBar: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Paramètres > Discussions > « Touche Entrée pour envoyer ». */
+    enterIsSend: Boolean = false
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -153,7 +155,13 @@ fun VoiceNoteRecorder(
                             value = textInput,
                             onValueChange = onTextInputChange,
                             placeholder = { Text("Message", color = TextMuted, fontSize = 15.sp) },
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                imeAction = if (enterIsSend) androidx.compose.ui.text.input.ImeAction.Send else androidx.compose.ui.text.input.ImeAction.Default
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onSend = { if (textInput.isNotBlank()) currentOnSendText() }
+                            ),
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedContainerColor = Color.Transparent,
@@ -249,9 +257,7 @@ fun VoiceNoteRecorder(
                                         .height(barHeight)
                                         .clip(RoundedCornerShape(2.dp))
                                         .background(
-                                            Brush.verticalGradient(
-                                                listOf(VibrantCyan, VibrantBlue)
-                                            )
+                                            AccentRose
                                         )
                                 )
                             }
@@ -297,14 +303,14 @@ fun VoiceNoteRecorder(
                         IconButton(
                             onClick = {
                                 manager.cancelRecording()
-                                Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Enregistrement annulé", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Delete,
                                 contentDescription = "Supprimer",
-                                tint = Color(0xFFFF5252),
+                                tint = Color(0xFFC4605C),
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -402,7 +408,7 @@ fun VoiceNoteRecorder(
                         1.dp,
                         if (isLockThresholdMet) AccentRose else VibrantCyan
                     ),
-                    shadowElevation = 8.dp,
+                    shadowElevation = 1.dp,
                     modifier = Modifier
                         .offset(y = (-64).dp)
                         .padding(bottom = 6.dp)
@@ -436,7 +442,7 @@ fun VoiceNoteRecorder(
             Surface(
                 shape = CircleShape,
                 color = Color.Transparent,
-                shadowElevation = 6.dp,
+                shadowElevation = 1.dp,
                 modifier = Modifier
                     .size(46.dp)
                     // Gestion gestuelle WhatsApp (Hold & Drag) quand il n'y a pas de texte tapé
@@ -510,7 +516,7 @@ fun VoiceNoteRecorder(
                                             isCancelled = true
                                             manager.cancelRecording()
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            Toast.makeText(context, "Enregistrement annulé 🗑️", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Enregistrement annulé", Toast.LENGTH_SHORT).show()
                                             break
                                         }
 
@@ -543,7 +549,7 @@ fun VoiceNoteRecorder(
                                         } else {
                                             // Appui accidentel trop court (< 800ms)
                                             manager.cancelRecording()
-                                            Toast.makeText(context, "Maintenez le micro pour enregistrer 🎙️", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Maintenez le micro pour enregistrer", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
@@ -558,10 +564,9 @@ fun VoiceNoteRecorder(
                         .fillMaxSize()
                         .background(
                             when {
-                                textInput.isNotBlank() -> Brush.linearGradient(listOf(Color(0xFF00B4D8), Color(0xFF0077B6)))
-                                recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED -> Brush.linearGradient(listOf(VibrantCyan, VibrantBlue))
-                                recordingState == VoiceNoteState.RECORDING -> Brush.linearGradient(listOf(AccentRose, Color(0xFFE84393)))
-                                else -> Brush.linearGradient(listOf(Color(0xFF25D366), Color(0xFF075E54))) // Vert WhatsApp élégant
+                                // Bouton d'envoi / micro : rose poudré uni (lavande pendant un enregistrement verrouillé)
+                                recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED -> androidx.compose.ui.graphics.SolidColor(AccentViolet)
+                                else -> androidx.compose.ui.graphics.SolidColor(AccentRose)
                             }
                         )
                         .clickable(
@@ -579,7 +584,7 @@ fun VoiceNoteRecorder(
                             else -> Icons.Rounded.Mic
                         },
                         contentDescription = if (textInput.isNotBlank() || recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED) "Envoyer" else "Note vocale",
-                        tint = Color.White,
+                        tint = TextPrimary,
                         modifier = Modifier
                             .size(22.dp)
                             .then(

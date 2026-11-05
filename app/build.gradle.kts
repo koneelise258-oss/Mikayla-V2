@@ -9,7 +9,7 @@ android {
     namespace = "com.example.mikayala"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.aistudio.mikayala.mkyzlv"
+        applicationId = "com.mikayla.app"
         minSdk = 23
         targetSdk = 36
         versionCode = 2
@@ -23,7 +23,26 @@ android {
         buildConfigField("String", "BUILD_MARKER", "\"MIKAYALA_CURRENT_BUILD_2026\"")
     }
 
+    // Signature stable : la clé n'est JAMAIS dans le dépôt. La CI la décode depuis les secrets GitHub
+    // (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD).
+    // Sans ces variables, Gradle utilise la clé debug par défaut (différente à chaque machine).
+    val stableKeystorePath = System.getenv("MIKAYALA_KEYSTORE_PATH")
+    val hasStableSigning = !stableKeystorePath.isNullOrBlank() && file(stableKeystorePath).exists()
+    signingConfigs {
+        if (hasStableSigning) {
+            create("stable") {
+                storeFile = file(stableKeystorePath!!)
+                storePassword = System.getenv("MIKAYALA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("MIKAYALA_KEY_ALIAS")
+                keyPassword = System.getenv("MIKAYALA_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (hasStableSigning) signingConfig = signingConfigs.getByName("stable")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

@@ -4,11 +4,12 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
+import { buildPayloadData, isAllowedType, isPairedCoupleMember, ttlFor, validateServiceAccount } from "./payload.ts";
 
 interface SendFcmRequest {
   coupleId: string;
   recipientId: string;
-  type: "chat_message" | "call" | "missed_call" | "audio" | "image" | "video" | "vault_add" | "game" | "game_turn" | "anniversary" | "mood_update" | "poll_created" | "love_bomb";
+  type: "chat_message" | "call" | "missed_call" | "audio" | "image" | "video" | "vault_add" | "game" | "game_turn" | "anniversary" | "mood_update" | "poll_created" | "love_bomb" | "calendar_event" | "cycle" | "call_declined" | "call_cancelled" | "call_ended";
   title?: string;
   body?: string;
   data?: Record<string, string>;
@@ -105,9 +106,15 @@ serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const fcmServiceAccountJson = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON") ?? "";
 
-    if (!fcmServiceAccountJson) {
+    // Vérification du compte de service Firebase (aucune valeur secrète renvoyée ni journalisée)
+    const saError = validateServiceAccount(
+      fcmServiceAccountJson,
+      Deno.env.get("FCM_EXPECTED_PROJECT_ID") ?? undefined,
+    );
+    if (saError) {
+      console.error(`send-fcm: configuration FCM invalide (${saError})`);
       return new Response(
-        JSON.stringify({ error: "FCM_SERVICE_ACCOUNT_JSON is not configured in Supabase secrets" }),
+        JSON.stringify({ error: "FCM configuration error", code: saError }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -137,10 +144,18 @@ serve(async (req: Request) => {
     }
 
     const senderId = user.id;
-    const body: SendFcmRequest = await req.json();
+    let body: SendFcmRequest;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const { coupleId, recipientId, type, title, hidePreview } = body;
 
-    if (!recipientId || !type) {
+    if (!recipientId || !type || !isAllowedType(type)) {
       return new Response(JSON.stringify({ error: "Missing recipientId or type parameter" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -157,19 +172,22 @@ serve(async (req: Request) => {
 
     // 2. Validate couple membership (sender and recipient must belong to the couple)
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+    // Couple apparié obligatoire (status = 'paired'), comme la version déployée
     let coupleCheck = false;
     if (coupleId) {
-      const { data: coupleRow } = await adminClient
+      const { data: coupleRow, error: coupleError } = await adminClient
         .from("couples")
-        .select("id, user1_id, user2_id")
+        .select("id, user1_id, user2_id, status")
         .eq("id", coupleId)
         .maybeSingle();
-
-      if (coupleRow) {
-        const isSenderMember = coupleRow.user1_id === senderId || coupleRow.user2_id === senderId;
-        const isRecipientMember = coupleRow.user1_id === recipientId || coupleRow.user2_id === recipientId;
-        coupleCheck = isSenderMember && isRecipientMember;
+      if (coupleError) {
+        console.error("send-fcm: lecture du couple impossible", coupleError.code ?? "");
+        return new Response(JSON.stringify({ error: "Couple lookup failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
       }
+      coupleCheck = isPairedCoupleMember(coupleRow, senderId, recipientId);
     }
 
     if (!coupleCheck) {
@@ -193,18 +211,16 @@ serve(async (req: Request) => {
     }
 
     // 4. Format payload according to privacy settings
-    let messageText = body.body || "";
-    if (hidePreview) {
-      messageText = "Nouveau message reçu 🔒";
-    }
-
-    const payloadData: Record<string, string> = {
-      ...(body.data || {}),
+    // Payload filtré (liste blanche stricte pour le cycle) — voir payload.ts et payload.test.ts
+    const payloadData = buildPayloadData({
       type,
-      coupleId: coupleId || "",
-      senderId: senderId,
-      messageText: messageText,
-    };
+      coupleId,
+      senderId,
+      recipientId,
+      body: body.body,
+      data: body.data,
+      hidePreview,
+    });
 
     const accessToken = await getGoogleAccessToken(serviceAccount);
     const fcmEndpoint = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
@@ -221,7 +237,7 @@ serve(async (req: Request) => {
           data: payloadData,
           android: {
             priority: "HIGH",
-            ttl: type === "call" ? "30s" : "86400s",
+            ttl: ttlFor(type),
           },
         },
       };
@@ -279,8 +295,9 @@ serve(async (req: Request) => {
       }
     );
   } catch (err: any) {
+    console.error("send-fcm: erreur interne", err?.name ?? "Error");
     return new Response(
-      JSON.stringify({ error: err.message || "Internal server error" }),
+      JSON.stringify({ error: "Internal server error" }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },

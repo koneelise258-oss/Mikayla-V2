@@ -174,7 +174,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             val supabase = SupabaseService.getInstance()
             val api = object : SupabasePushApi {
                 override fun getCurrentSessionUid(): String? = supabase.getCurrentSessionUid()
-                override suspend fun upsertDevicePushToken(fcmToken: String): Boolean = supabase.upsertDevicePushToken(fcmToken)
+                override suspend fun upsertDevicePushToken(fcmToken: String): Boolean =
+                    supabase.upsertDevicePushToken(fcmToken, installationSecret = DeviceInstallation.secret(appContext))
                 override suspend fun deleteDevicePushToken(fcmToken: String): Boolean = supabase.deleteDevicePushToken(fcmToken)
             }
             return FcmTokenSyncEngine.getInstance(storage, fetcher, api)
@@ -201,6 +202,12 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
         fun maskToken(token: String): String {
             return if (token.length > 10) "${token.take(6)}...${token.takeLast(4)}" else "***"
+        }
+
+        /** recipientId absent (ancienne version de send-fcm) : compatibilité, on ne bloque pas. */
+        fun isForAnotherAccount(currentUid: String?, recipientId: String?): Boolean {
+            if (recipientId.isNullOrBlank() || currentUid.isNullOrBlank()) return false
+            return recipientId != currentUid
         }
 
         fun shouldIgnoreNotification(currentUid: String?, senderId: String?): Boolean {
@@ -236,7 +243,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             return when (privacyMode) {
                 "weather_camouflage" -> Pair("Météo ☀️", "Ciel dégagé • 21°C")
                 "system_camouflage" -> Pair("Système ⚙️", "Mise à jour système prête")
-                "discreet" -> Pair("Mikayala 🔒", "Nouveau message chiffré")
+                "discreet" -> Pair("Mikayala 🔒", "Nouveau message")
                 else -> Pair(rawSender.ifBlank { "Mon Amour" }, formattedText)
             }
         }
@@ -277,18 +284,50 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 return
             }
 
-            val messageIdKey = data["messageId"] ?: data["callId"] ?: data["id"]
-            if (!messageIdKey.isNullOrBlank() && isDuplicateNotification(messageIdKey)) {
-                Log.d("FCM_MSG", "Notification ignorée : message dédoublonné ID=$messageIdKey")
+            // Déduplication par ÉVÉNEMENT (type + id) : une annulation n'est jamais un doublon de l'appel
+            val eventKey = CallEventGate.eventKey(type, data)
+            if (CallEventGate.shared.isDuplicateEvent(eventKey)) {
+                Log.d("FCM_MSG", "Notification ignorée : événement déjà traité ($type)")
+                return
+            }
+
+            // Fin d'appel (annulé / refusé / terminé) : toujours retirer la sonnerie, quelle que soit
+            // la session ou la catégorie, et mémoriser l'appel pour ignorer un "call" arrivé en retard.
+            val callIdForEvent = data["callId"] ?: data["call_id"] ?: ""
+            if (type in CallEventGate.TERMINAL_CALL_TYPES) {
+                CallEventGate.shared.markCallTerminated(callIdForEvent)
+                NotificationHelper.dismissIncomingCallNotification(applicationContext)
+                if (type != "call_declined") return
+            }
+            if (type == "call" && !CallEventGate.shared.shouldRing(callIdForEvent)) {
+                Log.d("FCM_MSG", "Appel déjà terminé : sonnerie ignorée")
+                return
+            }
+
+            // Aucune notification sans session active (déconnexion / changement de compte)
+            if (currentUid.isNullOrEmpty()) {
+                Log.d("FCM_MSG", "Notification ignorée : aucune session active")
+                return
+            }
+
+            // Changement de compte : un token resté associé à l'ancien compte ne doit pas afficher
+            // ses notifications sous le nouveau compte (recipientId ajouté par send-fcm).
+            if (isForAnotherAccount(currentUid, data["recipientId"])) {
+                Log.d("FCM_MSG", "Notification ignorée : destinée à un autre compte")
+                return
+            }
+
+            // Catégorie désactivée par l'utilisateur dans Paramètres > Notifications
+            if (!com.example.mikayala.util.NotificationPrefs.isTypeEnabled(applicationContext, type)) {
+                Log.d("FCM_MSG", "Notification ignorée : catégorie désactivée ($type)")
                 return
             }
 
             // S'assurer que les canaux de notification existent
             NotificationHelper.createNotificationChannels(applicationContext)
 
-            // Paramètres locaux de confidentialité et camouflage
-            val prefs = applicationContext.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
-            val privacyMode = prefs.getString("notification_privacy_mode", "discreet") ?: "discreet"
+            // Mode d'affichage choisi par le DESTINATAIRE (le serveur envoie toujours le contenu)
+            val privacyMode = com.example.mikayala.util.NotificationPrefs.privacyMode(applicationContext)
 
             when (type) {
                 "call" -> {
@@ -301,6 +340,12 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         callerName = callerName,
                         isVideo = isVideo,
                         callId = callId
+                    )
+                }
+                "call_declined" -> {
+                    NotificationHelper.showCallDeclinedNotification(
+                        context = applicationContext,
+                        partnerName = resolveCallerName(privacyMode, data["callerName"] ?: "Mon Amour")
                     )
                 }
                 "missed_call" -> {
@@ -381,14 +426,17 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         anniversaryText = text
                     )
                 }
-                "cycle" -> {
-                    val phaseName = data["phaseName"] ?: "Nouvelle Phase"
-                    val partnerNickname = data["partnerNickname"] ?: "Mon Partenaire"
-                    NotificationHelper.showCycleReminderNotification(
+                "calendar_event" -> {
+                    NotificationHelper.showCalendarEventNotification(
                         context = applicationContext,
-                        phaseName = phaseName,
-                        partnerNickname = partnerNickname
+                        eventTitle = data["eventTitle"] ?: "Événement du couple",
+                        eventDate = data["eventDate"] ?: "",
+                        location = data["location"] ?: ""
                     )
+                }
+                "cycle" -> {
+                    // Données de santé : on n'affiche JAMAIS le contenu du payload (phase, dates, surnom...)
+                    NotificationHelper.showCycleReminderNotification(applicationContext)
                 }
                 "mood_update" -> {
                     val partnerName = data["partnerName"] ?: "Mon Amour"

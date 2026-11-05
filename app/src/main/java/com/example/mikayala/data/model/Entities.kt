@@ -53,6 +53,7 @@ data class LoveMilestoneEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class LoveCouponEntity(
     val id: String,
     val title: String,
@@ -63,6 +64,7 @@ data class LoveCouponEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class CoupleBucketItemEntity(
     val id: String,
     val title: String,
@@ -87,6 +89,7 @@ data class LoveCapsuleEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class TruthOrDareEntity(
     val id: String,
     val type: String, // "truth", "dare"
@@ -95,6 +98,7 @@ data class TruthOrDareEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class CoupleDilemmaEntity(
     val id: String,
     val optionA: String,
@@ -104,6 +108,7 @@ data class CoupleDilemmaEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class CycleDailyLogEntity(
     val dateKey: String, // "YYYY-MM-DD"
     val flow: String = "none", // "none", "spotting", "light", "medium", "heavy"
@@ -117,6 +122,7 @@ data class CycleDailyLogEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class MenstrualCycleInfo(
     val lastPeriodStartDate: Long = System.currentTimeMillis() - 14L * 86400000L,
     val cycleLengthDays: Int = 28,
@@ -125,7 +131,9 @@ data class MenstrualCycleInfo(
     val currentPhase: String = "Fertilité & Ovulation ✨",
     val daysUntilNextPeriod: Int = 14,
     val partnerCareAdvice: String = "Moment de grande complicité et d'énergie. Parfait pour une sortie romantique imprévue ou un massage relaxant !",
-    val dailyLogs: Map<String, CycleDailyLogEntity> = emptyMap()
+    val dailyLogs: Map<String, CycleDailyLogEntity> = emptyMap(),
+    /** false tant que la personne n'a pas saisi ses dates : aucune prédiction n'est alors affichée. */
+    val isConfigured: Boolean = false
 )
 
 @Immutable
@@ -190,12 +198,12 @@ data class UserSettingsEntity(
     val userId: String = "",
     val coupleId: String = "",
     val displayName: String = "",
-    val customStatus: String = "Toujours amoureux ❤️",
+    val customStatus: String = "",
     val avatarUrl: String = "",
     val moodEmoji: String = "🥰",
     val bio: String = "",
     val partnerNickname: String = "",
-    val partnerStatus: String = "En ligne",
+    val partnerStatus: String = "", // inconnu tant que le serveur n'a rien envoyé (ne jamais afficher « En ligne » par défaut)
     val partnerAvatarUrl: String = "",
     val partnerBio: String = "",
     val biometricEnabled: Boolean = true,
@@ -224,13 +232,15 @@ data class UserSettingsEntity(
     val fontSizeScale: String = "medium", // "small", "medium", "large", "xlarge"
     val proximityP2PEnabled: Boolean = true,
     val autoSendOfflineQueue: Boolean = true,
-    val notificationPrivacyMode: String = "discreet", // "discreet", "weather_camouflage", "system_camouflage", "romantic"
-    val notificationSound: String = "heartbeat", // "heartbeat", "soft_chime", "whisper", "silent"
+    val notificationPrivacyMode: String = "romantic", // "discreet", "weather_camouflage", "system_camouflage", "romantic"
+    val notificationSound: String = "default", // "default" (son du téléphone), "silent"
     val heartHapticEnabled: Boolean = true,
     val cyclePartnerAlertsEnabled: Boolean = true,
     val loveWidgetEnabled: Boolean = true,
     val connectionMode: ConnectionMode = ConnectionMode.ONLINE,
-    val isDarkMode: Boolean = true
+    val isDarkMode: Boolean = true,
+    /** Thème : suit le réglage clair/sombre du téléphone (prioritaire sur isDarkMode). */
+    val followSystemTheme: Boolean = false
 )
 
 @Immutable
@@ -245,6 +255,7 @@ data class CallLogEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class QuizItemEntity(
     val id: String,
     val question: String,
@@ -255,6 +266,7 @@ data class QuizItemEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class CoupleEventEntity(
     val id: String,
     val title: String,

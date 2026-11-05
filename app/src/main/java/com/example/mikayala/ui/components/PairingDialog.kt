@@ -54,7 +54,7 @@ fun PairingDialog(
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = CardModalSurface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
             modifier = Modifier.fillMaxWidth()
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
@@ -69,7 +69,7 @@ fun PairingDialog(
                         modifier = Modifier
                             .size(54.dp)
                             .clip(CircleShape)
-                            .background(Brush.radialGradient(listOf(AccentRose.copy(alpha = 0.3f), Color.Transparent))),
+                            .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -86,7 +86,7 @@ fun PairingDialog(
                         text = "Jumelage Espace Couple",
                         fontSize = 19.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -151,7 +151,7 @@ fun PairingDialog(
                                         .clickable {
                                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                             clipboard.setPrimaryClip(ClipData.newPlainText("Code Jumelage", currentPairingCode))
-                                            Toast.makeText(context, "Code copié ! 📋", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Code copié", Toast.LENGTH_SHORT).show()
                                         }
                                 ) {
                                     Row(
@@ -254,7 +254,7 @@ fun PairingDialog(
                                     colors = ButtonDefaults.buttonColors(containerColor = AccentViolet),
                                     shape = RoundedCornerShape(14.dp)
                                 ) {
-                                    Text("Simuler détection du QR code 📸", color = Color.White, fontSize = 13.sp)
+                                    Text("Simuler détection du QR code 📸", color = TextPrimary, fontSize = 13.sp)
                                 }
                             }
                         }

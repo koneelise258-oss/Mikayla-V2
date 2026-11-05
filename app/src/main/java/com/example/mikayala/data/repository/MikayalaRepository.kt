@@ -36,7 +36,8 @@ class MikayalaRepository(private val context: Context) {
         val couple = _coupleSpace.value
         val (myUserId, partnerId) = resolveCoupleMembers()
         if (couple.id.isNotBlank() && partnerId.isNotBlank() && myUserId != partnerId) {
-            val hidePreview = _userSettings.value.notificationPrivacyMode != "romantic"
+            // Le destinataire choisit localement le camouflage ; l'expéditeur n'impose rien.
+            val hidePreview = false
             val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
             repositoryScope.launch {
                 supabaseService.sendFcmPush(
@@ -117,6 +118,12 @@ class MikayalaRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
 
     init {
+        // Préférences d'interface de l'appareil : restaurées avant tout, puis enregistrées à chaque changement
+        _userSettings.value = com.example.mikayala.data.UiPreferencesStore.load(prefs, _userSettings.value)
+        restoreAndPersistLocalGames()
+        repositoryScope.launch {
+            _userSettings.collect { com.example.mikayala.data.UiPreferencesStore.save(prefs, it) }
+        }
         val storedUserId = prefs.getString("user_id", "") ?: ""
         val storedToken = prefs.getString("access_token", "") ?: ""
         val storedEmail = prefs.getString("user_email", "") ?: ""
@@ -139,7 +146,7 @@ class MikayalaRepository(private val context: Context) {
             com.example.mikayala.data.model.ConnectionMode.ONLINE
         }
 
-        val storedNotifPrivacyMode = prefs.getString("notification_privacy_mode", "discreet") ?: "discreet"
+        val storedNotifPrivacyMode = prefs.getString("notification_privacy_mode", "romantic") ?: "romantic"
         if (storedUserId.isNotEmpty()) {
             _userSettings.value = _userSettings.value.copy(
                 userId = storedUserId,
@@ -149,7 +156,11 @@ class MikayalaRepository(private val context: Context) {
                 hasLocalPassword = storedHasPassword,
                 hasCompletedPairingSetup = storedPairingSetupCompleted,
                 connectionMode = storedConnMode,
-                notificationPrivacyMode = storedNotifPrivacyMode
+                notificationPrivacyMode = storedNotifPrivacyMode,
+                notificationSound = com.example.mikayala.util.NotificationPrefs.sound(context),
+                heartHapticEnabled = com.example.mikayala.util.NotificationPrefs.vibration(context),
+                cyclePartnerAlertsEnabled = com.example.mikayala.util.NotificationPrefs.isEnabled(context, com.example.mikayala.util.NotificationPrefs.Category.CYCLE),
+                loveWidgetEnabled = prefs.getBoolean("love_widget_enabled", true)
             )
             // Stored state is loaded purely as cache, status starts unverified until Supabase sync
             if (storedPairingCode.isNotEmpty()) {
@@ -169,23 +180,25 @@ class MikayalaRepository(private val context: Context) {
         loadLocalMessagesCache()
 
         // Bind P2P socket receiver to store incoming P2P messages locally
-        com.example.mikayala.util.P2PSocketManager.onP2PMessageReceived = { senderName, content, isFile, type ->
-            val (myUserId, partnerId) = resolveCoupleMembers()
-            val coupleId = _coupleSpace.value.id
-            val p2pMsgId = "p2p_rcvd_${System.currentTimeMillis()}"
-            val rcvdMsg = MessageEntity(
-                id = p2pMsgId,
-                coupleId = coupleId,
-                senderId = partnerId,
-                receiverId = myUserId,
-                content = content,
-                type = type ?: "text",
-                createdAt = System.currentTimeMillis(),
-                status = "delivered",
-                deliveredAt = System.currentTimeMillis()
-            )
-            _messages.value = (_messages.value + rcvdMsg).sortedBy { it.createdAt }
-            saveLocalMessagesCache()
+        com.example.mikayala.util.P2PSocketManager.onP2PMessageReceived = { msgId, createdAt, _, content ->
+            // Même identifiant que chez l'expéditeur : quand Internet revient, la copie du serveur
+            // remplace celle-ci au lieu de créer un doublon. Ordre conservé grâce à la date d'origine.
+            if (_messages.value.none { it.id == msgId }) {
+                val (myUserId, partnerId) = resolveCoupleMembers()
+                val rcvdMsg = MessageEntity(
+                    id = msgId,
+                    coupleId = _coupleSpace.value.id,
+                    senderId = partnerId,
+                    receiverId = myUserId,
+                    content = content,
+                    type = "text",
+                    createdAt = createdAt,
+                    status = "delivered",
+                    deliveredAt = System.currentTimeMillis()
+                )
+                _messages.value = (_messages.value + rcvdMsg).sortedBy { it.createdAt }
+                saveLocalMessagesCache()
+            }
         }
 
         com.example.mikayala.util.P2PSocketManager.onP2PStatusUpdated = { msgId, status ->
@@ -1120,10 +1133,8 @@ class MikayalaRepository(private val context: Context) {
                 saveLocalMessagesCache()
 
                 // 2. Envoi via socket P2P local si connecté (la confirmation d'état reste pending jusqu'à confirmation d'insertion)
-                if (hasP2P) {
-                    val sizeFormatted = String.format("%.1f Mo", fileSize / (1024f * 1024f)).replace(',', '.')
-                    com.example.mikayala.util.P2PSocketManager.sendFile(context, "Vocal_${messageId.take(6)}.m4a", sizeFormatted, isAudio = true)
-                }
+                // Le P2P ne transporte que le texte : le vocal reste en attente et part au retour d'Internet
+                // (avant : seul un nom de fichier était envoyé, sans le son).
 
                 // 3. Envoi via Supabase si réseau disponible
                 if (hasNetwork) {
@@ -1347,8 +1358,10 @@ class MikayalaRepository(private val context: Context) {
                     @Suppress("DEPRECATION")
                     Bitmap.CompressFormat.WEBP
                 }
-                originalBitmap.compress(compressFormat, 85, stream)
+                val (toSend, quality) = preparePhotoForUpload(originalBitmap)
+                toSend.compress(compressFormat, quality, stream)
                 val bytes = stream.toByteArray()
+                if (toSend !== originalBitmap) toSend.recycle()
                 originalBitmap.recycle()
 
                 if (bytes.isEmpty()) {
@@ -1428,8 +1441,10 @@ class MikayalaRepository(private val context: Context) {
                     @Suppress("DEPRECATION")
                     Bitmap.CompressFormat.WEBP
                 }
-                bitmap.compress(compressFormat, 85, stream)
+                val (toSend, quality) = preparePhotoForUpload(bitmap)
+                toSend.compress(compressFormat, quality, stream)
                 val bytes = stream.toByteArray()
+                if (toSend !== bitmap) toSend.recycle()
 
                 val messageId = UUID.randomUUID().toString()
                 val storagePath = "$coupleId/photos/$messageId.webp"
@@ -1570,6 +1585,10 @@ class MikayalaRepository(private val context: Context) {
                 val bytes = inputStream?.readBytes()
                 inputStream?.close()
                 if (bytes != null) {
+                    // 1) Bucket privé messages-media + URL signée (comme photos, vocaux et vidéos)
+                    if (sendDocumentViaSignedStorage(uri, fileName, bytes)) return@launch
+                    // 2) Repli transitoire : ancien envoi chat_media (URL publique) tant que
+                    //    messages-media n'accepte pas les documents
                     val safeName = "doc_${UUID.randomUUID().toString().take(8)}_$fileName"
                     val uploadedUrl = supabaseService.uploadChatMedia(couple.id, safeName, bytes, "application/octet-stream")
                     sendMessage(
@@ -1587,6 +1606,42 @@ class MikayalaRepository(private val context: Context) {
                 )
             }
         }
+    }
+
+    /** Envoi d'un document via messages-media (privé, URL signée). Retourne false pour déclencher le repli. */
+    private suspend fun sendDocumentViaSignedStorage(uri: Uri, fileName: String, bytes: ByteArray): Boolean {
+        val couple = _coupleSpace.value
+        val (myUserId, partnerId) = resolveCoupleMembers()
+        if (couple.id.isBlank() || myUserId.isBlank() || partnerId.isBlank()) return false
+        val messageId = UUID.randomUUID().toString()
+        val cleanName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80).ifBlank { "document" }
+        val storagePath = "${couple.id}/documents/${messageId}_$cleanName"
+        val mime = try { context.contentResolver.getType(uri) } catch (_: Exception) { null } ?: "application/octet-stream"
+
+        val uploaded = supabaseService.uploadMessageMedia(couple.id, storagePath, bytes, mime) ?: return false
+        Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] document envoyé dans messages-media ($uploaded)")
+        val signedUrl = supabaseService.getSignedMessageMediaUrl(storagePath)
+        if (signedUrl != null) mediaUrlCache[storagePath] = signedUrl
+
+        val msg = MessageEntity(
+            id = messageId,
+            coupleId = couple.id,
+            senderId = myUserId,
+            receiverId = partnerId,
+            content = fileName,
+            type = "document",
+            mediaUrl = signedUrl,
+            storagePath = storagePath,
+            createdAt = System.currentTimeMillis(),
+            status = "pending"
+        )
+        _messages.value = _messages.value + msg
+        val inserted = supabaseService.postMessageEntity(msg, storagePath = storagePath)
+        _messages.value = _messages.value.map {
+            if (it.id == messageId) it.copy(status = if (inserted) "sent" else "failed") else it
+        }
+        if (inserted) notifyPartnerAfterInsert("chat_message", "📄 $fileName", messageId)
+        return true
     }
 
     fun sendLocationMessage(latitude: Double, longitude: Double, address: String = "Ma position actuelle") {
@@ -1666,6 +1721,36 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Joue un coup dans un jeu du chat : met à jour l'état (media_url) localement puis sur Supabase,
+     * et prévient le partenaire que c'est son tour. Retourne false si l'enregistrement échoue
+     * (l'état local est alors restauré).
+     */
+    suspend fun playGameMove(messageId: String, newState: String, gameTitle: String): Boolean {
+        val before = _messages.value.firstOrNull { it.id == messageId } ?: return false
+        _messages.value = _messages.value.map { if (it.id == messageId) it.copy(mediaUrl = newState) else it }
+        val ok = supabaseService.updateMessageFields(messageId, JSONObject().apply { put("media_url", newState) })
+        if (!ok) {
+            _messages.value = _messages.value.map { if (it.id == messageId) it.copy(mediaUrl = before.mediaUrl) else it }
+            return false
+        }
+        saveLocalMessagesCache()
+        val couple = _coupleSpace.value
+        val (_, partnerId) = resolveCoupleMembers()
+        if (couple.id.isNotBlank() && partnerId.isNotBlank()) {
+            supabaseService.sendFcmPush(
+                coupleId = couple.id,
+                recipientId = partnerId,
+                type = "game_turn",
+                title = "Mikayala",
+                body = "À toi de jouer",
+                extraData = mapOf("partnerName" to _userSettings.value.displayName.ifBlank { "Mon Amour" }, "gameTitle" to gameTitle, "messageId" to "$messageId:$newState"),
+                hidePreview = false
+            )
+        }
+        return true
+    }
+
     fun editMessage(messageId: String, newContent: String) {
         val now = System.currentTimeMillis()
         _messages.value = _messages.value.map {
@@ -1732,20 +1817,56 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun saveMessageToVault(message: MessageEntity) {
-        val vaultItem = VaultItemEntity(
-            id = "v_" + UUID.randomUUID().toString().take(8),
-            title = if (message.type == "audio") "Message vocal sauvegardé" else "Souvenir du chat",
-            type = if (message.type == "audio") "audio" else "note",
-            category = "sauvegardes",
-            caption = message.content,
-            duration = message.duration,
-            dateAdded = System.currentTimeMillis()
-        )
-        addVaultItem(vaultItem.title, vaultItem.type, vaultItem.category, vaultItem.caption)
+        // Conserve le média (photo, vidéo, vocal) : référence au fichier privé, re-signée à l'affichage
+        val type = when (message.type) {
+            "audio" -> "audio"
+            "image" -> "photo"
+            "video" -> "video"
+            else -> "note"
+        }
+        val mediaRef = message.storagePath?.takeIf { it.isNotBlank() }?.let { "msgmedia:$it" } ?: message.mediaUrl.orEmpty()
+        val title = when (type) {
+            "audio" -> "Message vocal"
+            "photo" -> "Photo du chat"
+            "video" -> "Vidéo du chat"
+            else -> "Message du chat"
+        }
+        addVaultItem(title, type, "sauvegardes", message.content, mediaRef = mediaRef)
+    }
+
+    /** URL affichable d'un média du coffre (les références « msgmedia: » sont des fichiers privés signés). */
+    suspend fun resolveVaultMediaUrl(ref: String): String? {
+        if (ref.isBlank()) return null
+        if (!ref.startsWith("msgmedia:")) return ref
+        val path = ref.removePrefix("msgmedia:")
+        mediaUrlCache[path]?.let { return it }
+        return supabaseService.getSignedMessageMediaUrl(path)?.also { mediaUrlCache[path] = it }
+    }
+
+    /** Ajoute une photo au coffre : envoi dans le stockage privé du couple, puis création de l'élément. */
+    suspend fun addVaultPhoto(uri: Uri, title: String, caption: String, category: String): Boolean {
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return false
+        return try {
+            val original = context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } ?: return false
+            val (bmp, quality) = preparePhotoForUpload(original)
+            val out = ByteArrayOutputStream()
+            @Suppress("DEPRECATION")
+            bmp.compress(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP, quality, out)
+            if (bmp !== original) bmp.recycle()
+            original.recycle()
+            val path = "${couple.id}/vault/${UUID.randomUUID()}.webp"
+            supabaseService.uploadMessageMedia(couple.id, path, out.toByteArray(), "image/webp") ?: return false
+            addVaultItem(title.ifBlank { "Photo" }, "photo", category, caption, mediaRef = "msgmedia:$path")
+            true
+        } catch (e: Exception) {
+            Log.e("MikayalaRepository", "addVaultPhoto: ${e.message}")
+            false
+        }
     }
 
     // --- Shared Vault Actions ---
-    fun addVaultItem(title: String, type: String, category: String, caption: String, isViewOnce: Boolean = false) {
+    fun addVaultItem(title: String, type: String, category: String, caption: String, isViewOnce: Boolean = false, mediaRef: String = "") {
         val couple = _coupleSpace.value
         val myUserId = getCurrentUserId()
         val coupleId = couple.id
@@ -1759,6 +1880,7 @@ class MikayalaRepository(private val context: Context) {
             category = category,
             caption = caption,
             isViewOnce = isViewOnce,
+            mediaUrl = mediaRef,
             dateAdded = System.currentTimeMillis()
         )
         _vaultItems.value = listOf(newItem) + _vaultItems.value
@@ -1773,7 +1895,7 @@ class MikayalaRepository(private val context: Context) {
                     type = type,
                     category = category,
                     caption = caption,
-                    mediaUrl = "",
+                    mediaUrl = mediaRef,
                     pairingCode = pairingCode
                 )
             }
@@ -1948,7 +2070,114 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun updateDarkMode(enabled: Boolean) {
+        prefs.edit().putBoolean("is_dark_mode", enabled).apply()
         _userSettings.value = _userSettings.value.copy(isDarkMode = enabled)
+    }
+
+    /**
+     * Jeux et listes de l'espace Couple (bons d'amour, liste de rêves, quiz, Tu préfères, Action ou vérité) :
+     * ils n'existent pas côté Supabase. Ils sont désormais enregistrés SUR L'APPAREIL (ils survivaient
+     * auparavant seulement tant que l'application restait ouverte). Ils ne sont pas encore partagés
+     * avec le partenaire : cela demande des tables Supabase dédiées (décision à prendre).
+     */
+    private val localGamesJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+    private inline fun <reified T> restoreList(key: String, flow: MutableStateFlow<List<T>>) {
+        val raw = prefs.getString(key, null) ?: return
+        try { flow.value = localGamesJson.decodeFromString(kotlinx.serialization.serializer<List<T>>(), raw) } catch (e: Exception) {
+            Log.w("MikayalaRepo", "Lecture impossible de $key : ${e.message}")
+        }
+    }
+
+    private inline fun <reified T> persistList(key: String, flow: MutableStateFlow<List<T>>) {
+        val ser = kotlinx.serialization.serializer<List<T>>()
+        repositoryScope.launch {
+            flow.collect { list: List<T> -> prefs.edit().putString(key, localGamesJson.encodeToString(ser, list)).apply() }
+        }
+    }
+
+    private inline fun <reified T> restoreValue(key: String, flow: MutableStateFlow<T>) {
+        val raw = prefs.getString(key, null) ?: return
+        try { flow.value = localGamesJson.decodeFromString(kotlinx.serialization.serializer<T>(), raw) } catch (e: Exception) {
+            Log.w("MikayalaRepo", "Lecture impossible de $key : ${e.message}")
+        }
+    }
+
+    private inline fun <reified T> persistValue(key: String, flow: MutableStateFlow<T>) {
+        val ser = kotlinx.serialization.serializer<T>()
+        repositoryScope.launch {
+            flow.collect { v: T -> prefs.edit().putString(key, localGamesJson.encodeToString(ser, v)).apply() }
+        }
+    }
+
+    /**
+     * Rappels locaux (calendrier et cycle) : programmés à l'enregistrement et reprogrammés
+     * au démarrage du téléphone (BootReceiver). Avant, aucune alarme n'était jamais programmée.
+     */
+    fun rescheduleAllReminders() {
+        _events.value.forEach { scheduleEventReminder(it) }
+        scheduleCycleReminder()
+    }
+
+    private fun scheduleEventReminder(e: com.example.mikayala.data.model.CoupleEventEntity) {
+        // Événement sans heure (minuit) : rappel le jour même à 9 h
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = e.date }
+        if (cal.get(java.util.Calendar.HOUR_OF_DAY) == 0 && cal.get(java.util.Calendar.MINUTE) == 0) {
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 9)
+        }
+        com.example.mikayala.util.CycleAndCalendarScheduler.scheduleCalendarEventReminder(
+            context = context,
+            eventId = e.id,
+            eventTitle = e.title,
+            eventTimeMillis = cal.timeInMillis,
+            eventDateFormatted = java.text.SimpleDateFormat("EEEE d MMMM", java.util.Locale.FRANCE).format(java.util.Date(e.date))
+        )
+    }
+
+    private fun scheduleCycleReminder() {
+        val c = _cycleInfo.value
+        if (!c.isConfigured || c.cycleLengthDays <= 0) return
+        val day = 86_400_000L
+        var next = c.lastPeriodStartDate
+        val now = System.currentTimeMillis()
+        while (next - 2 * day <= now) next += c.cycleLengthDays * day
+        com.example.mikayala.util.CycleAndCalendarScheduler.scheduleCycleTwoDaysBefore(context, next)
+    }
+
+    private fun restoreAndPersistLocalGames() {
+        // Calendrier et cycle : enregistrés sur l'appareil (perdus à chaque fermeture auparavant)
+        restoreList("local_events", _events); persistList("local_events", _events)
+        restoreValue("local_cycle_info", _cycleInfo); persistValue("local_cycle_info", _cycleInfo)
+        restoreList("local_game_coupons", _coupons); persistList("local_game_coupons", _coupons)
+        restoreList("local_game_bucket", _bucketList); persistList("local_game_bucket", _bucketList)
+        restoreList("local_game_quiz", _quizItems); persistList("local_game_quiz", _quizItems)
+        restoreList("local_game_dilemmas", _dilemmas); persistList("local_game_dilemmas", _dilemmas)
+        restoreList("local_game_truth_dare", _truthOrDare); persistList("local_game_truth_dare", _truthOrDare)
+    }
+
+    /**
+     * « Pense à moi » : envoie une vraie notification au partenaire (type love_bomb, géré par send-fcm
+     * et MyFirebaseMessagingService). Retourne false si le couple n'est pas apparié ou si l'envoi échoue.
+     */
+    suspend fun sendLovePulse(): Boolean {
+        val couple = _coupleSpace.value
+        val (myUserId, partnerId) = resolveCoupleMembers()
+        if (!couple.isPaired || couple.id.isBlank() || partnerId.isBlank() || myUserId == partnerId) return false
+        val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
+        return supabaseService.sendFcmPush(
+            coupleId = couple.id,
+            recipientId = partnerId,
+            type = "love_bomb",
+            title = "Mikayala",
+            body = "$myName pense à vous 💓",
+            extraData = mapOf("partnerName" to myName, "kissCount" to "1"),
+            hidePreview = false
+        )
+    }
+
+    /** Mise à jour directe d'une préférence (pages Paramètres) : enregistrée automatiquement. */
+    fun updateUiSettings(transform: (UserSettingsEntity) -> UserSettingsEntity) {
+        _userSettings.value = transform(_userSettings.value)
     }
 
     fun updatePrivacySettings(
@@ -1990,10 +2219,17 @@ class MikayalaRepository(private val context: Context) {
         cyclePartnerAlertsEnabled: Boolean,
         loveWidgetEnabled: Boolean
     ) {
-        prefs.edit().putString("notification_privacy_mode", notificationPrivacyMode).apply()
+        // Persistance via NotificationPrefs (lu par le service FCM même application fermée)
+        val np = com.example.mikayala.util.NotificationPrefs
+        val normalizedSound = np.normalizeSound(notificationSound)
+        np.setPrivacyMode(context, notificationPrivacyMode)
+        np.setSound(context, normalizedSound)
+        np.setVibration(context, heartHapticEnabled)
+        np.setEnabled(context, com.example.mikayala.util.NotificationPrefs.Category.CYCLE, cyclePartnerAlertsEnabled)
+        prefs.edit().putBoolean("love_widget_enabled", loveWidgetEnabled).apply()
         _userSettings.value = _userSettings.value.copy(
             notificationPrivacyMode = notificationPrivacyMode,
-            notificationSound = notificationSound,
+            notificationSound = normalizedSound,
             heartHapticEnabled = heartHapticEnabled,
             cyclePartnerAlertsEnabled = cyclePartnerAlertsEnabled,
             loveWidgetEnabled = loveWidgetEnabled
@@ -2039,12 +2275,14 @@ class MikayalaRepository(private val context: Context) {
             note = note
         )
         _events.value = _events.value + newEvent
+        scheduleEventReminder(newEvent)
     }
 
     fun updateEvent(id: String, title: String, date: Long, category: String, note: String = "") {
         _events.value = _events.value.map {
             if (it.id == id) it.copy(title = title, date = date, category = category, note = note) else it
         }
+        _events.value.firstOrNull { it.id == id }?.let { scheduleEventReminder(it) }
     }
 
     fun deleteEvent(id: String) {
@@ -2162,8 +2400,10 @@ class MikayalaRepository(private val context: Context) {
             periodDurationDays = periodDuration,
             currentPhase = phase,
             daysUntilNextPeriod = daysUntilNext,
-            partnerCareAdvice = advice
+            partnerCareAdvice = advice,
+            isConfigured = true
         )
+        scheduleCycleReminder()
     }
 
     fun saveCycleDailyLog(log: CycleDailyLogEntity) {
@@ -2434,7 +2674,8 @@ class MikayalaRepository(private val context: Context) {
         if (!supabaseService.hasActiveSession()) {
             supabaseService.ensureAnonymousSession()
         }
-        if (supabaseService.hasActiveSession()) {
+        // Dernière connexion (Paramètres > Confidentialité) : « nobody » = on ne publie pas notre activité
+        if (supabaseService.hasActiveSession() && _userSettings.value.lastSeenPrivacy != "nobody") {
             supabaseService.touchUserActivity()
         }
 
@@ -2644,7 +2885,24 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun markMessagesRead(coupleId: String) {
+        // Accusés de lecture désactivés (Paramètres > Confidentialité) : on n'envoie pas le statut « lu »
+        if (!_userSettings.value.readReceiptsEnabled) return
         supabaseService.markMessagesRead(coupleId)
+    }
+
+    /**
+     * Qualité d'envoi des photos (Paramètres > Discussions) : « hd » ou « standard ».
+     * Redimensionne aussi les très grandes photos : envoi plus rapide, moins de mémoire sur les petits téléphones.
+     */
+    private fun preparePhotoForUpload(src: Bitmap): Pair<Bitmap, Int> {
+        val hd = _userSettings.value.photoUploadQuality != "standard"
+        val maxSide = if (hd) 2560 else 1600
+        val quality = if (hd) 85 else 72
+        val longest = maxOf(src.width, src.height)
+        if (longest <= maxSide) return src to quality
+        val ratio = maxSide.toFloat() / longest
+        val scaled = Bitmap.createScaledBitmap(src, (src.width * ratio).toInt().coerceAtLeast(1), (src.height * ratio).toInt().coerceAtLeast(1), true)
+        return scaled to quality
     }
 
     suspend fun syncWithSupabase() {
@@ -2726,6 +2984,7 @@ class MikayalaRepository(private val context: Context) {
                 val category = obj.optString("category", "intime")
                 val caption = obj.optString("caption", "")
                 val createdAt = obj.optLong("created_at", System.currentTimeMillis())
+                val media = obj.optString("media_url", "").takeIf { it != "null" } ?: ""
 
                 fetchedVault.add(
                     VaultItemEntity(
@@ -2735,6 +2994,7 @@ class MikayalaRepository(private val context: Context) {
                         type = type,
                         category = category,
                         caption = caption,
+                        mediaUrl = media,
                         dateAdded = createdAt
                     )
                 )
@@ -2749,6 +3009,30 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
+    @Volatile private var lastOutgoingCallId: String = ""
+
+    /** Termine l'appel sortant : "cancelled" (+ push d'annulation) si personne n'a décroché, sinon "ended". */
+    suspend fun endOutgoingCall(durationSeconds: Int) {
+        val callId = lastOutgoingCallId
+        if (callId.isBlank()) return
+        lastOutgoingCallId = ""
+        val answered = durationSeconds > 0
+        supabaseService.updateCallStatus(callId, if (answered) "ended" else "cancelled")
+        val couple = _coupleSpace.value
+        val (_, partnerId) = resolveCoupleMembers()
+        if (!answered && partnerId.isNotBlank() && couple.id.isNotBlank()) {
+            supabaseService.sendFcmPush(
+                coupleId = couple.id,
+                recipientId = partnerId,
+                type = "call_cancelled",
+                title = "Mikayala",
+                body = "",
+                extraData = mapOf("callId" to callId, "coupleId" to couple.id),
+                hidePreview = false
+            )
+        }
+    }
+
     suspend fun initiateSupabaseCall(isVideo: Boolean): JSONObject? {
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return null
@@ -2759,6 +3043,7 @@ class MikayalaRepository(private val context: Context) {
         val res = supabaseService.initiateCall(coupleId, myName, if (isVideo) "video" else "voice", pairingCode)
         if (res != null) {
             val callId = res.optString("id")
+            lastOutgoingCallId = callId
             val (_, partnerId) = resolveCoupleMembers()
             if (partnerId.isNotBlank()) {
                 repositoryScope.launch {
@@ -2822,7 +3107,7 @@ class MikayalaRepository(private val context: Context) {
                     supabaseService.sendFcmPush(
                         coupleId = couple.id,
                         recipientId = partnerId,
-                        type = "missed_call",
+                        type = "call_declined",
                         title = "Mikayala",
                         body = "Appel refusé par $myName",
                         extraData = mapOf(
@@ -2857,6 +3142,10 @@ class MikayalaRepository(private val context: Context) {
             return@withContext false
         }
 
+        // Plus aucune notification résiduelle après déconnexion
+        try {
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).cancelAll()
+        } catch (_: Exception) {}
         clearCoupleCache()
         prefs.edit().apply {
             remove("user_id")
@@ -2864,7 +3153,8 @@ class MikayalaRepository(private val context: Context) {
             remove("display_name")
             apply()
         }
-        _userSettings.value = com.example.mikayala.data.model.UserSettingsEntity()
+        // Déconnexion : le compte est effacé, les préférences de l'appareil sont conservées
+        _userSettings.value = com.example.mikayala.data.UiPreferencesStore.load(prefs, com.example.mikayala.data.model.UserSettingsEntity())
         return@withContext success
     }
 }

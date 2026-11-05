@@ -41,7 +41,9 @@ fun MessageOptionBottomSheet(
     onSaveToVault: () -> Unit,
     onDeleteForMe: () -> Unit,
     onDeleteForEveryone: () -> Unit,
-    onToggleReaction: (String) -> Unit
+    onToggleReaction: (String) -> Unit,
+    /** Passe en sélection multiple avec ce message déjà sélectionné. */
+    onSelect: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showInfoDialog by remember { mutableStateOf(false) }
@@ -57,7 +59,7 @@ fun MessageOptionBottomSheet(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Expéditeur : ${if (isFromMe) "Moi (Partenaire 1)" else "Mikayala (Partenaire 2)"}", color = TextSecondary, fontSize = 13.sp)
+                    Text("Expéditeur : ${if (isFromMe) "Vous" else "Votre partenaire"}", color = TextSecondary, fontSize = 13.sp)
                     Text("Date d'envoi : ${dateFormat.format(Date(message.createdAt))}", color = TextSecondary, fontSize = 13.sp)
                     Text("Statut : ${message.status.uppercase()}", color = AccentRose, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     message.readAt?.let {
@@ -74,7 +76,7 @@ fun MessageOptionBottomSheet(
                     colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Fermer", color = Color.White)
+                    Text("Fermer", color = TextPrimary)
                 }
             }
         )
@@ -107,7 +109,7 @@ fun MessageOptionBottomSheet(
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = CardDark,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -144,6 +146,18 @@ fun MessageOptionBottomSheet(
                 }
             )
 
+            // Option: Sélection multiple
+            OptionItem(
+                icon = Icons.Rounded.Checklist,
+                title = "Sélectionner",
+                subtitle = "Choisir plusieurs messages à copier, mettre en favori ou supprimer",
+                iconColor = AccentViolet,
+                onClick = {
+                    onSelect()
+                    onDismiss()
+                }
+            )
+
             // Option: Copier
             if (message.content.isNotBlank()) {
                 OptionItem(
@@ -155,7 +169,7 @@ fun MessageOptionBottomSheet(
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("Mikayala Message", message.content)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Texte copié ! 📋", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Texte copié", Toast.LENGTH_SHORT).show()
                         onDismiss()
                     }
                 )
@@ -207,7 +221,7 @@ fun MessageOptionBottomSheet(
                 iconColor = AccentRose,
                 onClick = {
                     onSaveToVault()
-                    Toast.makeText(context, "Ajouté au Coffre-Fort ! 🔒", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Ajouté au Coffre-Fort", Toast.LENGTH_SHORT).show()
                     onDismiss()
                 }
             )
@@ -262,7 +276,7 @@ fun MessageOptionBottomSheet(
                     icon = Icons.Rounded.DeleteForever,
                     title = "Supprimer pour tout le monde 💣",
                     subtitle = "Supprime définitivement chez les deux partenaires",
-                    iconColor = Color(0xFFFF5252),
+                    iconColor = Color(0xFFC4605C),
                     onClick = {
                         onDeleteForEveryone()
                         onDismiss()

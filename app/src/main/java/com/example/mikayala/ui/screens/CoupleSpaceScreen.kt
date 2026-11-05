@@ -60,6 +60,8 @@ fun CoupleSpaceScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MatteSlateBackground)
+            .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
+            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(10.dp))
@@ -74,17 +76,17 @@ fun CoupleSpaceScreen(
             indicator = {}
         ) {
             val hubs = listOf(
-                Pair("Love Time", Icons.Rounded.Favorite),
-                Pair("Jeux & Complices", Icons.Rounded.SportsEsports),
-                Pair("Calendrier Annuel", Icons.Rounded.CalendarMonth),
-                Pair("Cycle & Soins", Icons.Rounded.Spa)
+                Pair("Notre histoire", Icons.Rounded.Favorite),
+                Pair("Jeux", Icons.Rounded.SportsEsports),
+                Pair("Calendrier", Icons.Rounded.CalendarMonth),
+                Pair("Cycle", Icons.Rounded.Spa)
             )
             hubs.forEachIndexed { index, (title, icon) ->
                 val isSelected = selectedSubSection == index
                 Surface(
                     shape = RoundedCornerShape(20.dp),
-                    color = if (isSelected) CardDarkElevated else Color.Transparent,
-                    border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.08f)))) else null,
+                    // Onglet actif : pastille rose poudré discrète (lisible en clair et en sombre)
+                    color = if (isSelected) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
                     modifier = Modifier
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
@@ -107,7 +109,7 @@ fun CoupleSpaceScreen(
                                     text = title,
                                     fontSize = 12.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else TextSecondary
+                                    color = if (isSelected) TextPrimary else TextSecondary
                                 )
                             }
                         },

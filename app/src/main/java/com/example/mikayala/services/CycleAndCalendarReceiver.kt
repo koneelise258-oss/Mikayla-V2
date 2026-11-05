@@ -12,15 +12,15 @@ class CycleAndCalendarReceiver : BroadcastReceiver() {
         val type = intent.getStringExtra("REMINDER_TYPE") ?: "generic"
         Log.d("CycleAndCalendarReceiver", "Rappel déclenché de type : $type")
 
+        // Catégorie désactivée dans Paramètres > Notifications : aucun affichage, aucune vibration
+        if (!com.example.mikayala.util.NotificationPrefs.isTypeEnabled(context, if (type == "calendar_event") "calendar_event" else if (type == "cycle_2_days") "cycle" else "anniversary")) {
+            return
+        }
+
         when (type) {
             "cycle_2_days" -> {
-                val partnerNickname = intent.getStringExtra("PARTNER_NICKNAME") ?: "Mon Partenaire"
-                val phaseName = intent.getStringExtra("PHASE_NAME") ?: "Début de cycle prévu dans 2 jours"
-                NotificationHelper.showCycleReminderNotification(
-                    context = context,
-                    phaseName = phaseName,
-                    partnerNickname = partnerNickname
-                )
+                // Texte neutre : aucune donnée de cycle sur l'écran verrouillé
+                NotificationHelper.showCycleReminderNotification(context)
             }
             "calendar_event" -> {
                 val eventTitle = intent.getStringExtra("EVENT_TITLE") ?: "Événement de couple"

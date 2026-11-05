@@ -75,6 +75,10 @@ class SupabaseService(
     val supabaseKey: String
         get() = customKey?.ifEmpty { null } ?: BuildConfig.SUPABASE_ANON_KEY
 
+    /** Dernière cause d'échec d'authentification, lisible par l'utilisateur (aucune donnée secrète). */
+    @Volatile var lastAuthError: String? = null
+        private set
+
     suspend fun ensureAnonymousSession(): Boolean {
         try {
             val session = supabase.auth.currentSessionOrNull()
@@ -87,9 +91,11 @@ class SupabaseService(
             supabase.auth.signInAnonymously()
             val newSession = supabase.auth.currentSessionOrNull()
             Log.d("MikayalaAuth", "[AUTH] Session anonyme créée avec succès. UID: ${newSession?.user?.id}")
+            lastAuthError = null
             return true
         } catch (e: Exception) {
             Log.e("MikayalaAuth", "[AUTH] ensureAnonymousSession a échoué: ${e.message}")
+            lastAuthError = AuthErrorExplainer.explain(e.message, isConfigured())
             return false
         }
     }
@@ -936,15 +942,17 @@ class SupabaseService(
         mimeType: String
     ): String? = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty()) return@withContext null
-        val buckets = listOf("chat_media", "attachments", "media", "avatars")
-        for (bucket in buckets) {
+        // Uniquement chat_media : l'ancien essai en cascade (attachments, media, avatars) pouvait déposer
+        // un document de conversation dans le stockage des photos de profil.
+        val buckets = listOf("chat_media")
+        for (bucket in buckets) for (token in storageAuthTokens()) {
             try {
                 val path = "$coupleId/$fileName"
                 val url = URL("$supabaseUrl/storage/v1/object/$bucket/$path")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("apikey", supabaseKey)
-                conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+                conn.setRequestProperty("Authorization", "Bearer $token")
                 conn.setRequestProperty("Content-Type", mimeType)
                 conn.setRequestProperty("x-upsert", "true")
                 conn.doOutput = true
@@ -957,7 +965,7 @@ class SupabaseService(
                 os.close()
 
                 if (conn.responseCode in 200..299) {
-                    Log.d("SupabaseStorage", "[STORAGE] Successfully uploaded $fileName to bucket $bucket")
+                    Log.d("SupabaseStorage", "[STORAGE] Upload OK ($bucket, ${if (token == supabaseKey) "repli anon" else "session"})")
                     return@withContext "$supabaseUrl/storage/v1/object/public/$bucket/$path"
                 }
             } catch (e: Exception) {
@@ -1088,6 +1096,16 @@ class SupabaseService(
             Log.e("SupabaseService", "updateCallStatus error: ${e.message}")
             return@withContext false
         }
+    }
+
+    /**
+     * Jetons à essayer pour Storage : d'abord la session utilisateur (JWT, rôle authenticated),
+     * puis la clé anon en repli TRANSITOIRE tant que les politiques Storage actuelles l'exigent.
+     * Une fois l'upload anonyme supprimé côté Supabase, le repli échouera simplement (401/403).
+     */
+    internal fun storageAuthTokens(): List<String> {
+        val session = try { supabase.auth.currentSessionOrNull()?.accessToken } catch (_: Exception) { null }
+        return listOfNotNull(session?.takeIf { it.isNotBlank() }, supabaseKey).distinct()
     }
 
     private fun getAuthToken(): String {
@@ -1457,12 +1475,12 @@ class SupabaseService(
 
     suspend fun uploadAvatar(userId: String, avatarUuid: String, bytes: ByteArray): String? = withContext(Dispatchers.IO) {
         if (!isConfigured() || userId.isEmpty()) return@withContext null
-        try {
+        for (token in storageAuthTokens()) try {
             val url = URL("$supabaseUrl/storage/v1/object/avatars/$userId/$avatarUuid.webp")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("apikey", supabaseKey)
-            conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+            conn.setRequestProperty("Authorization", "Bearer $token")
             conn.setRequestProperty("Content-Type", "image/webp")
             conn.doOutput = true
             conn.connectTimeout = 15000
@@ -1483,6 +1501,7 @@ class SupabaseService(
             Log.e("SupabaseService", "uploadAvatar exception: ${e.message}")
             null
         }
+        null
     }
 
     suspend fun getSignedAvatarUrl(path: String): String? = withContext(Dispatchers.IO) {
@@ -1600,7 +1619,7 @@ class SupabaseService(
 
     // --- NATIVE ANDROID FCM PUSH TOKEN & DISPATCH ---
 
-    suspend fun upsertDevicePushToken(fcmToken: String, deviceLabel: String = "Android"): Boolean = withContext(Dispatchers.IO) {
+    suspend fun upsertDevicePushToken(fcmToken: String, deviceLabel: String = "Android", installationSecret: String? = null): Boolean = withContext(Dispatchers.IO) {
         val uid = getCurrentSessionUid()
         if (uid.isNullOrEmpty() || fcmToken.isBlank()) {
             Log.w("FCM_TOKEN", "upsertDevicePushToken ignored: session non authentifiée ou jeton vide")
@@ -1621,6 +1640,22 @@ class SupabaseService(
                 put("updated_at", nowIso)
                 put("last_seen_at", nowIso)
             }
+            // 1) Fonction register_device_push_token : la possession du jeton est prouvée par le secret
+            //    d'installation (voir DeviceInstallation). Tant qu'elle n'est pas déployée, l'appel
+            //    échoue et on se replie sur l'ancien upsert, sans changement de comportement.
+            if (!installationSecret.isNullOrBlank()) {
+                val rpcBody = JSONObject().apply {
+                    put("p_installation_secret", installationSecret)
+                    put("p_token", fcmToken.trim())
+                    put("p_label", deviceLabel)
+                }
+                val rpcRes = executePost("/rest/v1/rpc/register_device_push_token", rpcBody.toString(), prefer = "return=minimal")
+                if (rpcRes != null) {
+                    Log.d("FCM_TOKEN", "Jeton enregistré via register_device_push_token")
+                    return@withContext true
+                }
+            }
+            // 2) Repli : ancien upsert REST (comportement actuel)
             val path = "/rest/v1/device_push_tokens?on_conflict=fcm_token"
             val res = executePost(path, body.toString(), prefer = "return=representation,resolution=merge-duplicates")
             res != null

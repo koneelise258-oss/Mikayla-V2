@@ -86,14 +86,51 @@ class MainActivity : ComponentActivity() {
                 com.example.mikayala.data.model.UserSettingsEntity() // Default fallback
             }
 
-            MikayalaTheme(darkTheme = userSettings.isDarkMode) {
+            // Anti-capture d'écran (et contenu masqué dans les applications récentes) : FLAG_SECURE réel
+            val secureScreen = userSettings.antiScreenshotEnabled || userSettings.screenBlurOnSwitch
+            androidx.compose.runtime.LaunchedEffect(secureScreen) {
+                if (secureScreen) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+
+            MikayalaTheme(
+                darkTheme = if (userSettings.followSystemTheme) androidx.compose.foundation.isSystemInDarkTheme() else userSettings.isDarkMode,
+                fontPreference = userSettings.fontFamilyPreference,
+                fontSizeScale = userSettings.fontSizeScale
+            ) {
                 var navigationState by remember { 
                     mutableStateOf(if (startupError != null) AppNavigationState.ERROR else AppNavigationState.SPLASH) 
                 }
 
+                // Verrouillage automatique (Paramètres > Confidentialité > Délai de verrouillage) :
+                // 0 = immédiat, 60/300… secondes, -1 = désactivé. Actif seulement si un code PIN existe.
+                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                val backgroundSince = remember { longArrayOf(0L) }
+                androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        when (event) {
+                            androidx.lifecycle.Lifecycle.Event.ON_STOP -> backgroundSince[0] = System.currentTimeMillis()
+                            androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                                val s = repository.userSettings.value
+                                val since = backgroundSince[0]
+                                backgroundSince[0] = 0L
+                                if (since > 0L && navigationState == AppNavigationState.MAIN_APP &&
+                                    s.hasLocalPassword && s.lockTimeoutSeconds >= 0 &&
+                                    System.currentTimeMillis() - since >= maxOf(s.lockTimeoutSeconds * 1000L, 5_000L) // « immédiat » = 5 s de grâce (sélecteur de photo, caméra)
+                                ) {
+                                    navigationState = AppNavigationState.LOCK
+                                }
+                            }
+                            else -> {}
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = if (userSettings.isDarkMode) DeepNight else Color.White
+                    color = DeepNight
                 ) {
                     Crossfade(targetState = navigationState, label = "main_navigation_crossfade") { state ->
                         when (state) {
@@ -226,7 +263,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             AppNavigationState.MAIN_APP -> {
-                                val coupleSpace = repository.activeCoupleSpace.value
+                                val coupleSpace by repository.activeCoupleSpace.collectAsState()
                                 if (!coupleSpace.isPaired) {
                                     LaunchedEffect(Unit) {
                                         navigationState = AppNavigationState.ONBOARDING

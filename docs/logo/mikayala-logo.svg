@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="432" height="432">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF5C8A"/>
+      <stop offset="1" stop-color="#8E44EC"/>
+    </linearGradient>
+  </defs>
+  <rect width="108" height="108" fill="url(#g)"/>
+  <g transform="translate(54 54) scale(0.9) translate(-54 -54)">
+  <!-- bulle de discussion -->
+  <path fill="none" stroke="#FFFFFF" stroke-width="3.6" stroke-linejoin="round"
+    d="M54,27 C38.5,27 27,38.3 27,52.5 C27,58.4 29.1,63.8 32.6,68.1 L30,80 L42.2,76 C45.8,77.6 49.8,78.5 54,78.5 C69.5,78.5 81,67.2 81,52.5 C81,38.3 69.5,27 54,27 Z"/>
+  <!-- papillon -->
+  <g transform="translate(54 52) scale(1.18) translate(-54 -52)">
+  <g fill="#FFFFFF">
+    <!-- aile haute droite -->
+    <path d="M55.2,50.6 C56.6,43.2 61.4,38.4 67.2,38.6 C71.4,38.8 72.6,43.2 70.2,47.2 C67.8,51.2 61.8,53 55.2,52.4 Z"/>
+    <!-- aile basse droite -->
+    <path d="M55.2,53.8 C60.6,53.8 65.6,55.6 66.4,59.6 C67,62.8 64.4,64.8 61.6,63.6 C58.4,62.2 56,58.4 55.2,55.4 Z"/>
+    <!-- aile haute gauche -->
+    <path d="M52.8,50.6 C51.4,43.2 46.6,38.4 40.8,38.6 C36.6,38.8 35.4,43.2 37.8,47.2 C40.2,51.2 46.2,53 52.8,52.4 Z"/>
+    <!-- aile basse gauche -->
+    <path d="M52.8,53.8 C47.4,53.8 42.4,55.6 41.6,59.6 C41,62.8 43.6,64.8 46.4,63.6 C49.6,62.2 52,58.4 52.8,55.4 Z"/>
+    <!-- corps -->
+    <rect x="52.9" y="46.5" width="2.2" height="18" rx="1.1"/>
+  </g>
+  <!-- antennes -->
+  <path fill="none" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round" d="M53.4,47 C52.6,43.6 51,41.6 48.8,40.6 M54.6,47 C55.4,43.6 57,41.6 59.2,40.6"/>
+  </g>
+</g>
+</svg>

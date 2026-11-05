@@ -39,7 +39,7 @@ class DirectReplyReceiver : BroadcastReceiver() {
                         // Mettre à jour la notification pour indiquer que le message a été envoyé
                         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         val updatedNotif = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-                            .setSmallIcon(R.mipmap.ic_launcher)
+                            .setSmallIcon(R.drawable.ic_stat_mikayala)
                             .setContentTitle("Message envoyé ✓")
                             .setContentText(replyText)
                             .setTimeoutAfter(3000)

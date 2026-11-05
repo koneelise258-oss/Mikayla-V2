@@ -127,7 +127,7 @@ fun OnboardingScreen(
                 if (partnerName != null) {
                     isPartnerConnected = true
                     isWaitingPartner = false
-                    Toast.makeText(context, "$partnerName vient de se connecter ! ❤️", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "$partnerName vient de se connecter", Toast.LENGTH_LONG).show()
                     break
                 }
             }
@@ -158,9 +158,9 @@ fun OnboardingScreen(
     val avatarPresets = listOf("💜", "🌹", "🪽", "🌟", "👑", "💖")
 
     // Dark landing theme canvas
-    val darkBg = Color(0xFF0E0B16)
-    val cardBg = Color(0xFF1B182B)
-    val cardElevated = Color(0xFF242038)
+    val darkBg = DeepNight
+    val cardBg = com.example.mikayala.theme.MikayalaColors.surface
+    val cardElevated = com.example.mikayala.theme.MikayalaColors.surfaceElevated
 
     Box(
         modifier = Modifier
@@ -168,26 +168,8 @@ fun OnboardingScreen(
             .background(darkBg)
     ) {
         // Glowing Background Lights
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
+        // (halo lumineux décoratif retiré : style Soft, et rendu plus léger)
 
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AccentViolet.copy(alpha = 0.22f), Color.Transparent),
-                    center = Offset(w * 0.2f, h * 0.15f),
-                    radius = w * 0.7f
-                )
-            )
-
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AccentRose.copy(alpha = 0.18f), Color.Transparent),
-                    center = Offset(w * 0.8f, h * 0.75f),
-                    radius = w * 0.8f
-                )
-            )
-        }
 
         Column(
             modifier = Modifier
@@ -219,7 +201,7 @@ fun OnboardingScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = "Retour",
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                     }
                 } else {
@@ -230,7 +212,7 @@ fun OnboardingScreen(
                     text = "Mikayala",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = TextPrimary
                 )
 
                 val canShowClose = (currentStep != OnboardingStep.LANDING) || (coupleSpace.isPaired && onBackToApp != null)
@@ -296,20 +278,20 @@ fun OnboardingScreen(
                                 isCreatingSpace = true
                                 android.util.Log.d("SupabaseDiag", "[CREATE] Tentative de création avec le code: $newCode")
                                 coroutineScope.launch {
-                                    val success = repository.createCoupleSpaceInSupabase(newCode, createName.ifEmpty { "Mikey" })
+                                    val success = repository.createCoupleSpaceInSupabase(newCode, createName.ifEmpty { "Partenaire 1" })
                                     isCreatingSpace = false
                                     if (success) {
                                         generatedCode = newCode
                                         isWaitingPartner = true
-                                        repository.updateProfile(createName.ifEmpty { "Mikey" }, "En ligne", "", avatarPresets[selectedAvatarIndex])
-                                        Toast.makeText(context, "Espace Supabase créé avec succès ! ✨", Toast.LENGTH_SHORT).show()
+                                        repository.updateProfile(createName.ifEmpty { "Partenaire 1" }, "En ligne", "", avatarPresets[selectedAvatarIndex])
+                                        Toast.makeText(context, "Espace Supabase créé avec succès", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "Erreur Supabase : impossible de créer l'espace. Vérifiez les logs. ❌", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Erreur Supabase : impossible de créer l'espace. Vérifiez les logs.", Toast.LENGTH_LONG).show()
                                     }
                                 }
                             },
                             onComplete = {
-                                repository.updateProfile(createName.ifEmpty { "Mikey" }, "En ligne avec mon cœur", "", avatarPresets[selectedAvatarIndex])
+                                repository.updateProfile(createName.ifEmpty { "Partenaire 1" }, "En ligne avec mon cœur", "", avatarPresets[selectedAvatarIndex])
                                 onCompleteOnboarding()
                             }
                         )
@@ -331,11 +313,11 @@ fun OnboardingScreen(
                                 isJoiningLoading = true
                                 joinErrorMessage = null
                                 coroutineScope.launch {
-                                    val joined = repository.joinCoupleSpaceInSupabase(joinCode, joinName.ifEmpty { "Mikayala" })
+                                    val joined = repository.joinCoupleSpaceInSupabase(joinCode, joinName.ifEmpty { "Partenaire 2" })
                                     isJoiningLoading = false
                                     if (joined) {
                                         repository.updatePartnerProfile(joinName.ifEmpty { "Partenaire" }, "En ligne", "💖")
-                                        Toast.makeText(context, "Espace rejoint via Supabase ! 💖", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Espace rejoint via Supabase", Toast.LENGTH_SHORT).show()
                                         onCompleteOnboarding()
                                     } else {
                                         joinErrorMessage = "Impossible de se connecter à l'espace avec ce code."
@@ -361,11 +343,11 @@ fun OnboardingScreen(
                                 isLinkingLoading = true
                                 linkError = null
                                 coroutineScope.launch {
-                                    val linked = repository.joinCoupleSpaceInSupabase(linkCode, if (selectedPartnerOwner == "partner1") "Mikey" else "Mikayala")
+                                    val linked = repository.joinCoupleSpaceInSupabase(linkCode, if (selectedPartnerOwner == "partner1") "Partenaire 1" else "Partenaire 2")
                                     isLinkingLoading = false
                                     linkSuccess = linked
                                     if (linked) {
-                                        Toast.makeText(context, "Tablette synchronisée via Supabase ! 📱", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Tablette synchronisée via Supabase", Toast.LENGTH_LONG).show()
                                     } else {
                                         linkError = "Échec de la liaison avec le serveur Supabase."
                                     }
@@ -392,7 +374,7 @@ fun OnboardingScreen(
                                     delay(1800)
                                     isRecoveryLoading = false
                                     recoverySuccess = true
-                                    Toast.makeText(context, "Espace restauré intégralement ! 🔑", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Espace restauré intégralement", Toast.LENGTH_LONG).show()
                                 }
                             },
                             onComplete = onCompleteOnboarding
@@ -422,7 +404,7 @@ fun OnboardingScreen(
                 onCodeScanned = { scannedCode ->
                     joinCode = scannedCode
                     showCameraScanner = false
-                    Toast.makeText(context, "Code scanné : $scannedCode 📷", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Code scanné : $scannedCode", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -447,55 +429,14 @@ fun LandingView(
     ) {
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Glowing Animated Logo Header
-        val infiniteTransition = rememberInfiniteTransition(label = "logo_pulse")
-        val pulseScale by infiniteTransition.animateFloat(
-            initialValue = 0.96f,
-            targetValue = 1.05f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2200, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "pulse_scale"
-        )
-
-        Box(
+        // Logo statique (ancienne animation « pulsation » et halo lumineux retirés)
+        Image(
+            painter = painterResource(id = R.drawable.ic_mikayala_logo),
+            contentDescription = "Mikayala",
             modifier = Modifier
-                .size(108.dp)
-                .scale(pulseScale)
-                .clip(RoundedCornerShape(30.dp))
-                .background(
-                    Brush.radialGradient(
-                        listOf(
-                            AccentViolet.copy(alpha = 0.5f),
-                            AccentRose.copy(alpha = 0.2f),
-                            Color.Transparent
-                        )
-                    )
-                )
-                .border(
-                    BorderStroke(
-                        2.dp,
-                        Brush.linearGradient(
-                            listOf(
-                                Color(0xFFE085FF),
-                                Color(0xFF8C52FF),
-                                Color(0xFF4A154B)
-                            )
-                        )
-                    ),
-                    RoundedCornerShape(30.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_butterfly_logo),
-                contentDescription = "Mikayala Logo Papillon Liquid Glass",
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(RoundedCornerShape(26.dp))
-            )
-        }
+                .size(88.dp)
+                .clip(RoundedCornerShape(24.dp))
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -503,14 +444,14 @@ fun LandingView(
             text = "Espace de Couple Intime",
             fontSize = 24.sp,
             fontWeight = FontWeight.ExtraBold,
-            color = Color.White,
+            color = TextPrimary,
             textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "L'application privée, chiffrée & fusionnelle créée exclusivement pour vous deux ❤️",
+            text = "L'application privée créée pour vous deux",
             fontSize = 13.sp,
             color = TextSecondary,
             textAlign = TextAlign.Center,
@@ -578,7 +519,7 @@ fun LandingOptionCard(
 ) {
     Surface(
         shape = RoundedCornerShape(22.dp),
-        color = Color(0xFF1B182B),
+        color = com.example.mikayala.theme.MikayalaColors.surface,
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.35f)),
         modifier = Modifier
             .fillMaxWidth()
@@ -615,7 +556,7 @@ fun LandingOptionCard(
                         text = title,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                 }
 
@@ -672,7 +613,7 @@ fun CreateSpaceView(
             text = if (isWaitingPartner) "Espace partagé ✨" else "Créer votre Espace ✨",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -696,8 +637,8 @@ fun CreateSpaceView(
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF1B182B),
-                    unfocusedContainerColor = Color(0xFF1B182B),
+                    focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                    unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                     focusedBorderColor = VibrantCyan,
                     unfocusedBorderColor = BorderSubtleWhite,
                     focusedTextColor = Color.White,
@@ -729,7 +670,7 @@ fun CreateSpaceView(
                         modifier = Modifier
                             .size(50.dp)
                             .clip(CircleShape)
-                            .background(if (isSelected) VibrantCyan.copy(alpha = 0.25f) else Color(0xFF1B182B))
+                            .background(if (isSelected) VibrantCyan.copy(alpha = 0.25f) else com.example.mikayala.theme.MikayalaColors.surface)
                             .border(
                                 BorderStroke(2.dp, if (isSelected) VibrantCyan else BorderSubtleWhite),
                                 CircleShape
@@ -754,14 +695,14 @@ fun CreateSpaceView(
             // Pairing Code Banner
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF1B182B),
+                color = com.example.mikayala.theme.MikayalaColors.surface,
                 border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Code Mikayala", generatedCode))
-                        Toast.makeText(context, "Code copié : $generatedCode 📋", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Code copié : $generatedCode", Toast.LENGTH_SHORT).show()
                     }
             ) {
                 Row(
@@ -812,7 +753,7 @@ fun CreateSpaceView(
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text(text = "Accéder à notre Espace 💖", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(text = "Accéder à notre Espace 💖", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             }
         } else if (isWaitingPartner) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -831,13 +772,13 @@ fun CreateSpaceView(
                     .height(50.dp)
             ) {
                 if (isCreating) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = TextPrimary, strokeWidth = 2.dp)
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text(text = "Création de l'espace...", fontSize = 14.sp, color = Color.White)
+                    Text(text = "Création de l'espace...", fontSize = 14.sp, color = TextPrimary)
                 } else {
                     Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Générer mon code de couple ✨", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(text = "Générer mon code de couple ✨", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                 }
             }
         }
@@ -873,7 +814,7 @@ fun JoinSpaceView(
             text = "Rejoindre mon/ma Partenaire 🤝",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -895,8 +836,8 @@ fun JoinSpaceView(
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1B182B),
-                unfocusedContainerColor = Color(0xFF1B182B),
+                focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentRose,
                 unfocusedBorderColor = BorderSubtleWhite,
                 focusedTextColor = Color.White,
@@ -917,8 +858,8 @@ fun JoinSpaceView(
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1B182B),
-                unfocusedContainerColor = Color(0xFF1B182B),
+                focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentRose,
                 unfocusedBorderColor = BorderSubtleWhite,
                 focusedTextColor = Color.White,
@@ -932,7 +873,7 @@ fun JoinSpaceView(
         // QR Scanner Camera Button
         Button(
             onClick = onOpenScanner,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B2545)),
+            colors = ButtonDefaults.buttonColors(containerColor = com.example.mikayala.theme.MikayalaColors.surfaceElevated),
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, AccentViolet.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
@@ -976,12 +917,12 @@ fun JoinSpaceView(
                 .height(52.dp)
         ) {
             if (isLoading) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TextPrimary, strokeWidth = 2.dp)
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Favorite, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.Favorite, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Rejoindre l'Espace de Couple 💖", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(text = "Rejoindre l'Espace de Couple 💖", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                 }
             }
         }
@@ -1018,7 +959,7 @@ fun LinkTabletView(
             text = "Lier une Tablette / Nouvel Appareil 📱",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -1048,7 +989,7 @@ fun LinkTabletView(
             val isP1 = selectedOwner == "partner1"
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = if (isP1) AccentViolet.copy(alpha = 0.2f) else Color(0xFF1B182B),
+                color = if (isP1) AccentViolet.copy(alpha = 0.2f) else com.example.mikayala.theme.MikayalaColors.surface,
                 border = BorderStroke(1.dp, if (isP1) AccentViolet else BorderSubtleWhite),
                 modifier = Modifier
                     .weight(1f)
@@ -1062,7 +1003,7 @@ fun LinkTabletView(
                     Text(text = "👑", fontSize = 20.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text(text = "Partenaire 1", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(text = "Partenaire 1", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         Text(text = "Titulaire principal", fontSize = 10.sp, color = TextSecondary)
                     }
                 }
@@ -1071,7 +1012,7 @@ fun LinkTabletView(
             val isP2 = selectedOwner == "partner2"
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = if (isP2) AccentRose.copy(alpha = 0.2f) else Color(0xFF1B182B),
+                color = if (isP2) AccentRose.copy(alpha = 0.2f) else com.example.mikayala.theme.MikayalaColors.surface,
                 border = BorderStroke(1.dp, if (isP2) AccentRose else BorderSubtleWhite),
                 modifier = Modifier
                     .weight(1f)
@@ -1085,7 +1026,7 @@ fun LinkTabletView(
                     Text(text = "💖", fontSize = 20.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text(text = "Partenaire 2", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(text = "Partenaire 2", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         Text(text = "Second membre", fontSize = 10.sp, color = TextSecondary)
                     }
                 }
@@ -1103,8 +1044,8 @@ fun LinkTabletView(
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1B182B),
-                unfocusedContainerColor = Color(0xFF1B182B),
+                focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentViolet,
                 unfocusedBorderColor = BorderSubtleWhite,
                 focusedTextColor = Color.White,
@@ -1146,7 +1087,7 @@ fun LinkTabletView(
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text(text = "Lancer sur cet écran 📱", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(text = "Lancer sur cet écran 📱", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             }
         } else {
             Button(
@@ -1159,12 +1100,12 @@ fun LinkTabletView(
                     .height(50.dp)
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TextPrimary, strokeWidth = 2.dp)
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Sync, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Sync, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Synchroniser l'appareil 📱", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(text = "Synchroniser l'appareil 📱", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     }
                 }
             }
@@ -1200,7 +1141,7 @@ fun RecoveryView(
             text = "Récupérer mon Espace 🔑",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -1222,8 +1163,8 @@ fun RecoveryView(
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1B182B),
-                unfocusedContainerColor = Color(0xFF1B182B),
+                focusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
+                unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = WarningGold,
                 unfocusedBorderColor = BorderSubtleWhite,
                 focusedTextColor = Color.White,
@@ -1252,13 +1193,13 @@ fun RecoveryView(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = WarningGold)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Restauration intégrale réussie !", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = WarningGold)
+                        Text(text = "Espace du couple retrouvé", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = WarningGold)
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "• Messages & Vocaux restaurés (100%)\n• Coffre-fort & Souvenirs restaurés (100%)\n• Calendrier & Love Time synchronisés",
+                        text = "Vos messages, le coffre et le calendrier sont rechargés depuis le serveur du couple.",
                         fontSize = 11.sp,
                         color = TextSecondary,
                         lineHeight = 16.sp
@@ -1350,7 +1291,7 @@ fun CameraScannerModal(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF1B182B),
+            color = com.example.mikayala.theme.MikayalaColors.surface,
             border = BorderStroke(1.dp, VibrantCyan),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -1365,7 +1306,7 @@ fun CameraScannerModal(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "Scanner Caméra QR Code 📷", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(text = "Scanner Caméra QR Code 📷", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Rounded.Close, contentDescription = "Fermer", tint = TextSecondary)
                     }
@@ -1407,6 +1348,7 @@ fun CameraScannerModal(
                         }
                     }
 
+                    val laserColor = AccentRose
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val w = size.width
                         val h = size.height
@@ -1414,7 +1356,7 @@ fun CameraScannerModal(
 
                         // Red Laser Line
                         drawLine(
-                            color = AccentRose,
+                            color = laserColor,
                             start = Offset(0f, yPos),
                             end = Offset(w, yPos),
                             strokeWidth = 3.dp.toPx()
@@ -1494,11 +1436,11 @@ fun InteractiveQRCodeCanvas(
                 .size(34.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.White)
-                .border(BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFE085FF), Color(0xFF8C52FF)))), RoundedCornerShape(8.dp)),
+                .border(BorderStroke(0.5.dp, BorderSubtleWhite), RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_butterfly_logo),
+                painter = painterResource(id = R.drawable.ic_mikayala_logo),
                 contentDescription = null,
                 modifier = Modifier
                     .size(30.dp)

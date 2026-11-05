@@ -126,7 +126,7 @@ fun DecoyCalculatorScreen(
                     for (btn in row) {
                         val isOrange = btn in listOf("÷", "×", "-", "+", "=")
                         val isLightGray = btn in listOf("C", "±", "%")
-                        val btnColor = if (isOrange) Color(0xFFFF9F0A) else if (isLightGray) Color(0xFFA5A5A5) else Color(0xFF333333)
+                        val btnColor = if (isOrange) Color(0xFFC9A15E) else if (isLightGray) Color(0xFFA5A5A5) else Color(0xFF333333)
                         val textColor = if (isLightGray) Color.Black else Color.White
 
                         val widthModifier = if (btn == "0") Modifier.weight(2.1f) else Modifier.weight(1f)

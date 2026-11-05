@@ -27,10 +27,16 @@ object BiometricHelper {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val bm = context.getSystemService(android.hardware.biometrics.BiometricManager::class.java)
             if (bm != null) {
-                val canAuth = bm.canAuthenticate(
-                    android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                    android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
-                )
+                // canAuthenticate(int) n'existe qu'à partir d'Android 11 : sur Android 10, version sans argument
+                val canAuth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    bm.canAuthenticate(
+                        android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                        android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    bm.canAuthenticate()
+                }
                 return canAuth == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS ||
                         canAuth == android.hardware.biometrics.BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED
             }

@@ -1,117 +1,100 @@
 package com.example.mikayala.ui.screens
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.res.painterResource
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mikayala.R
-import com.example.mikayala.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
+/**
+ * Écran de démarrage sobre, façon WhatsApp : logo au centre, nom de l'application en bas.
+ * Une seule animation courte (apparition), aucune boucle : rien de coûteux sur les téléphones modestes.
+ * Fond identique à celui de la fenêtre (thème) et de l'écran système Android 12+ : aucun saut visuel.
+ */
 @Composable
 fun SplashScreen(
     onSplashFinished: () -> Unit
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "heartbeat")
-    val heartScale by infiniteTransition.animateFloat(
-        initialValue = 0.9f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "heart_scale"
-    )
+    val alpha = remember { Animatable(0f) }
+    val scale = remember { Animatable(0.92f) }
 
     LaunchedEffect(Unit) {
-        delay(1500)
+        launch { alpha.animateTo(1f, tween(350, easing = FastOutSlowInEasing)) }
+        launch { scale.animateTo(1f, tween(450, easing = FastOutSlowInEasing)) }
+        delay(1100)
         onSplashFinished()
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepNight),
-        contentAlignment = Alignment.Center
+            .background(com.example.mikayala.theme.MikayalaColors.background)
     ) {
+        Image(
+            painter = painterResource(id = R.drawable.ic_mikayala_logo),
+            contentDescription = "Mikayala",
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(104.dp)
+                .graphicsLayer {
+                    this.alpha = alpha.value
+                    scaleX = scale.value
+                    scaleY = scale.value
+                }
+                .clip(RoundedCornerShape(28.dp))
+        )
+
         Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 40.dp)
+                .graphicsLayer { this.alpha = alpha.value },
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Bottom
         ) {
-            Box(
-                modifier = Modifier
-                    .size(118.dp)
-                    .scale(heartScale)
-                    .clip(RoundedCornerShape(32.dp))
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                AccentViolet.copy(alpha = 0.5f),
-                                AccentRose.copy(alpha = 0.2f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .border(
-                        BorderStroke(
-                            2.dp,
-                            Brush.linearGradient(
-                                listOf(
-                                    Color(0xFFE085FF),
-                                    Color(0xFF8C52FF),
-                                    Color(0xFF4A154B)
-                                )
-                            )
-                        ),
-                        RoundedCornerShape(32.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_butterfly_logo),
-                    contentDescription = "Mikayala Logo Papillon Liquid Glass",
-                    modifier = Modifier
-                        .size(110.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
             Text(
                 text = "Mikayala",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.sp,
-                color = TextPrimary
+                fontSize = 22.sp,
+                fontFamily = com.example.mikayala.theme.Poppins,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp,
+                color = com.example.mikayala.theme.MikayalaColors.textPrimary
             )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Couple Intimate Chat & Shared Vault",
-                fontSize = 13.sp,
-                color = AccentViolet
+                text = "Messagerie privée du couple",
+                fontSize = 12.sp,
+                fontFamily = com.example.mikayala.theme.Poppins,
+                color = com.example.mikayala.theme.MikayalaColors.textSecondary
             )
         }
     }
 }
+

@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Mikayala" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Fond identique à l'écran de démarrage Compose : aucun flash blanc au lancement -->
+    <style name="Theme.Mikayala" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/mikayala_splash_background</item>
+        <item name="android:statusBarColor">@color/mikayala_splash_background</item>
+        <item name="android:navigationBarColor">@color/mikayala_splash_background</item>
+    </style>
 </resources>

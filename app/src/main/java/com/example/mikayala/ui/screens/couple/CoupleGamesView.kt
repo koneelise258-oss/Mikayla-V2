@@ -164,7 +164,7 @@ private fun ScratchCardGameSection(repository: MikayalaRepository) {
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -223,7 +223,7 @@ private fun ScratchCardGameSection(repository: MikayalaRepository) {
                                             scratchedPoints = scratchedPoints + change.position
                                             if (scratchedPoints.size > 80) {
                                                 isRevealed = true
-                                                Toast.makeText(context, "Surprise révélée ! Félicitations ! ❤️", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Surprise révélée! Félicitations", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -249,14 +249,14 @@ private fun ScratchCardGameSection(repository: MikayalaRepository) {
                             // Scratch prompt text
                             if (scratchedPoints.isEmpty()) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                                    Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(32.dp))
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "GRATTE ICI AVEC LE DOIGT",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.sp,
-                                        color = Color.White
+                                        color = TextPrimary
                                     )
                                 }
                             }
@@ -293,7 +293,7 @@ private fun ScratchCardGameSection(repository: MikayalaRepository) {
                                     content = "🎁 Carte Mystère : ${prizes[currentPrizeIndex]}",
                                     type = "scratch_card"
                                 )
-                                Toast.makeText(context, "Carte envoyée dans le chat ! 💬❤️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Carte envoyée dans le chat", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan),
                             shape = RoundedCornerShape(14.dp),
@@ -349,7 +349,7 @@ private fun TruthOrDareGameSection(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -518,7 +518,7 @@ private fun TruthOrDareGameSection(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -620,7 +620,7 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -654,14 +654,14 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
                                 .rotate(animatedRotation)
                         ) {
                             val colors = listOf(
-                                Color(0xFFFF4081),
-                                Color(0xFF00E5FF),
-                                Color(0xFFFFB300),
-                                Color(0xFF7C4DFF),
-                                Color(0xFF00B0FF),
-                                Color(0xFFE91E63),
-                                Color(0xFF26A69A),
-                                Color(0xFFAB47BC)
+                                Color(0xFFC97B86),
+                                Color(0xFF7FA8CC),
+                                Color(0xFFC9A15E),
+                                Color(0xFF9283C4),
+                                Color(0xFF7FA8CC),
+                                Color(0xFFC97B86),
+                                Color(0xFF7FAF93),
+                                Color(0xFF9283C4)
                             )
                             val sweepAngle = 360f / items.size
 
@@ -683,7 +683,7 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
                         Icon(
                             imageVector = Icons.Rounded.ArrowDropDown,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = TextPrimary,
                             modifier = Modifier
                                 .size(44.dp)
                                 .align(Alignment.TopCenter)
@@ -763,7 +763,7 @@ private fun QuizGameSection(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.clickable { showAddDialog = true }
                 ) {
                     Row(
@@ -785,7 +785,7 @@ private fun QuizGameSection(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -870,7 +870,7 @@ private fun QuizGameSection(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -943,7 +943,7 @@ private fun LoveCouponsGameSection(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.clickable { showAddCouponDialog = true }
                 ) {
                     Row(
@@ -1017,7 +1017,7 @@ private fun LoveCouponsGameSection(
                         Button(
                             onClick = {
                                 repository.redeemCoupon(coupon.id)
-                                Toast.makeText(context, "Bon « ${coupon.title} » utilisé avec succès ! ❤️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Bon « ${coupon.title} » utilisé avec succès", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                             shape = RoundedCornerShape(10.dp),
@@ -1044,7 +1044,7 @@ private fun LoveCouponsGameSection(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -1108,7 +1108,7 @@ private fun BucketListGameSection(
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1147,7 +1147,7 @@ private fun BucketListGameSection(
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.clickable { showAddDialog = true }
                 ) {
                     Row(
@@ -1205,7 +1205,7 @@ private fun BucketListGameSection(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -1257,7 +1257,7 @@ private fun WouldYouRatherGameSection(
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -1329,7 +1329,7 @@ private fun LoveCapsulesSection(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -1366,7 +1366,7 @@ private fun LoveCapsulesSection(
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = MatteCardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -1417,7 +1417,7 @@ private fun LoveCapsulesSection(
                             } else {
                                 Toast.makeText(
                                     context,
-                                    "🔒 Capsule scellée ! Revenez dans $daysRemaining jour(s).",
+                                    "Capsule scellée! Revenez dans $daysRemaining jour(s).",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -1498,7 +1498,7 @@ private fun LoveCapsulesSection(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = DeepSurfaceBlack,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -1562,7 +1562,7 @@ private fun LoveCapsulesSection(
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = DeepSurfaceBlack,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
@@ -1582,7 +1582,7 @@ private fun LoveCapsulesSection(
                                 content = "💌 Capsule Temporelle [${capsule.title}] : « ${capsule.message} »",
                                 type = "love_capsule"
                             )
-                            Toast.makeText(context, "Lettre partagée dans le Chat ! 💬❤️", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Lettre partagée dans le Chat", Toast.LENGTH_SHORT).show()
                             selectedCapsuleForView = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan),
@@ -1714,16 +1714,16 @@ private fun LoveCapsulesSection(
                                 unlockDate = unlockTime,
                                 sealTheme = sealTheme
                             )
-                            Toast.makeText(context, "Capsule scellée avec succès ! 🔒✨", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Capsule scellée avec succès", Toast.LENGTH_SHORT).show()
                             showCreateDialog = false
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Sceller la Capsule 🔒", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Sceller la Capsule 🔒", color = TextPrimary, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))

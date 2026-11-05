@@ -81,7 +81,7 @@ fun CoupleCalendarView(
             Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
@@ -263,7 +263,7 @@ fun CoupleCalendarView(
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MatteCardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.padding(20.dp), contentAlignment = Alignment.Center) {
@@ -310,7 +310,7 @@ fun CoupleCalendarView(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -358,7 +358,7 @@ fun CoupleCalendarView(
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = CardDarkElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite)
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite)
                     ) {
                         Text(
                             text = countdownText,
@@ -388,7 +388,7 @@ fun CoupleCalendarView(
             onConfirm = { title, date, category, note ->
                 repository.addEvent(title, date, category, note)
                 showAddEventDialog = false
-                Toast.makeText(context, "Événement ajouté au calendrier ! ❤️", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Événement ajouté au calendrier", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -420,7 +420,7 @@ private fun EventCardItem(
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MatteCardDark,
-        border = BorderStroke(1.dp, BorderSubtleWhite),
+        border = BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -482,7 +482,7 @@ private fun EventFormDialog(
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = MatteCardDark,
-            border = BorderStroke(1.dp, BorderSubtleWhite),
+            border = BorderStroke(0.5.dp, BorderSubtleWhite),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -514,7 +514,7 @@ private fun EventFormDialog(
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
@@ -619,13 +619,14 @@ private fun EventFormDialog(
 }
 
 private fun getCategoryColor(category: String): Color = when (category) {
-    "Anniversaire" -> AccentRose
-    "Rendez-vous" -> VibrantCyan
-    "Voyage" -> Color(0xFF00E5FF)
-    "Surprise" -> WarningGold
-    "Date Intime" -> Color(0xFFFF4081)
-    "Cinéma" -> Color(0xFFAB47BC)
-    else -> VibrantCyan
+    // Pastels Soft (lisibles en clair comme en sombre)
+    "Anniversaire" -> Color(0xFFD98C97)
+    "Rendez-vous" -> Color(0xFF9283C4)
+    "Voyage" -> Color(0xFF7FA8CC)
+    "Surprise" -> Color(0xFFD2A95E)
+    "Date Intime" -> Color(0xFFC97B86)
+    "Cinéma" -> Color(0xFF8E9BC7)
+    else -> Color(0xFF9283C4)
 }
 
 private fun getCategoryIcon(category: String): String = when (category) {

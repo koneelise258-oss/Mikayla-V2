@@ -1,5 +1,6 @@
 package com.example.mikayala.ui.screens
 
+import kotlinx.coroutines.launch
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -60,11 +61,28 @@ fun MainDashboardScreen(
     val context = LocalContext.current
     // Tabs: 0: Chat, 1: Appels, 2: Espace Couple, 3: Coffre, 4: Réglages
     var selectedTab by remember { mutableIntStateOf(0) }
-    var showNavBarInChat by remember { mutableStateOf(false) }
+    // Barre de navigation visible par défaut (masquable depuis le menu ⋮ pour le plein écran)
+    var showNavBarInChat by remember { mutableStateOf(true) }
     var showNavDrawerSheet by remember { mutableStateOf(false) }
+    // Recherche / favoris dans la conversation (menu ⋮)
+    var chatSearchMode by remember { mutableStateOf<String?>(null) }
+    // Badge « non lus » de l'onglet Discussions : messages du partenaire pas encore lus
+    val dashboardMessages by repository.allMessages.collectAsState()
+    val unreadCount = remember(dashboardMessages) {
+        dashboardMessages.count { !it.isDeletedForEveryone && it.status != "read" && !repository.isMessageFromMe(it) }
+    }
     var showPartnerProfileSheet by remember { mutableStateOf(false) }
     var showOfflineP2PPage by remember { mutableStateOf(false) }
     var activeCallState by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) } // (isActive, isVideo)
+    var callIsIncoming by remember { mutableStateOf(false) }
+    val callScope = rememberCoroutineScope()
+    // Appel sortant : prévient réellement le partenaire (sonnerie) avant d'afficher l'écran d'appel.
+    // Avant, les boutons de l'en-tête affichaient l'écran sans rien envoyer.
+    val startOutgoingCall: (Boolean) -> Unit = { isVideo ->
+        callIsIncoming = false
+        activeCallState = Pair(true, isVideo)
+        callScope.launch { repository.initiateSupabaseCall(isVideo) }
+    }
 
     // Launcher pour demander la permission audio si AUTO_ANSWER est demandé sans permission
     val recordAudioLauncher = rememberLauncherForActivityResult(
@@ -72,6 +90,7 @@ fun MainDashboardScreen(
     ) { isGranted ->
         if (isGranted) {
             val isVideo = pendingIntentExtras?.getBoolean("IS_VIDEO", false) ?: false
+            callIsIncoming = true
             activeCallState = Pair(true, isVideo)
         } else {
             Toast.makeText(context, "Permission microphone requise pour décrocher l'appel", Toast.LENGTH_SHORT).show()
@@ -96,6 +115,7 @@ fun MainDashboardScreen(
                 ) == PackageManager.PERMISSION_GRANTED
 
                 if (hasAudioPerm) {
+                    callIsIncoming = true
                     activeCallState = Pair(true, isVideo)
                 } else {
                     recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -115,16 +135,6 @@ fun MainDashboardScreen(
     val isPartnerTyping by repository.isPartnerTyping.collectAsState()
     val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse_green_dot")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dot_alpha"
-    )
 
     // Background Realtime Sync for Supabase (Messages, Shared Vault, Call Signals)
     LaunchedEffect(coupleSpace.pairingCode, coupleSpace.isPaired) {
@@ -159,8 +169,7 @@ fun MainDashboardScreen(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 Surface(
-                    color = MatteCardDark,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    color = DeepNight,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -175,34 +184,6 @@ fun MainDashboardScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Left Squircle Buttons (Navigation & Nav Bar Toggle)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                NeumorphicSquircleButton(
-                                    icon = Icons.Rounded.Widgets,
-                                    contentDescription = "Navigation & Espaces",
-                                    onClick = { showNavDrawerSheet = true },
-                                    size = 44.dp,
-                                    iconSize = 22.dp,
-                                    tint = VibrantCyan
-                                )
-
-                                if (selectedTab == 0) {
-                                    NeumorphicSquircleButton(
-                                        icon = if (showNavBarInChat) Icons.Rounded.Navigation else Icons.Rounded.Explore,
-                                        contentDescription = if (showNavBarInChat) "Masquer la barre" else "Afficher la barre",
-                                        onClick = {
-                                            showNavBarInChat = !showNavBarInChat
-                                            val msg = if (showNavBarInChat) "Barre de navigation affichée 🧭" else "Plein écran Chat activé 💬"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        size = 44.dp,
-                                        iconSize = 20.dp,
-                                        tint = if (showNavBarInChat) VibrantCyan else TextSecondary,
-                                        backgroundColor = if (showNavBarInChat) CardDarkElevated else MatteSquircle
-                                    )
-                                }
-                            }
-
                             // Center Title / Active Partner (WhatsApp style info click)
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -216,16 +197,24 @@ fun MainDashboardScreen(
                                     modifier = Modifier
                                         .size(34.dp)
                                         .clip(CircleShape)
-                                        .background(Brush.radialGradient(listOf(VibrantCyan.copy(alpha = 0.3f), Color.Transparent)))
-                                        .border(1.5.dp, VibrantCyan, CircleShape),
+                                        .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Person,
-                                        contentDescription = "Avatar",
-                                        tint = VibrantCyan,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    if (userSettings.partnerAvatarUrl.isNotBlank()) {
+                                        coil.compose.AsyncImage(
+                                            model = userSettings.partnerAvatarUrl,
+                                            contentDescription = "Photo de votre partenaire",
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Person,
+                                            contentDescription = "Photo de votre partenaire",
+                                            tint = AccentRose,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
@@ -265,7 +254,7 @@ fun MainDashboardScreen(
                                                 .clip(CircleShape)
                                                 .background(
                                                     if (isOnline && !isPartnerRecording && !isPartnerTyping) {
-                                                        OnlinePresenceGreen.copy(alpha = pulseAlpha)
+                                                        OnlinePresenceGreen
                                                     } else {
                                                         dotColor
                                                     }
@@ -287,7 +276,7 @@ fun MainDashboardScreen(
                                 NeumorphicSquircleButton(
                                     icon = Icons.Rounded.Videocam,
                                     contentDescription = "Appel Vidéo",
-                                    onClick = { activeCallState = Pair(true, true) },
+                                    onClick = { startOutgoingCall(true) },
                                     size = 44.dp,
                                     iconSize = 20.dp,
                                     tint = VibrantCyan
@@ -295,11 +284,47 @@ fun MainDashboardScreen(
                                 NeumorphicSquircleButton(
                                     icon = Icons.Rounded.Call,
                                     contentDescription = "Appel Audio",
-                                    onClick = { activeCallState = Pair(true, false) },
+                                    onClick = { startOutgoingCall(false) },
                                     size = 44.dp,
                                     iconSize = 20.dp,
                                     tint = TextSecondary
                                 )
+                                // Menu ⋮ : regroupe les actions secondaires (auparavant deux boutons carrés)
+                                Box {
+                                    var menuOpen by remember { mutableStateOf(false) }
+                                    IconButton(onClick = { menuOpen = true }) {
+                                        Icon(Icons.Rounded.MoreVert, contentDescription = "Plus d'options", tint = TextSecondary)
+                                    }
+                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text("Espaces et raccourcis") },
+                                            leadingIcon = { Icon(Icons.Rounded.Widgets, contentDescription = null) },
+                                            onClick = { menuOpen = false; showNavDrawerSheet = true }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Profil de mon partenaire") },
+                                            leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                                            onClick = { menuOpen = false; showPartnerProfileSheet = true }
+                                        )
+                                        if (selectedTab == 0) {
+                                            DropdownMenuItem(
+                                                text = { Text("Rechercher") },
+                                                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                                                onClick = { menuOpen = false; chatSearchMode = "search" }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Messages favoris") },
+                                                leadingIcon = { Icon(Icons.Rounded.Star, contentDescription = null) },
+                                                onClick = { menuOpen = false; chatSearchMode = "starred" }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text(if (showNavBarInChat) "Plein écran (masquer la barre)" else "Afficher la barre de navigation") },
+                                                leadingIcon = { Icon(if (showNavBarInChat) Icons.Rounded.Fullscreen else Icons.Rounded.FullscreenExit, contentDescription = null) },
+                                                onClick = { menuOpen = false; showNavBarInChat = !showNavBarInChat }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -312,8 +337,8 @@ fun MainDashboardScreen(
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0x1F141C2B),
-                                border = BorderStroke(0.7.dp, Color.White.copy(alpha = 0.08f)),
+                                color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.height(30.dp)
                             ) {
                                 Row(
@@ -326,13 +351,13 @@ fun MainDashboardScreen(
                                     // Option 1: En Ligne (Discreet)
                                     Surface(
                                         shape = CircleShape,
-                                        color = if (isOnline) Color(0x3800E5FF) else Color.Transparent,
+                                        color = if (isOnline) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
                                         modifier = Modifier
                                             .clip(CircleShape)
                                             .clickable {
                                                 if (!isOnline) {
                                                     repository.updateConnectionMode(ConnectionMode.ONLINE)
-                                                    Toast.makeText(context, "Mode En Ligne activé 🌐", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "Mode En Ligne activé", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                     ) {
@@ -351,7 +376,7 @@ fun MainDashboardScreen(
                                                 text = "En Ligne",
                                                 fontSize = 11.sp,
                                                 fontWeight = if (isOnline) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (isOnline) Color.White else TextSecondary
+                                                color = if (isOnline) TextPrimary else TextSecondary
                                             )
                                         }
                                     }
@@ -359,7 +384,7 @@ fun MainDashboardScreen(
                                     // Option 2: Hors-Ligne (Discreet)
                                     Surface(
                                         shape = CircleShape,
-                                        color = if (!isOnline) Color(0x38FF4081) else Color.Transparent,
+                                        color = if (!isOnline) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
                                         modifier = Modifier
                                             .clip(CircleShape)
                                             .clickable {
@@ -382,7 +407,7 @@ fun MainDashboardScreen(
                                                 text = "Hors-Ligne",
                                                 fontSize = 11.sp,
                                                 fontWeight = if (!isOnline) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (!isOnline) Color.White else TextSecondary
+                                                color = if (!isOnline) TextPrimary else TextSecondary
                                             )
                                         }
                                     }
@@ -406,8 +431,8 @@ fun MainDashboardScreen(
                             Surface(
                                 shape = CircleShape,
                                 color = CardDarkElevated,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
-                                shadowElevation = 6.dp,
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
+                                shadowElevation = 1.dp,
                                 modifier = Modifier
                                     .padding(bottom = 6.dp)
                                     .clip(CircleShape)
@@ -436,18 +461,17 @@ fun MainDashboardScreen(
 
                         GlassmorphicFloatingNavBar(
                             items = listOf(
-                                GlassNavBarItem(0, "Chat", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Rounded.Chat),
+                                GlassNavBarItem(0, "Discussions", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Rounded.Chat, badgeCount = if (selectedTab == 0) 0 else unreadCount),
                                 GlassNavBarItem(1, "Appels", Icons.Rounded.Call, Icons.Rounded.Call),
                                 GlassNavBarItem(2, "Couple", Icons.Rounded.FavoriteBorder, Icons.Rounded.Favorite),
                                 GlassNavBarItem(3, "Coffre", Icons.Rounded.Lock, Icons.Rounded.LockOpen),
-                                GlassNavBarItem(4, "Réglages", Icons.Rounded.Tune, Icons.Rounded.Settings)
+                                GlassNavBarItem(4, "Paramètres", Icons.Rounded.Settings, Icons.Rounded.Settings)
                             ),
                             selectedIndex = selectedTab,
                             onItemSelected = {
                                 selectedTab = it
                                 if (it != 0) showNavBarInChat = false
-                            },
-                            modifier = Modifier.navigationBarsPadding()
+                            }
                         )
                     }
                 }
@@ -474,11 +498,13 @@ fun MainDashboardScreen(
                     when (tab) {
                         0 -> ChatScreen(
                             repository = repository,
-                            onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) }
+                            onStartCall = { isVideo -> startOutgoingCall(isVideo) },
+                            searchMode = chatSearchMode,
+                            onCloseSearch = { chatSearchMode = null }
                         )
                         1 -> CallsScreen(
                             repository = repository,
-                            onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) }
+                            onStartCall = { isVideo -> startOutgoingCall(isVideo) }
                         )
                         2 -> CoupleSpaceScreen(repository = repository)
                         3 -> VaultScreen(repository = repository)
@@ -551,7 +577,7 @@ fun MainDashboardScreen(
                     // List of 5 Main Navigation Spaces
                     val navTabs = listOf(
                         Triple(0, "💬 Chat Confidentiel", "Messagerie privée & vocaux"),
-                        Triple(1, "📞 Appels P2P Directs", "Appels vidéo & audio chiffrés"),
+                        Triple(1, "📞 Appels", "Appels audio et vidéo, historique"),
                         Triple(2, "💖 Espace de Couple", "Love Time, 8 Jeux & Calendrier"),
                         Triple(3, "🔐 Coffre-Fort Secret", "Photos & souvenirs protégés"),
                         Triple(4, "⚙️ Paramètres & Code PIN", "Thèmes & Sécurité")
@@ -642,19 +668,24 @@ fun MainDashboardScreen(
             com.example.mikayala.ui.components.PartnerProfileBottomSheet(
                 repository = repository,
                 onDismiss = { showPartnerProfileSheet = false },
-                onStartCall = { isVideo -> activeCallState = Pair(true, isVideo) },
-                onOpenSearch = { selectedTab = 0 }
+                onStartCall = { isVideo -> startOutgoingCall(isVideo) },
+                onOpenSearch = { selectedTab = 0; chatSearchMode = "search" }
             )
         }
 
         // Active Call Overlay if active
         activeCallState?.let { (_, isVideo) ->
             ActiveCallOverlay(
-                partnerName = "Mikayala",
+                partnerName = userSettings.partnerNickname.ifBlank { "Mon partenaire" },
                 isVideo = isVideo,
+                isIncoming = callIsIncoming,
                 onEndCall = { duration ->
-                    repository.addCallLog(isVideo = isVideo, durationSeconds = duration)
+                    // Appel sortant déjà inscrit à l'historique au lancement : on n'ajoute que les appels reçus
+                    if (callIsIncoming) repository.addCallLog(isVideo = isVideo, durationSeconds = duration)
                     activeCallState = null
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        repository.endOutgoingCall(duration)
+                    }
                 }
             )
         }

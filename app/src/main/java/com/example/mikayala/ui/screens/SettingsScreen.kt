@@ -59,14 +59,7 @@ fun SettingsScreen(
 
     // Dialog & BottomSheet state toggles
     var showProfileModal by remember { mutableStateOf(false) }
-    var showWallpaperModal by remember { mutableStateOf(false) }
     var showAppIconModal by remember { mutableStateOf(false) }
-    var showFontModal by remember { mutableStateOf(false) }
-    var showBubbleStyleModal by remember { mutableStateOf(false) }
-    var showPrivacyModal by remember { mutableStateOf(false) }
-    var showChatPrefsModal by remember { mutableStateOf(false) }
-    var showNotificationsModal by remember { mutableStateOf(false) }
-    var showStorageModal by remember { mutableStateOf(false) }
     var showPinDialog by remember { mutableStateOf(false) }
     var showDecoyPinDialog by remember { mutableStateOf(false) }
     var showPairingDialog by remember { mutableStateOf(false) }
@@ -99,19 +92,22 @@ fun SettingsScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let {
-            repository.updateWallpaper("custom_image", it.toString())
-            Toast.makeText(context, "Fond d'écran personnalisé appliqué ! 🖼️", Toast.LENGTH_SHORT).show()
+            // Copie dans l'application : l'autorisation de lecture de la galerie est temporaire,
+            // la photo resterait sinon illisible après un redémarrage.
+            val saved = try {
+                val dest = java.io.File(context.filesDir, "chat_wallpaper.jpg")
+                context.contentResolver.openInputStream(it)?.use { input -> dest.outputStream().use { out -> input.copyTo(out) } }
+                android.net.Uri.fromFile(dest).toString() + "?v=" + System.currentTimeMillis()
+            } catch (e: Exception) { null }
+            if (saved != null) {
+                repository.updateWallpaper("custom_image", saved)
+                Toast.makeText(context, "Fond de conversation appliqué", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Impossible de lire cette photo", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
-    val iconPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        uri?.let {
-            repository.updateAppIcon("custom_image", it.toString())
-            Toast.makeText(context, "Nouvelle icône personnalisée importée ! ✨", Toast.LENGTH_SHORT).show()
-        }
-    }
 
     val scope = rememberCoroutineScope()
 
@@ -122,7 +118,7 @@ fun SettingsScreen(
             scope.launch {
                 val success = repository.uploadProfileAvatar(it)
                 if (success) {
-                    Toast.makeText(context, "Photo de profil mise à jour avec Supabase ! 📸", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Photo de profil mise à jour", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(context, "Erreur lors de l'upload sur Supabase Storage.", Toast.LENGTH_SHORT).show()
                 }
@@ -135,7 +131,7 @@ fun SettingsScreen(
     ) { uri: Uri? ->
         uri?.let {
             repository.updatePartnerProfile(settings.partnerNickname, settings.partnerStatus, it.toString())
-            Toast.makeText(context, "Photo du partenaire mise à jour ! 💖", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Photo du partenaire mise à jour", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -166,7 +162,7 @@ fun SettingsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Profils & Surnoms du Couple 💑",
+                        text = "Profils et surnoms",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -178,7 +174,7 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0x22141C2B))
+                            .background(com.example.mikayala.theme.MikayalaColors.surfaceSunken)
                             .padding(4.dp)
                     ) {
                         Surface(
@@ -244,7 +240,7 @@ fun SettingsScreen(
                                     }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(13.dp))
                                 }
                             }
                         }
@@ -301,7 +297,17 @@ fun SettingsScreen(
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = "👸", fontSize = 32.sp)
+                                // Vraie photo du partenaire si elle existe, sinon icône neutre (plus d'emoji imposé)
+                                if (settings.partnerAvatarUrl.isNotBlank()) {
+                                    coil.compose.AsyncImage(
+                                        model = settings.partnerAvatarUrl,
+                                        contentDescription = "Photo de votre partenaire",
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(Icons.Rounded.Person, contentDescription = "Photo de votre partenaire", tint = AccentRose, modifier = Modifier.size(36.dp))
+                                }
                             }
                             Surface(
                                 shape = CircleShape,
@@ -315,7 +321,7 @@ fun SettingsScreen(
                                     }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                    Icon(Icons.Rounded.CameraAlt, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(13.dp))
                                 }
                             }
                         }
@@ -350,7 +356,7 @@ fun SettingsScreen(
                                 Toast.makeText(context, "Mon profil a été mis à jour !", Toast.LENGTH_SHORT).show()
                             } else {
                                 repository.updatePartnerProfile(partnerNick, partnerStat, settings.partnerAvatarUrl)
-                                Toast.makeText(context, "Surnom du partenaire enregistré ! 💖", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Surnom enregistré", Toast.LENGTH_SHORT).show()
                             }
                             showProfileModal = false
                         },
@@ -366,194 +372,73 @@ fun SettingsScreen(
     }
 
     // 2. Wallpaper Picker Modal
-    if (showWallpaperModal) {
-        val wallpapers = listOf(
-            Triple("twilight", "Nébuleuse Nuit Étoilée 🌌", listOf(Color(0xFF0F172A), Color(0xFF1E1B4B))),
-            Triple("sunset", "Crépuscule Romantique 🌅", listOf(Color(0xFF4A154B), Color(0xFF831843))),
-            Triple("rose_gold", "Rose Gold & Aurore ✨", listOf(Color(0xFF2E1065), Color(0xFF701A75))),
-            Triple("cyber_cyan", "Matrix Cyber Cyan 💠", listOf(Color(0xFF083344), Color(0xFF064E3B))),
-            Triple("matte_black", "Obsidienne Pure OLED 🖤", listOf(Color(0xFF05070B), Color(0xFF111827)))
-        )
 
-        var localOpacity by remember(settings.wallpaperOpacity) { mutableFloatStateOf(settings.wallpaperOpacity) }
-        var localBlur by remember(settings.wallpaperBlur) { mutableFloatStateOf(settings.wallpaperBlur) }
-
-        Dialog(onDismissRequest = { showWallpaperModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(text = "Fond d'Écran du Chat & App 🖼️", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Personnalisez l'ambiance visuelle de vos discussions.", fontSize = 12.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Opacity & Blur Sliders
-                    Text(text = "Opacité du Fond : ${(localOpacity * 100).toInt()}%", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                    Slider(
-                        value = localOpacity,
-                        onValueChange = {
-                            localOpacity = it
-                            repository.updateWallpaperControls(localOpacity, localBlur)
-                        },
-                        valueRange = 0f..1f,
-                        colors = SliderDefaults.colors(thumbColor = VibrantCyan, activeTrackColor = VibrantCyan)
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(text = "Flou artistique (Blur) : ${localBlur.toInt()} dp", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                    Slider(
-                        value = localBlur,
-                        onValueChange = {
-                            localBlur = it
-                            repository.updateWallpaperControls(localOpacity, localBlur)
-                        },
-                        valueRange = 0f..25f,
-                        colors = SliderDefaults.colors(thumbColor = AccentRose, activeTrackColor = AccentRose)
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Import Custom Gallery Wallpaper Button
-                    Button(
-                        onClick = {
-                            wallpaperPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CardDarkElevated),
-                        border = BorderStroke(1.dp, VibrantCyan.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, tint = VibrantCyan, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Importer une photo de la Galerie 📱", fontSize = 13.sp, color = VibrantCyan, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(text = "Ou choisissez un thème prédéfini :", fontSize = 11.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        wallpapers.forEach { (id, title, colors) ->
-                            val isSelected = settings.chatTheme == id
-                            Surface(
-                                onClick = {
-                                    repository.updateWallpaper(id, "")
-                                    showWallpaperModal = false
-                                    Toast.makeText(context, "Fond d'écran '$title' appliqué !", Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(14.dp),
-                                color = Color.Transparent,
-                                border = BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) VibrantCyan else BorderSubtleWhite),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .background(Brush.horizontalGradient(colors))
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                    if (isSelected) {
-                                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = VibrantCyan, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // 3. App Icon & Camouflage Modal
     if (showAppIconModal) {
-        val appIcons = listOf(
-            Triple("heart_luxury", "Cœur Luxueux Or & Rubis ❤️", "Icône officielle Mikayala"),
-            Triple("calculator", "Calculatrice Scientifique 🔢", "Camouflage discret parfait"),
-            Triple("notes", "Bloc-Notes & Mémos 📝", "Déguisement insoupçonnable"),
-            Triple("weather", "Météo Locale Pro ☀️", "Camouflage quotidien"),
-            Triple("cyber_cyan", "Nébuleuse Cyan Astrale 💠", "Design cyber moderne"),
-            Triple("cherry_blossom", "Fleur de Cerisier Zen 🌸", "Aura poétique et douce")
-        )
-
+        // Changement RÉEL de l'icône de l'écran d'accueil (alias Android, voir util/AppIconManager.kt)
+        var currentIcon by remember { mutableStateOf(com.example.mikayala.util.AppIconManager.current(context)) }
         Dialog(onDismissRequest = { showAppIconModal = false }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(text = "Changer l'Icône de l'Application 🎭", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Camouflez l'application sur votre écran d'accueil ou appliquez une image personnalisée.", fontSize = 12.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Import Custom Icon from Gallery
-                    Button(
-                        onClick = {
-                            iconPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CardDarkElevated),
-                        border = BorderStroke(1.dp, AccentGold.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.FileUpload, contentDescription = null, tint = AccentGold, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Importer une icône depuis la Galerie 🖼️", fontSize = 13.sp, color = AccentGold, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(text = "Icônes de Camouflage et de Style :", fontSize = 11.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        appIcons.forEach { (id, title, desc) ->
-                            val isSelected = settings.customAppIcon == id
-                            Surface(
-                                onClick = {
-                                    repository.updateAppIcon(id, "")
-                                    showAppIconModal = false
-                                    Toast.makeText(context, "Icône '$title' sélectionnée !", Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (isSelected) CardDarkElevated else Color(0x22141C2B),
-                                border = BorderStroke(if (isSelected) 1.5.dp else 1.dp, if (isSelected) AccentGold else BorderSubtleWhite),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+                    Text(text = "Icône de l'application", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "L'icône change sur l'écran d'accueil. Le téléphone peut mettre quelques secondes à l'afficher, et certains lanceurs retirent le raccourci : l'application reste alors dans la liste des applications.",
+                        fontSize = 12.sp, color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    com.example.mikayala.util.AppIconManager.ICONS.chunked(3).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            row.forEach { icon ->
+                                val selected = currentIcon == icon.id
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .width(84.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            if (icon.id != currentIcon) {
+                                                if (com.example.mikayala.util.AppIconManager.apply(context, icon.id)) {
+                                                    currentIcon = icon.id
+                                                    Toast.makeText(context, "Icône « ${icon.label} » appliquée", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "Le téléphone a refusé le changement d'icône.", Toast.LENGTH_LONG).show()
+                                                }
+                                            }
+                                        }
+                                        .padding(6.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                        Text(text = desc, fontSize = 11.sp, color = TextSecondary)
-                                    }
-                                    if (isSelected) {
-                                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = AccentGold, modifier = Modifier.size(20.dp))
-                                    }
+                                    androidx.compose.foundation.Image(
+                                        painter = androidx.compose.ui.res.painterResource(id = icon.preview),
+                                        contentDescription = icon.label,
+                                        modifier = Modifier
+                                            .size(60.dp)
+                                            .clip(CircleShape)
+                                            .border(if (selected) 3.dp else 0.dp, if (selected) AccentRose else Color.Transparent, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = icon.label,
+                                        fontSize = 10.sp,
+                                        color = if (selected) TextPrimary else TextSecondary,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2
+                                    )
                                 }
                             }
                         }
+                    }
+                    TextButton(onClick = { showAppIconModal = false }, modifier = Modifier.align(Alignment.End)) {
+                        Text("Fermer", color = AccentRose)
                     }
                 }
             }
@@ -561,714 +446,19 @@ fun SettingsScreen(
     }
 
     // 4. Font & Typography Modal
-    if (showFontModal) {
-        val fonts = listOf(
-            Pair("default", "Moderne Sans-Serif (Standard)"),
-            Pair("serif", "Serif Romantique Élégante (Playfair)"),
-            Pair("handwritten", "Manuscrite Douce Intime"),
-            Pair("monospace", "Cyber Minimaliste (Code & Tech)"),
-            Pair("cursive", "Cursive Passionnée")
-        )
-        val sizes = listOf(
-            Pair("small", "Compacte (13sp)"),
-            Pair("medium", "Standard (15sp)"),
-            Pair("large", "Confortable (17sp)"),
-            Pair("xlarge", "Grande (19sp)")
-        )
 
-        Dialog(onDismissRequest = { showFontModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(text = "Police d'Écriture & Typographie ✍️", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Ajustez la typographie de tous les textes de l'application.", fontSize = 12.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Live Preview Box
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0x33141C2B),
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(text = "Aperçu en direct :", fontSize = 10.sp, color = AccentViolet, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "« Chaque seconde avec toi est une preuve d'amour éternel. » ❤️",
-                                fontSize = when (settings.fontSizeScale) {
-                                    "small" -> 13.sp
-                                    "large" -> 17.sp
-                                    "xlarge" -> 19.sp
-                                    else -> 15.sp
-                                },
-                                fontFamily = when (settings.fontFamilyPreference) {
-                                    "serif" -> FontFamily.Serif
-                                    "monospace" -> FontFamily.Monospace
-                                    "cursive" -> FontFamily.Cursive
-                                    else -> FontFamily.Default
-                                },
-                                color = TextPrimary
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(text = "Style de Police :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    fonts.forEach { (id, name) ->
-                        val isSelected = settings.fontFamilyPreference == id
-                        Surface(
-                            onClick = { repository.updateFontFamily(id) },
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) CardDarkElevated else Color.Transparent,
-                            border = BorderStroke(1.dp, if (isSelected) AccentViolet else BorderSubtleWhite),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(text = name, fontSize = 13.sp, color = if (isSelected) Color.White else TextSecondary)
-                                if (isSelected) {
-                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = AccentViolet, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(text = "Taille du Texte :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        sizes.forEach { (id, label) ->
-                            val isSelected = settings.fontSizeScale == id
-                            Surface(
-                                onClick = { repository.updateFontSize(id) },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) AccentViolet else Color(0x22141C2B),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = id.replaceFirstChar { it.uppercase() },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) Color.White else TextSecondary,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 8.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { showFontModal = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentViolet),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Terminé", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-    }
 
     // 5. Bubble Style Modal
-    if (showBubbleStyleModal) {
-        val bubbleStyles = listOf(
-            Triple("gradient_pink", "Rose Rubis & Magenta Passion 💕", listOf(Color(0xFFE91E63), Color(0xFFAD1457))),
-            Triple("neon_cyan", "Cyan Néon & Bleu Nuit 💠", listOf(Color(0xFF00B4D8), Color(0xFF0077B6))),
-            Triple("dark_gold", "Or Impérial & Ambre 👑", listOf(Color(0xFFFFB703), Color(0xFFFB8500))),
-            Triple("emerald_luxury", "Émeraude Velours 🌿", listOf(Color(0xFF2EC4B6), Color(0xFF0E7490))),
-            Triple("frosted_glass", "Verre Dépoli Givré ❄️", listOf(Color(0x66FFFFFF), Color(0x33FFFFFF)))
-        )
 
-        Dialog(onDismissRequest = { showBubbleStyleModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(text = "Style des Bulles de Message 💬", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Sélectionnez l'effet visuel des bulles dans vos conversations.", fontSize = 12.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        bubbleStyles.forEach { (id, title, colors) ->
-                            val isSelected = settings.bubbleStyle == id
-                            Surface(
-                                onClick = {
-                                    repository.updateBubbleStyle(id)
-                                    showBubbleStyleModal = false
-                                    Toast.makeText(context, "Style de bulle '$title' activé !", Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (isSelected) CardDarkElevated else Color(0x22141C2B),
-                                border = BorderStroke(if (isSelected) 1.5.dp else 1.dp, if (isSelected) AccentRose else BorderSubtleWhite),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(Brush.linearGradient(colors))
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                                    }
-                                    if (isSelected) {
-                                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = AccentRose, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // 6. WhatsApp-Style Privacy & Security Modal
-    if (showPrivacyModal) {
-        var bioEnabled by remember { mutableStateOf(settings.biometricEnabled) }
-        var antiScreen by remember { mutableStateOf(settings.antiScreenshotEnabled) }
-        var blurSwitch by remember { mutableStateOf(settings.screenBlurOnSwitch) }
-        var readReceipts by remember { mutableStateOf(settings.readReceiptsEnabled) }
-        var lastSeen by remember { mutableStateOf(settings.lastSeenPrivacy) }
-        var disappearingDays by remember { mutableIntStateOf(settings.disappearingMessagesDays) }
 
-        Dialog(onDismissRequest = { showPrivacyModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item {
-                        Text(text = "Confidentialité & Sécurité (Style WhatsApp) 🔒", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = "Contrôlez vos données, présence et chiffrement.", fontSize = 12.sp, color = TextSecondary)
-                    }
-
-                    item {
-                        // Biometric Auth (Empreinte digitale & Reconnaissance faciale)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Biométrie (Empreinte & Reconnaissance Faciale) 👆👤", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Déverrouillez rapidement l'application via votre capteur", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = bioEnabled,
-                                onCheckedChange = { bioEnabled = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Read Receipts
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Confirmations de lecture (Coches bleues)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Afficher les doubles coches bleues lors de la lecture", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = readReceipts,
-                                onCheckedChange = { readReceipts = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = VibrantCyan)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Anti-Screenshot
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Protection Anti-Capture d'Écran 🛡️", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Bloque les screenshots et masque les aperçus récents", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = antiScreen,
-                                onCheckedChange = { antiScreen = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Blur On Switch
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Flou automatique en arrière-plan", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Masque l'écran lors du changement d'application", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = blurSwitch,
-                                onCheckedChange = { blurSwitch = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentViolet)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Last Seen
-                        Text(text = "Présence en ligne & Dernière connexion :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(
-                                Pair("couple_only", "Mon Couple"),
-                                Pair("everyone", "Tout le monde"),
-                                Pair("nobody", "Personne")
-                            ).forEach { (id, label) ->
-                                val isSelected = lastSeen == id
-                                Surface(
-                                    onClick = { lastSeen = id },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = if (isSelected) AccentRose else Color(0x22141C2B),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) Color.White else TextSecondary,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(vertical = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-                        // Disappearing Messages
-                        Text(text = "Messages Éphémères Automatiques :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(
-                                Pair(0, "Désactivé"),
-                                Pair(1, "24h"),
-                                Pair(7, "7 jours"),
-                                Pair(90, "90 jours")
-                            ).forEach { (days, label) ->
-                                val isSelected = disappearingDays == days
-                                Surface(
-                                    onClick = { disappearingDays = days },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = if (isSelected) VibrantCyan else Color(0x22141C2B),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) Color.White else TextSecondary,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(vertical = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-                        Button(
-                            onClick = {
-                                repository.updatePrivacySettings(
-                                    biometricEnabled = bioEnabled,
-                                    antiScreenshotEnabled = antiScreen,
-                                    screenBlurOnSwitch = blurSwitch,
-                                    lastSeenPrivacy = lastSeen,
-                                    readReceiptsEnabled = readReceipts,
-                                    disappearingDays = disappearingDays
-                                )
-                                showPrivacyModal = false
-                                Toast.makeText(context, "Paramètres de confidentialité mis à jour !", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Enregistrer", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // 7. WhatsApp-Style Chats & Media Modal
-    if (showChatPrefsModal) {
-        var enterSend by remember { mutableStateOf(settings.enterIsSend) }
-        var galleryVis by remember { mutableStateOf(settings.mediaVisibilityInGallery) }
-        var autoDownload by remember { mutableStateOf(settings.autoDownloadMedia) }
-        var uploadQuality by remember { mutableStateOf(settings.photoUploadQuality) }
 
-        Dialog(onDismissRequest = { showChatPrefsModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Text(text = "Préférences de Discussions & Médias 💬", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-
-                    // Enter is send
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Touche Entrée pour envoyer", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                            Text(text = "La touche Entrée envoie immédiatement le message", fontSize = 11.sp, color = TextSecondary)
-                        }
-                        Switch(
-                            checked = enterSend,
-                            onCheckedChange = { enterSend = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = VibrantCyan)
-                        )
-                    }
-
-                    // Gallery visibility
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Visibilité dans la Galerie 📷", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                            Text(text = "Afficher les médias reçus dans la galerie du téléphone", fontSize = 11.sp, color = TextSecondary)
-                        }
-                        Switch(
-                            checked = galleryVis,
-                            onCheckedChange = { galleryVis = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                        )
-                    }
-
-                    // Upload quality
-                    Text(text = "Qualité d'Envoi des Photos & Vidéos :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            Pair("hd", "Qualité HD Originale ✨"),
-                            Pair("standard", "Standard Économique")
-                        ).forEach { (id, label) ->
-                            val isSelected = uploadQuality == id
-                            Surface(
-                                onClick = { uploadQuality = id },
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) VibrantCyan else Color(0x22141C2B),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) Color.White else TextSecondary,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 8.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // Backup & Export
-                    Button(
-                        onClick = {
-                            Toast.makeText(context, "Sauvegarde chiffrée créée avec succès ! 💾", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CardDarkElevated),
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.CloudUpload, contentDescription = null, tint = VibrantCyan, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sauvegarder les discussions maintenant 💾", fontSize = 12.sp, color = Color.White)
-                    }
-
-                    // Clear chat
-                    Button(
-                        onClick = {
-                            repository.clearAllMessages()
-                            Toast.makeText(context, "Toutes les discussions ont été effacées !", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x33FF5252)),
-                        border = BorderStroke(1.dp, Color(0xFFFF5252)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Effacer toutes les discussions 🧹", fontSize = 12.sp, color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = {
-                            repository.updateChatPreferences(enterSend, galleryVis, autoDownload, uploadQuality)
-                            showChatPrefsModal = false
-                            Toast.makeText(context, "Préférences de discussion enregistrées !", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Enregistrer", fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                }
-            }
-        }
-    }
-
-    // 8. Notifications Modal (Camouflage & Sounds)
-    if (showNotificationsModal) {
-        var notifMode by remember { mutableStateOf(settings.notificationPrivacyMode) }
-        var sound by remember { mutableStateOf(settings.notificationSound) }
-        var heartHaptic by remember { mutableStateOf(settings.heartHapticEnabled) }
-        var cycleAlerts by remember { mutableStateOf(settings.cyclePartnerAlertsEnabled) }
-        var loveWidget by remember { mutableStateOf(settings.loveWidgetEnabled) }
-
-        Dialog(onDismissRequest = { showNotificationsModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item {
-                        Text(text = "Notifications & Sons Romantiques 🔔", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = "Ajustez le camouflage et les alertes d'amour.", fontSize = 12.sp, color = TextSecondary)
-                    }
-
-                    item {
-                        Text(text = "Mode de Notification (Camouflage) :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        listOf(
-                            Triple("discreet", "Discret Neutre 🔒", "Affiche 'Nouveau message chiffré'"),
-                            Triple("weather_camouflage", "Camouflage Météo ☀️", "Affiche 'Météo : Ciel dégagé 21°C'"),
-                            Triple("system_camouflage", "Camouflage Système ⚙️", "Affiche 'Mise à jour système prête'"),
-                            Triple("romantic", "Romantique Complet ❤️", "Affiche le prénom et les petits cœurs")
-                        ).forEach { (id, title, desc) ->
-                            val isSelected = notifMode == id
-                            Surface(
-                                onClick = { notifMode = id },
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) CardDarkElevated else Color(0x22141C2B),
-                                border = BorderStroke(1.dp, if (isSelected) AccentGold else BorderSubtleWhite),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(text = title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                        Text(text = desc, fontSize = 10.sp, color = TextSecondary)
-                                    }
-                                    if (isSelected) {
-                                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = AccentGold, modifier = Modifier.size(18.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-                        // Heartbeat Haptic Switch
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Vibreur Haptique Cardiaque 💓", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Double pulsation rythmée comme un battement de cœur", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = heartHaptic,
-                                onCheckedChange = { heartHaptic = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
-                        }
-                    }
-
-                    item {
-                        // Cycle Partner Alerts
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Alertes & Conseils de Cycle 🌸", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text(text = "Rappels bienveillants pour prendre soin d'elle", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = cycleAlerts,
-                                onCheckedChange = { cycleAlerts = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentViolet)
-                            )
-                        }
-                    }
-
-                    item {
-                        Button(
-                            onClick = {
-                                repository.updateNotificationSettings(notifMode, sound, heartHaptic, cycleAlerts, loveWidget)
-                                showNotificationsModal = false
-                                Toast.makeText(context, "Paramètres de notification mis à jour !", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentGold),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Enregistrer", fontWeight = FontWeight.Bold, color = Color.Black)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // 9. Storage Manager Modal
-    if (showStorageModal) {
-        val totalMsgs = messages.size
-        val totalVault = vaultItems.size
 
-        Dialog(onDismissRequest = { showStorageModal = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Text(text = "Gestionnaire de Stockage & Cache 📦", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text(text = "Visualisez et optimisez l'espace utilisé par l'application.", fontSize = 12.sp, color = TextSecondary)
-
-                    // Storage breakdown card
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = CardDarkElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Discussions & Textes", fontSize = 12.sp, color = TextSecondary)
-                                Text("$totalMsgs messages (1.2 Mo)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = VibrantCyan)
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Coffre Secret & Photos HD", fontSize = 12.sp, color = TextSecondary)
-                                Text("$totalVault éléments (14.8 Mo)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRose)
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Cache Médias Temporaires", fontSize = 12.sp, color = TextSecondary)
-                                Text("4.6 Mo", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentGold)
-                            }
-                        }
-                    }
-
-                    // Clean Cache Button
-                    Button(
-                        onClick = {
-                            Toast.makeText(context, "4.6 Mo de cache temporaire nettoyés ! 🧹", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Vider le Cache des Médias (4.6 Mo)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-
-                    // Clear Chat Button
-                    OutlinedButton(
-                        onClick = {
-                            showStorageModal = false
-                            showClearChatDialog = true
-                        },
-                        border = BorderStroke(1.dp, Color(0xFFFF5252)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Effacer tout l'historique des messages 🗑️", color = Color(0xFFFF5252), fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-    }
 
     // 10. Anniversary & Couple Date Modal
     if (showAnniversaryDialog) {
@@ -1286,7 +476,7 @@ fun SettingsScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "Date d'Anniversaire & Amour 📅❤️", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Date de rencontre", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = loveQuoteInput,
@@ -1306,7 +496,7 @@ fun SettingsScreen(
                                 loveQuote = loveQuoteInput
                             )
                             showAnniversaryDialog = false
-                            Toast.makeText(context, "Devise d'amour enregistrée ! 💖", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Enregistré", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
                         shape = RoundedCornerShape(12.dp),
@@ -1335,7 +525,7 @@ fun SettingsScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "Changer le Code PIN Réel 🔒", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Code PIN", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = newPin,
@@ -1381,7 +571,7 @@ fun SettingsScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "Code PIN Leurre (Camouflage Calculatrice) 🎭", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Code leurre (calculatrice)", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(text = "Ce code secret ouvre une fausse calculatrice pour protéger votre intimité.", fontSize = 12.sp, color = TextSecondary)
                     Spacer(modifier = Modifier.height(12.dp))
@@ -1424,9 +614,9 @@ fun SettingsScreen(
                     onClick = {
                         repository.clearChatHistory()
                         showClearChatDialog = false
-                        Toast.makeText(context, "Historique de discussion effacé 🧹", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Historique effacé", Toast.LENGTH_SHORT).show()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC4605C))
                 ) {
                     Text("Effacer", fontWeight = FontWeight.Bold)
                 }
@@ -1454,7 +644,7 @@ fun SettingsScreen(
                         repository.clearSession()
                         Toast.makeText(context, "Espace couple réinitialisé & Déconnexion.", Toast.LENGTH_SHORT).show()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC4605C))
                 ) {
                     Text("Dissocier", fontWeight = FontWeight.Bold)
                 }
@@ -1481,373 +671,547 @@ fun SettingsScreen(
         )
     }
 
+    var section by remember { mutableStateOf<String?>(null) }
+    var showSignOutDialog by remember { mutableStateOf(false) }
+    // Préférences de notification : source de vérité = NotificationPrefs (persistant, local à l'appareil)
+    var notifMode by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.privacyMode(context)) }
+    var notifSound by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.sound(context)) }
+    var notifVibration by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.vibration(context)) }
+    var notifCycle by remember { mutableStateOf(com.example.mikayala.util.NotificationPrefs.isEnabled(context, com.example.mikayala.util.NotificationPrefs.Category.CYCLE)) }
+    androidx.activity.compose.BackHandler(enabled = section != null) { section = null }
+
     // --- MAIN SETTINGS SCREEN LAYOUT ---
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(DeepNight)
+            // Tablette : colonne centrée de 640 dp maximum, plus lisible qu'une liste étirée
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(top = 10.dp, bottom = 32.dp)
     ) {
-        // --- 1. HERO COUPLE PROFILES & STATUS HEADER ---
-        item {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = CardDark,
-                border = BorderStroke(1.dp, BorderHighlight),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showProfileModal = true }
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+        if (section != null) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { section = null }) {
+                        Icon(Icons.Rounded.ArrowBack, contentDescription = "Retour", tint = TextPrimary)
+                    }
+                    Text(
+                        text = when (section) {
+                            "couple" -> "Mon compte"
+                            "privacy" -> "Confidentialité et sécurité"
+                            "notifications" -> "Notifications"
+                            "conversations" -> "Conversations"
+                            "calls" -> "Appels"
+                            "appearance" -> "Apparence"
+                            "calendar_cycle" -> "Calendrier et cycle"
+                            "games" -> "Jeux"
+                            "storage" -> "Stockage et données"
+                            else -> "P2P et connexion locale"
+                        },
+                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary
+                    )
+                }
+            }
+        }
+        // --- Pages dédiées : Notifications, Appels, Jeux, Calendrier & cycle (réglages appliqués immédiatement) ---
+        if (section == "notifications") {
+            item {
+                // Permission refusée (Android 13+) ou notifications coupées dans les réglages système
+                val systemEnabled = remember(section) {
+                    androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+                }
+                if (!systemEnabled) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0x33C4605C),
+                        modifier = Modifier.fillMaxWidth().clickable { openAppNotificationSettings(context) }
                     ) {
-                        // My Profile
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(AccentRose.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(text = settings.moodEmoji, fontSize = 26.sp)
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(text = settings.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = settings.customStatus, fontSize = 11.sp, color = AccentRose, maxLines = 1)
-                            }
-                        }
-
-                        // Center Love Link Badge
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(Brush.radialGradient(listOf(AccentRose.copy(alpha = 0.3f), Color.Transparent))),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = "❤️", fontSize = 18.sp)
-                        }
-
-                        // Partner Profile & Nickname
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(text = settings.partnerNickname, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = VibrantCyan)
-                                Text(text = settings.partnerStatus, fontSize = 11.sp, color = AccentViolet, maxLines = 1)
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(VibrantCyan.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(text = "👸", fontSize = 26.sp)
-                            }
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text("Notifications bloquées par Android", fontWeight = FontWeight.Bold, color = Color(0xFFD98C97), fontSize = 15.sp)
+                            Text("Aucune notification ne peut s'afficher. Touchez ici pour les autoriser dans les réglages du téléphone.", color = TextSecondary, fontSize = 12.sp)
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = BorderSubtleWhite)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Favorite, contentDescription = null, tint = AccentRose, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "842 jours d'amour partagés", fontSize = 12.sp, color = TextSecondary)
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = AccentRose.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.4f)),
-                            modifier = Modifier.clickable { showProfileModal = true }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Rounded.Edit, contentDescription = null, tint = AccentRose, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(text = "Modifier Profils & Surnoms", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentRose)
+                }
+            }
+            item { SettingsGroupTitle("Affichage") }
+            item {
+                Column {
+                    listOf(
+                        Triple("romantic", "Nom et aperçu", "Affiche le prénom de l'expéditeur et le début du message"),
+                        Triple("discreet", "Discret", "Affiche « Mikayala » et « Nouveau message »"),
+                        Triple("weather_camouflage", "Camouflage météo", "Affiche une fausse notification météo"),
+                        Triple("system_camouflage", "Camouflage système", "Affiche « Mise à jour système prête »")
+                    ).forEach { (id, title, desc) ->
+                        SettingsRadioRow(
+                            selected = notifMode == id,
+                            title = title,
+                            subtitle = desc,
+                            onClick = {
+                                notifMode = id
+                                repository.updateNotificationSettings(id, notifSound, notifVibration, notifCycle, settings.loveWidgetEnabled)
                             }
+                        )
+                    }
+                }
+            }
+            item { SettingsGroupTitle("Son et vibration") }
+            item {
+                Column {
+                    com.example.mikayala.util.NotificationPrefs.AVAILABLE_SOUNDS.forEach { (id, label) ->
+                        SettingsRadioRow(
+                            selected = notifSound == id,
+                            title = label,
+                            subtitle = if (id == com.example.mikayala.util.NotificationPrefs.SOUND_SILENT) "Coupe aussi la vibration" else "Sonnerie choisie dans les réglages du téléphone",
+                            onClick = {
+                                notifSound = id
+                                repository.updateNotificationSettings(notifMode, id, notifVibration, notifCycle, settings.loveWidgetEnabled)
+                            }
+                        )
+                    }
+                    SettingsSwitchRow(
+                        title = "Vibration",
+                        subtitle = if (notifSound == com.example.mikayala.util.NotificationPrefs.SOUND_SILENT) "Indisponible en mode silencieux" else "Double pulsation façon battement de cœur",
+                        checked = notifVibration && notifSound != com.example.mikayala.util.NotificationPrefs.SOUND_SILENT,
+                        enabled = notifSound != com.example.mikayala.util.NotificationPrefs.SOUND_SILENT,
+                        onCheckedChange = {
+                            notifVibration = it
+                            repository.updateNotificationSettings(notifMode, notifSound, it, notifCycle, settings.loveWidgetEnabled)
+                        }
+                    )
+                    Text(
+                        text = "Android 8+ : si vous modifiez une catégorie dans les réglages du téléphone, ce choix système reste prioritaire.",
+                        fontSize = 11.sp, color = TextSecondary, modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                }
+            }
+            item { SettingsGroupTitle("Catégories") }
+            item {
+                Column {
+                    com.example.mikayala.util.NotificationPrefs.Category.values().forEach { category ->
+                        NotificationCategorySwitch(category, onChanged = { cat, on ->
+                            if (cat == com.example.mikayala.util.NotificationPrefs.Category.CYCLE) notifCycle = on
+                        })
+                    }
+                }
+            }
+            item {
+                SettingsCategoryRow(Icons.Rounded.Settings, TextSecondary, "Réglages système des notifications", "Autorisation, écran verrouillé, sons par catégorie") {
+                    openAppNotificationSettings(context)
+                }
+            }
+        }
+
+        if (section == "storage") {
+            item {
+                var usage by remember { mutableStateOf<com.example.mikayala.util.StorageStats.Usage?>(null) }
+                var refresh by remember { mutableIntStateOf(0) }
+                LaunchedEffect(refresh) {
+                    usage = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.mikayala.util.StorageStats.measure(context) }
+                }
+                val fmt = com.example.mikayala.util.StorageStats::format
+                Column {
+                    SettingsGroupTitle("Sur cet appareil")
+                    val u = usage
+                    if (u == null) {
+                        com.example.mikayala.ui.components.SoftLoading("Calcul de l'espace utilisé…")
+                    } else {
+                        SettingsInfoRow("Total utilisé", fmt(u.totalBytes))
+                        SettingsInfoRow("Cache (images, fichiers temporaires)", fmt(u.cacheBytes))
+                        SettingsInfoRow("Fichiers de l'application", fmt(u.filesBytes))
+                        SettingsInfoRow("Données locales", fmt(u.databasesBytes))
+                    }
+                    SettingsInfoRow("Messages chargés", "${messages.size}")
+                    SettingsInfoRow("Éléments du coffre", "${vaultItems.size}")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SettingsCategoryRow(Icons.Rounded.CleaningServices, AccentGold, "Vider le cache", "Libère de la place. Les messages, le coffre et vos réglages ne sont pas touchés.") {
+                        scope.launch {
+                            val freed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.example.mikayala.util.StorageStats.clearCache(context) }
+                            Toast.makeText(context, "${fmt(freed)} libérés", Toast.LENGTH_SHORT).show()
+                            refresh++
                         }
                     }
+                    SettingsCategoryRow(Icons.Rounded.DeleteSweep, Color(0xFFC4605C), "Effacer toutes les discussions", "Une confirmation sera demandée") { showClearChatDialog = true }
+                    Text(
+                        "Les messages et le coffre sont sauvegardés sur le serveur du couple : ils reviennent après une réinstallation.",
+                        fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(4.dp)
+                    )
+                }
+            }
+        }
+
+        if (section == "calls") {
+            item {
+                Column {
+                    NotificationCategorySwitch(com.example.mikayala.util.NotificationPrefs.Category.CALLS)
+                    SettingsCategoryRow(Icons.Rounded.Mic, VibrantCyan, "Autorisations micro et caméra", "Ouvre les autorisations de Mikayala dans Android") {
+                        openAppDetailsSettings(context)
+                    }
+                }
+            }
+        }
+
+        if (section == "games") {
+            item {
+                Column {
+                    NotificationCategorySwitch(com.example.mikayala.util.NotificationPrefs.Category.GAMES)
+                }
+            }
+        }
+
+        if (section == "calendar_cycle") {
+            item {
+                Column {
+                    NotificationCategorySwitch(com.example.mikayala.util.NotificationPrefs.Category.CALENDAR)
+                    NotificationCategorySwitch(com.example.mikayala.util.NotificationPrefs.Category.CYCLE, onChanged = { _, on -> notifCycle = on })
+                    Text(
+                        text = "Les rappels du cycle affichent uniquement « Vous avez une nouvelle notification » : aucune donnée de santé n'apparaît sur l'écran verrouillé.",
+                        fontSize = 11.sp, color = TextSecondary, modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                }
+            }
+        }
+
+        if (section == null) {
+            item {
+                Text(text = "Paramètres", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+        if (section == null) {
+            item {
+                Column {
+                    SettingsCategoryRow(Icons.Rounded.Person, AccentRose, "Mon compte", "Profils, surnoms, jumelage, appareils, serveur") { section = "couple" }
+                    SettingsCategoryRow(Icons.Rounded.Lock, AccentViolet, "Confidentialité et sécurité", "Présence, accusés de lecture, codes PIN, verrouillage") { section = "privacy" }
+                    SettingsCategoryRow(Icons.Rounded.Notifications, AccentGold, "Notifications", "Aperçus, son, vibration, catégories") { section = "notifications" }
+                    SettingsCategoryRow(Icons.Rounded.Chat, VibrantCyan, "Conversations", "Fond d'écran, bulles, police, médias") { section = "conversations" }
+                    SettingsCategoryRow(Icons.Rounded.Call, VibrantCyan, "Appels", "Notifications d'appel, micro et caméra") { section = "calls" }
+                    SettingsCategoryRow(Icons.Rounded.Storage, TextSecondary, "Stockage et données", "Espace utilisé, cache, sauvegardes") { section = "storage" }
+                    SettingsCategoryRow(Icons.Rounded.Palette, AccentRose, "Apparence", "Thème clair, sombre ou automatique, icône") { section = "appearance" }
+                    SettingsCategoryRow(Icons.Rounded.CalendarMonth, AccentRose, "Calendrier et cycle", "Anniversaire, rappels, notifications du cycle") { section = "calendar_cycle" }
+                    SettingsCategoryRow(Icons.Rounded.SportsEsports, AccentGold, "Jeux", "Notifications d'invitation et de tour") { section = "games" }
+                    SettingsCategoryRow(Icons.Rounded.WifiTethering, AccentViolet, "P2P et connexion locale", "En ligne ou hors-ligne (liaison directe)") { section = "connection" }
+                }
+            }
+        }
+        // --- 1. PROFIL (ligne façon messagerie : avatar, nom, statut) ---
+        if (section == null) {
+            item {
+                val days = remember(coupleSpace.anniversaryDate) {
+                    java.util.concurrent.TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - coupleSpace.anniversaryDate).coerceAtLeast(0)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { showProfileModal = true }
+                        .padding(horizontal = 4.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(60.dp).clip(CircleShape).background(com.example.mikayala.theme.MikayalaColors.accentSoft),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (settings.avatarUrl.isNotBlank()) {
+                            coil.compose.AsyncImage(
+                                model = settings.avatarUrl,
+                                contentDescription = "Ma photo",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Text(text = settings.moodEmoji, fontSize = 28.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = settings.displayName.ifBlank { "Mon profil" }, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Text(text = settings.customStatus, fontSize = 13.sp, color = TextSecondary, maxLines = 1)
+                        if (coupleSpace.isPaired) {
+                            Text(
+                                text = "Avec ${settings.partnerNickname.ifBlank { "votre partenaire" }} · $days jour${if (days > 1) "s" else ""} ensemble",
+                                fontSize = 12.sp, color = AccentRose, maxLines = 1
+                            )
+                        }
+                    }
+                    Icon(Icons.Rounded.ChevronRight, contentDescription = "Modifier le profil", tint = TextMuted)
                 }
             }
         }
 
         // --- 2. SECTION: PERSONNALISATION VISUELLE & DESIGN ---
-        item {
-            Text(text = "PERSONNALISATION VISUELLE & DESIGN", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = VibrantCyan)
-        }
 
+        if (section == "appearance" || section == "conversations") {
         item {
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Transparent,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingRow(
-                        icon = Icons.Rounded.Wallpaper,
-                        iconTint = VibrantCyan,
-                        title = "Fond d'Écran du Chat & App",
-                        subtitle = "Galerie de thèmes ou importer une photo personnalisée",
-                        onClick = { showWallpaperModal = true }
-                    )
-
+                    if (section == "appearance") {
                     SettingRow(
                         icon = Icons.Rounded.AppShortcut,
                         iconTint = AccentGold,
-                        title = "Changer l'Icône de l'Application",
-                        subtitle = "Camouflage (Calculatrice, Notes) ou image importée",
+                        title = "Icône de l'application",
+                        subtitle = "10 icônes au choix pour l'écran d'accueil",
                         onClick = { showAppIconModal = true }
                     )
-
-                    SettingRow(
-                        icon = Icons.Rounded.TextFields,
-                        iconTint = AccentViolet,
-                        title = "Police d'Écriture & Typographie",
-                        subtitle = "Moderne, Serif romantique, Cursive et taille de texte",
-                        onClick = { showFontModal = true }
-                    )
-
-                    SettingRow(
-                        icon = Icons.Rounded.BubbleChart,
-                        iconTint = AccentRose,
-                        title = "Style des Bulles de Discussion",
-                        subtitle = "Rose Rubis, Cyan Néon, Or Impérial, Verre Dépoli",
-                        onClick = { showBubbleStyleModal = true }
-                    )
+                    }
 
                     // App theme mode switch (Mode Sombre / Clair)
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color.Transparent,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(AccentGold.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (settings.isDarkMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
-                                    contentDescription = null,
-                                    tint = AccentGold,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                    if (section == "appearance") {
+                        Text("Thème", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                        val themeChoice = when {
+                            settings.followSystemTheme -> "system"
+                            settings.isDarkMode -> "dark"
+                            else -> "light"
+                        }
+                        listOf(
+                            Triple("light", "Clair", "Fond crème, texte anthracite"),
+                            Triple("dark", "Sombre", "Fond anthracite, texte clair"),
+                            Triple("system", "Comme le téléphone", "Suit automatiquement le réglage d'Android")
+                        ).forEach { (id, label, desc) ->
+                            SettingsRadioRow(themeChoice == id, label, desc) {
+                                when (id) {
+                                    "system" -> repository.updateUiSettings { it.copy(followSystemTheme = true) }
+                                    "dark" -> repository.updateUiSettings { it.copy(followSystemTheme = false, isDarkMode = true) }
+                                    else -> repository.updateUiSettings { it.copy(followSystemTheme = false, isDarkMode = false) }
+                                }
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "Mode Sombre de l'Application", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                                Text(text = if (settings.isDarkMode) "Activé (Apparence sombre)" else "Désactivé (Apparence claire)", fontSize = 11.sp, color = TextSecondary)
-                            }
-                            Switch(
-                                checked = settings.isDarkMode,
-                                onCheckedChange = { repository.updateDarkMode(it) },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
-                            )
                         }
                     }
                 }
             }
         }
-
-        // --- 3. SECTION: ESPACE COUPLE & SURNOMS ---
-        item {
-            Text(text = "ESPACE COUPLE & COMPLICITÉ", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = AccentRose)
         }
 
+        // --- 3. SECTION: ESPACE COUPLE & SURNOMS ---
+
+        if (section == "couple" || section == "calendar_cycle") {
         item {
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Transparent,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.Loyalty,
                         iconTint = AccentRose,
-                        title = "Surnom du Partenaire & Profils",
-                        subtitle = "Personnaliser son surnom ('${settings.partnerNickname}') et avatar",
+                        title = "Profils et surnoms",
+                        subtitle = "Votre nom, photo et statut ; surnom de votre partenaire (${settings.partnerNickname})",
                         onClick = { showProfileModal = true }
                     )
+                    }
 
+                    if (section == "calendar_cycle") {
                     SettingRow(
                         icon = Icons.Rounded.FavoriteBorder,
                         iconTint = AccentRose,
-                        title = "Date d'Anniversaire & Citation",
-                        subtitle = "Compteur de relation et devise d'amour",
+                        title = "Date de rencontre et anniversaire",
+                        subtitle = "Compteur de jours ensemble et phrase du couple",
                         onClick = { showAnniversaryDialog = true }
                     )
+                    }
 
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.Vibration,
                         iconTint = VibrantCyan,
-                        title = "Vibration 'Pense à moi' (Love Pulse) 💓",
-                        subtitle = "Envoyer un battement de cœur tactile instantané",
+                        title = "Pense à moi",
+                        subtitle = "Envoie une notification « je pense à toi » à votre partenaire",
                         onClick = {
-                            Toast.makeText(context, "Pulsation d'amour envoyée à ${settings.partnerNickname} ! 💓✨", Toast.LENGTH_SHORT).show()
+                            scope.launch {
+                                val sent = repository.sendLovePulse()
+                                Toast.makeText(
+                                    context,
+                                    if (sent) "Envoyé à ${settings.partnerNickname}" else "Envoi impossible : vérifiez la connexion et le jumelage",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     )
+                    }
 
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.QrCode,
                         iconTint = AccentViolet,
-                        title = "Code de Jumelage Couple (${coupleSpace.pairingCode})",
-                        subtitle = "Gérer la liaison ou scanner le QR code",
+                        title = "Code du couple : ${coupleSpace.pairingCode}",
+                        subtitle = "Afficher ou scanner le code QR du couple",
                         onClick = { showPairingDialog = true }
                     )
+                    }
 
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.AutoAwesome,
                         iconTint = VibrantCyan,
-                        title = "Module d'Onboarding & Jumelage Multi-appareils",
-                        subtitle = "Créer, rejoindre, lier une tablette ou restaurer l'espace",
+                        title = "Autres appareils",
+                        subtitle = "Lier une tablette, rejoindre ou restaurer l'espace du couple",
                         onClick = { showOnboardingScreen = true }
                     )
+                    }
 
+                    if (section == "couple") {
                     SettingRow(
                         icon = Icons.Rounded.CloudSync,
                         iconTint = VibrantCyan,
-                        title = "Base de Données Supabase (Cloud & Realtime)",
-                        subtitle = "Configurer l'URL Supabase, la clé API & tester le serveur",
+                        title = "Serveur (avancé)",
+                        subtitle = "Adresse du serveur et test de connexion — à ne modifier que sur conseil",
                         onClick = { showSupabaseDialog = true }
                     )
+                    }
                 }
             }
+        }
         }
 
         // --- 4. SECTION: CONFIDENTIALITÉ & SÉCURITÉ (STYLE WHATSAPP) ---
-        item {
-            Text(text = "CONFIDENTIALITÉ & SÉCURITÉ (WHATSAPP)", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = AccentViolet)
-        }
 
-        item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingRow(
-                        icon = Icons.Rounded.Security,
-                        iconTint = VibrantCyan,
-                        title = "Confidentialité WhatsApp Complète",
-                        subtitle = "Présence, coches bleues, messages éphémères, anti-screenshot",
-                        onClick = { showPrivacyModal = true }
+        if (section == "privacy") {
+            item { SettingsGroupTitle("Visibilité") }
+            item {
+                Column {
+                    SettingsSwitchRow(
+                        title = "Accusés de lecture",
+                        subtitle = "Votre partenaire voit quand vous avez lu ses messages",
+                        checked = settings.readReceiptsEnabled,
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(readReceiptsEnabled = on) } }
                     )
-
-                    SettingRow(
-                        icon = Icons.Rounded.Password,
-                        iconTint = AccentRose,
-                        title = "Code PIN Réel Principal",
-                        subtitle = "Changer le code secret de déverrouillage",
-                        onClick = { showPinDialog = true }
+                    SettingsSwitchRow(
+                        title = "Dernière connexion",
+                        subtitle = if (settings.lastSeenPrivacy != "nobody") "Votre activité récente est partagée avec votre partenaire" else "Votre activité n'est plus publiée",
+                        checked = settings.lastSeenPrivacy != "nobody",
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(lastSeenPrivacy = if (on) "couple_only" else "nobody") } }
                     )
-
-                    SettingRow(
-                        icon = Icons.Rounded.Calculate,
-                        iconTint = AccentViolet,
-                        title = "Code PIN Leurre (Camouflage Calculatrice)",
-                        subtitle = "Ouvre une fausse calculatrice fonctionnelle",
-                        onClick = { showDecoyPinDialog = true }
+                }
+            }
+            item { SettingsGroupTitle("Protection de l'écran") }
+            item {
+                SettingsSwitchRow(
+                    title = "Bloquer les captures d'écran",
+                    subtitle = "Empêche captures et enregistrements, et masque l'application dans les applications récentes",
+                    checked = settings.antiScreenshotEnabled || settings.screenBlurOnSwitch,
+                    onCheckedChange = { on -> repository.updateUiSettings { it.copy(antiScreenshotEnabled = on, screenBlurOnSwitch = on) } }
+                )
+            }
+            item { SettingsGroupTitle("Verrouillage") }
+            item {
+                Column {
+                    SettingsSwitchRow(
+                        title = "Déverrouillage par empreinte",
+                        subtitle = if (settings.hasLocalPassword) "Proposé sur l'écran de verrouillage" else "Définissez d'abord un code PIN",
+                        checked = settings.biometricEnabled,
+                        enabled = settings.hasLocalPassword,
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(biometricEnabled = on) } }
                     )
-
-                    SettingRow(
-                        icon = Icons.Rounded.Timer,
-                        iconTint = AccentGold,
-                        title = "Délai d'Auto-Verrouillage",
-                        subtitle = when (settings.lockTimeoutSeconds) {
-                            0 -> "Immédiat"
-                            60 -> "1 minute"
-                            300 -> "5 minutes"
-                            else -> "Désactivé"
-                        },
-                        onClick = {
-                            val next = when (settings.lockTimeoutSeconds) {
-                                0 -> 60
-                                60 -> 300
-                                300 -> -1
-                                else -> 0
-                            }
-                            repository.updateLockTimeout(next)
-                        }
+                    Text(
+                        text = "Verrouiller après",
+                        fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp)
                     )
+                    listOf(0 to "Quelques secondes", 60 to "1 minute", 300 to "5 minutes", -1 to "Jamais").forEach { (secs, label) ->
+                        SettingsRadioRow(
+                            selected = settings.lockTimeoutSeconds == secs,
+                            title = label,
+                            subtitle = if (secs == 0) "Dès que vous quittez l'application (5 secondes de grâce)" else "",
+                            onClick = { repository.updateLockTimeout(secs) }
+                        )
+                    }
+                    SettingsCategoryRow(Icons.Rounded.Password, AccentRose, "Code PIN", if (settings.hasLocalPassword) "Modifier le code de déverrouillage" else "Créer un code de déverrouillage") { showPinDialog = true }
+                    SettingsCategoryRow(Icons.Rounded.Calculate, AccentViolet, "Code leurre", "Un second code qui ouvre une calculatrice fonctionnelle") { showDecoyPinDialog = true }
                 }
             }
         }
 
-        // --- 5. SECTION: DISCUSSIONS & MÉDIAS ---
-        item {
-            Text(text = "DISCUSSIONS & MÉDIAS", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = VibrantCyan)
+        if (section == "conversations") {
+            item { SettingsGroupTitle("Saisie et envoi") }
+            item {
+                Column {
+                    SettingsSwitchRow(
+                        title = "Touche Entrée pour envoyer",
+                        subtitle = "La touche du clavier envoie le message au lieu d'aller à la ligne",
+                        checked = settings.enterIsSend,
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(enterIsSend = on) } }
+                    )
+                    Text("Qualité des photos envoyées", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    SettingsRadioRow(settings.photoUploadQuality != "standard", "Haute qualité", "Jusqu'à 2560 px, plus lourd") {
+                        repository.updateUiSettings { it.copy(photoUploadQuality = "hd") }
+                    }
+                    SettingsRadioRow(settings.photoUploadQuality == "standard", "Économie de données", "Jusqu'à 1600 px, envoi plus rapide") {
+                        repository.updateUiSettings { it.copy(photoUploadQuality = "standard") }
+                    }
+                }
+            }
+            item { SettingsGroupTitle("Apparence des messages") }
+            item {
+                Column {
+                    Text("Couleur de vos bulles", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                    com.example.mikayala.theme.SoftChatStyles.BUBBLES.forEach { (id, label) ->
+                        val sw = com.example.mikayala.theme.SoftChatStyles.bubble(id, com.example.mikayala.theme.MikayalaColors, true).background
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).background(sw).border(0.5.dp, BorderSubtleWhite, CircleShape))
+                            SettingsRadioRow(settings.bubbleStyle == id, label, "") { repository.updateBubbleStyle(id) }
+                        }
+                    }
+                    Text("Fond de conversation", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    com.example.mikayala.theme.SoftChatStyles.WALLPAPERS.forEach { (id, label) ->
+                        SettingsRadioRow(settings.chatTheme == id || (id == "twilight" && settings.chatTheme !in com.example.mikayala.theme.SoftChatStyles.WALLPAPERS.map { it.first } && settings.chatTheme != "custom_image"), label, "") {
+                            repository.updateWallpaper(id, "")
+                        }
+                    }
+                    SettingsRadioRow(settings.chatTheme == "custom_image", "Ma photo", if (settings.chatTheme == "custom_image") "Touchez pour en choisir une autre" else "Choisir une photo de la galerie") {
+                        wallpaperPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+                    if (settings.chatTheme == "custom_image") {
+                        Text("Visibilité de la photo : ${(settings.wallpaperOpacity * 100).toInt()} %", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+                        Slider(
+                            value = settings.wallpaperOpacity,
+                            onValueChange = { repository.updateWallpaperControls(it, 0f) },
+                            valueRange = 0.2f..1f,
+                            colors = SliderDefaults.colors(thumbColor = AccentRose, activeTrackColor = AccentRose)
+                        )
+                    }
+                }
+            }
+            item { SettingsGroupTitle("Texte") }
+            item {
+                Column {
+                    Text("Taille du texte", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                    listOf("small" to "Petite", "medium" to "Normale", "large" to "Grande", "xlarge" to "Très grande").forEach { (id, label) ->
+                        SettingsRadioRow(settings.fontSizeScale == id, label, "") { repository.updateFontSize(id) }
+                    }
+                    Text("Police", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    listOf("default" to "Poppins (par défaut)", "system" to "Police du téléphone", "serif" to "Élégante (serif)", "cursive" to "Manuscrite").forEach { (id, label) ->
+                        SettingsRadioRow(settings.fontFamilyPreference == id, label, "") { repository.updateFontFamily(id) }
+                    }
+                }
+            }
+            item { SettingsGroupTitle("Historique") }
+            item {
+                SettingsCategoryRow(Icons.Rounded.DeleteSweep, Color(0xFFC4605C), "Effacer toutes les discussions", "Supprime l'historique de cet appareil (une confirmation sera demandée)") {
+                    showClearChatDialog = true
+                }
+            }
         }
 
-        item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = CardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SettingRow(
-                        icon = Icons.Rounded.Chat,
-                        iconTint = VibrantCyan,
-                        title = "Paramètres de Discussion",
-                        subtitle = "Touche Entrée, visibilité galerie, qualité HD des photos",
-                        onClick = { showChatPrefsModal = true }
-                    )
-
-                    SettingRow(
-                        icon = Icons.Rounded.NotificationsActive,
-                        iconTint = AccentGold,
-                        title = "Notifications & Sons Romantiques",
-                        subtitle = "Camouflage (Météo/Système), sonneries et vibreur cardiaque",
-                        onClick = { showNotificationsModal = true }
-                    )
-
-                    SettingRow(
-                        icon = Icons.Rounded.Storage,
-                        iconTint = AccentRose,
-                        title = "Stockage & Cache des Médias",
-                        subtitle = "Gestion de l'espace disque, nettoyage du cache et sauvegardes",
-                        onClick = { showStorageModal = true }
-                    )
+        if (section == "couple") {
+            item {
+                SettingsCategoryRow(Icons.Rounded.Logout, Color(0xFFC4605C), "Se déconnecter", "Quitte votre compte sur cet appareil. Le couple et les messages sont conservés.") {
+                    showSignOutDialog = true
                 }
             }
         }
 
         // --- 6. SECTION: MODES DE CONNEXION (2 OPTIONS) ---
-        item {
-            Text(text = "MODES DE CONNEXION (2 OPTIONS)", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, color = AccentViolet)
-        }
 
+        if (section == "connection") {
         item {
             val isOnline = settings.connectionMode == ConnectionMode.ONLINE
             Surface(
@@ -1860,13 +1224,13 @@ fun SettingsScreen(
                     // Option 1: Mode En Ligne
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = if (isOnline) CardDarkElevated else Color(0x22141C2B),
+                        color = if (isOnline) CardDarkElevated else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                         border = BorderStroke(1.2.dp, if (isOnline) VibrantCyan.copy(alpha = 0.6f) else BorderSubtleWhite),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
                                 repository.updateConnectionMode(ConnectionMode.ONLINE)
-                                Toast.makeText(context, "Mode En Ligne sélectionné 🌐", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Mode en ligne activé", Toast.LENGTH_SHORT).show()
                             }
                     ) {
                         Row(
@@ -1918,7 +1282,7 @@ fun SettingsScreen(
                                 }
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Connexion via Internet (Wi-Fi / 4G / 5G). Synchronisation cloud continue et appels audio/visio chiffrés.",
+                                    text = "Connexion via Internet (Wi-Fi ou données mobiles). Messages synchronisés en continu.",
                                     fontSize = 11.sp,
                                     color = TextSecondary,
                                     lineHeight = 15.sp
@@ -1929,7 +1293,7 @@ fun SettingsScreen(
                                 selected = isOnline,
                                 onClick = {
                                     repository.updateConnectionMode(ConnectionMode.ONLINE)
-                                    Toast.makeText(context, "Mode En Ligne sélectionné 🌐", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Mode en ligne activé", Toast.LENGTH_SHORT).show()
                                 },
                                 colors = RadioButtonDefaults.colors(selectedColor = VibrantCyan)
                             )
@@ -1939,7 +1303,7 @@ fun SettingsScreen(
                     // Option 2: Mode Liaison Hors-Ligne
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = if (!isOnline) CardDarkElevated else Color(0x22141C2B),
+                        color = if (!isOnline) CardDarkElevated else com.example.mikayala.theme.MikayalaColors.surfaceSunken,
                         border = BorderStroke(1.2.dp, if (!isOnline) AccentRose.copy(alpha = 0.6f) else BorderSubtleWhite),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1997,7 +1361,7 @@ fun SettingsScreen(
                                 }
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Liaison directe d'appareil à appareil (Wi-Fi Direct / Hotspot local). 0 Mo de data mobile, vitesse 50+ Mo/s.",
+                                    text = "Liaison directe entre vos deux téléphones, sans Internet (Wi-Fi local). Messages texte pour l'instant.",
                                     fontSize = 11.sp,
                                     color = TextSecondary,
                                     lineHeight = 15.sp
@@ -2026,26 +1390,28 @@ fun SettingsScreen(
                             imageVector = Icons.Rounded.QrCodeScanner,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Ouvrir le Gestionnaire de Liaison Directe 📡",
+                            text = "Ouvrir la liaison directe",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimary
                         )
                     }
                 }
             }
         }
+        }
 
         // --- 7. FOOTER: DISSOCIATION ---
+        if (section == null) {
         item {
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = Color(0x22FF5252),
-                border = BorderStroke(1.dp, Color(0x44FF5252)),
+                color = Color(0x22C4605C),
+                border = BorderStroke(1.dp, Color(0x44C4605C)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showDissolveDialog = true }
@@ -2055,12 +1421,40 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Rounded.LinkOff, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.LinkOff, contentDescription = null, tint = Color(0xFFC4605C), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Dissocier l'Espace Couple", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(text = "Dissocier l'Espace Couple", color = Color(0xFFC4605C), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         }
+        }
+    }
+
+    if (showSignOutDialog) {
+        var signingOut by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { if (!signingOut) showSignOutDialog = false },
+            title = { Text("Se déconnecter ?") },
+            text = { Text("Vous ne recevrez plus de notifications sur cet appareil jusqu'à votre reconnexion.") },
+            confirmButton = {
+                TextButton(enabled = !signingOut, onClick = {
+                    signingOut = true
+                    scope.launch {
+                        var ok = repository.signOut()
+                        if (!ok) ok = repository.signOut(force = true)
+                        signingOut = false
+                        showSignOutDialog = false
+                        if (ok) {
+                            // Redémarre l'interface : retour à l'écran de connexion
+                            (context as? android.app.Activity)?.recreate()
+                        } else {
+                            Toast.makeText(context, "Déconnexion impossible : vérifiez votre connexion Internet", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }) { Text(if (signingOut) "Déconnexion…" else "Se déconnecter", color = Color(0xFFC4605C)) }
+            },
+            dismissButton = { TextButton(enabled = !signingOut, onClick = { showSignOutDialog = false }) { Text("Annuler") } }
+        )
     }
 
     if (showSupabaseDialog) {
@@ -2131,21 +1525,21 @@ fun SettingsScreen(
                         } else {
                             Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Tester la connexion Supabase ⚡", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Tester la connexion", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
                     testResult?.let { (success, msg) ->
                         Surface(
-                            color = if (success) Color(0x2200E676) else Color(0x22FF5252),
-                            border = BorderStroke(1.dp, if (success) Color(0xFF00E676) else Color(0xFFFF5252)),
+                            color = if (success) Color(0x227FAF93) else Color(0x22C4605C),
+                            border = BorderStroke(1.dp, if (success) Color(0xFF7FAF93) else Color(0xFFC4605C)),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 text = msg,
                                 fontSize = 11.sp,
-                                color = if (success) Color(0xFF00E676) else Color(0xFFFF5252),
+                                color = if (success) Color(0xFF7FAF93) else Color(0xFFC4605C),
                                 modifier = Modifier.padding(8.dp)
                             )
                         }
@@ -2155,7 +1549,7 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     repository.updateSupabaseCredentials(urlInput, keyInput)
-                    Toast.makeText(context, "Configuration Supabase enregistrée ! ⚡", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Configuration enregistrée", Toast.LENGTH_SHORT).show()
                     showSupabaseDialog = false
                 }) {
                     Text("Enregistrer", color = VibrantCyan, fontWeight = FontWeight.Bold)
@@ -2173,6 +1567,141 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun SettingsInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 15.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun SettingsGroupTitle(text: String) {
+    Text(
+        text = text.uppercase(),
+        fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = AccentRose,
+        modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+    )
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, color = if (enabled) TextPrimary else TextSecondary)
+            Text(text = subtitle, fontSize = 13.sp, color = TextSecondary)
+        }
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRose)
+        )
+    }
+}
+
+@Composable
+private fun SettingsRadioRow(selected: Boolean, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onClick, colors = RadioButtonDefaults.colors(selectedColor = AccentRose))
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 15.sp, color = TextPrimary)
+            if (subtitle.isNotBlank()) Text(text = subtitle, fontSize = 12.sp, color = TextSecondary)
+        }
+    }
+}
+
+/** Interrupteur d'une catégorie, lu et écrit directement dans NotificationPrefs (persistant, local). */
+@Composable
+private fun NotificationCategorySwitch(
+    category: com.example.mikayala.util.NotificationPrefs.Category,
+    onChanged: (com.example.mikayala.util.NotificationPrefs.Category, Boolean) -> Unit = { _, _ -> }
+) {
+    val context = LocalContext.current
+    var enabled by remember(category) {
+        mutableStateOf(com.example.mikayala.util.NotificationPrefs.isEnabled(context, category))
+    }
+    SettingsSwitchRow(
+        title = "Notifications : " + category.label.replaceFirstChar { it.lowercase() },
+        subtitle = if (enabled) "Activées" else "Désactivées : rien n'est affiché pour cette catégorie",
+        checked = enabled,
+        onCheckedChange = {
+            enabled = it
+            com.example.mikayala.util.NotificationPrefs.setEnabled(context, category, it)
+            onChanged(category, it)
+        }
+    )
+}
+
+private fun openAppNotificationSettings(context: Context) {
+    val intent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+    } else {
+        // Android 7 : écran des détails de l'application
+        android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName))
+    }
+    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    try { context.startActivity(intent) } catch (_: Exception) { openAppDetailsSettings(context) }
+}
+
+private fun openAppDetailsSettings(context: Context) {
+    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName))
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    try { context.startActivity(intent) } catch (_: Exception) {}
+}
+
+@Composable
+private fun SettingsCategoryRow(
+    icon: ImageVector,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(tint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Text(text = subtitle, fontSize = 13.sp, color = TextSecondary, maxLines = 2)
+        }
+    }
+}
+
+@Composable
 private fun SettingRow(
     icon: ImageVector,
     iconTint: Color = AccentRose,
@@ -2180,33 +1709,26 @@ private fun SettingRow(
     subtitle: String,
     onClick: () -> Unit
 ) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
-        color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth()
+    // Même présentation que SettingsCategoryRow : une seule grammaire visuelle dans les Paramètres
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(iconTint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(iconTint.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(imageVector = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                Text(text = subtitle, fontSize = 11.sp, color = TextSecondary, maxLines = 1)
-            }
-            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
+            Icon(imageVector = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
         }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Text(text = subtitle, fontSize = 13.sp, color = TextSecondary, maxLines = 2)
+        }
+        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextMuted, modifier = Modifier.size(20.dp))
     }
 }

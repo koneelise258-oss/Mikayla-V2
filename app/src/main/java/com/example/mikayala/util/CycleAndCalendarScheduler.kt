@@ -44,11 +44,7 @@ object CycleAndCalendarScheduler {
         )
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTimeMillis, pendingIntent)
-            } else {
-                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTimeMillis, pendingIntent)
-            }
+            setAlarm(alarmManager, triggerTimeMillis, pendingIntent)
             Log.d("CycleScheduler", "Rappel du cycle planifié avec succès pour : $triggerTimeMillis")
         } catch (e: SecurityException) {
             Log.e("CycleScheduler", "Permission d'alarme exacte non accordée : ${e.message}")
@@ -88,14 +84,24 @@ object CycleAndCalendarScheduler {
         )
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, eventTimeMillis, pendingIntent)
-            } else {
-                alarmManager.setExact(AlarmManager.RTC_WAKEUP, eventTimeMillis, pendingIntent)
-            }
+            setAlarm(alarmManager, eventTimeMillis, pendingIntent)
             Log.d("CalendarScheduler", "Rappel d'événement planifié pour $eventTitle à $eventTimeMillis")
         } catch (e: SecurityException) {
             Log.e("CalendarScheduler", "Permission d'alarme exacte non accordée : ${e.message}")
+        }
+    }
+
+    /**
+     * Alarme exacte si Android l'autorise ; sinon alarme approximative (quelques minutes d'écart)
+     * au lieu de ne rien programmer. Android 12+ peut refuser les alarmes exactes (refus par défaut sur 14+).
+     */
+    private fun setAlarm(alarmManager: AlarmManager, at: Long, pi: PendingIntent) {
+        val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+        when {
+            exactAllowed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            exactAllowed -> alarmManager.setExact(AlarmManager.RTC_WAKEUP, at, pi)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            else -> alarmManager.set(AlarmManager.RTC_WAKEUP, at, pi)
         }
     }
 }

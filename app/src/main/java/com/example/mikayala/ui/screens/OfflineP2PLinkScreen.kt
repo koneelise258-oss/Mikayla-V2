@@ -79,7 +79,7 @@ fun OfflineP2PLinkScreen(
     // On enter host role, automatically start hosting
     LaunchedEffect(selectedRole) {
         if (selectedRole == 0 && p2pState !is P2PState.Connected) {
-            val payload = P2PSocketManager.startHosting(context, "Mon Appareil (Émetteur)")
+            val payload = P2PSocketManager.startHosting(context, repository.userSettings.value.displayName.ifBlank { "Partenaire" })
             qrPayloadData = payload
             qrBitmap = QRCodeGenerator.generateQRCode(payload, 500)
         }
@@ -89,10 +89,10 @@ fun OfflineP2PLinkScreen(
     LaunchedEffect(p2pState) {
         when (val state = p2pState) {
             is P2PState.Connected -> {
-                Toast.makeText(context, "⚡ Connecté avec succès à ${state.partnerName} !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Connecté avec succès à ${state.partnerName}", Toast.LENGTH_SHORT).show()
             }
             is P2PState.Error -> {
-                Toast.makeText(context, "⚠️ ${state.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "${state.message}", Toast.LENGTH_LONG).show()
             }
             else -> {}
         }
@@ -126,14 +126,14 @@ fun OfflineP2PLinkScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Viseur Caméra QR Code 📷",
+                        text = "Scanner le QR code",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Scannez le QR Code sur l'écran du point d'accès",
+                        text = "Visez le QR code affiché sur le téléphone de votre partenaire",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         textAlign = TextAlign.Center
@@ -153,7 +153,7 @@ fun OfflineP2PLinkScreen(
                         QRScanner(
                             onCodeScanned = { scannedCode ->
                                 showQrScannerModal = false
-                                val success = P2PSocketManager.connectViaQrCode(context, scannedCode)
+                                val success = P2PSocketManager.connectViaQrCode(context, scannedCode, repository.userSettings.value.displayName.ifBlank { "Partenaire" })
                                 if (!success) {
                                     Toast.makeText(context, "Format QR Code non reconnu", Toast.LENGTH_SHORT).show()
                                 }
@@ -171,20 +171,12 @@ fun OfflineP2PLinkScreen(
                             onClick = { showQrScannerModal = false },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, BorderSubtleWhite)
+                            border = BorderStroke(0.5.dp, BorderSubtleWhite)
                         ) {
                             Text("Fermer", color = TextPrimary)
                         }
 
-                        GlowingGradientButton(
-                            text = "Démo Rapide ⚡",
-                            icon = Icons.Rounded.FlashOn,
-                            onClick = {
-                                showQrScannerModal = false
-                                P2PSocketManager.simulateConnectionForDemo(context)
-                            },
-                            modifier = Modifier.weight(1.3f)
-                        )
+                        // (bouton de connexion simulée retiré : il affichait « connecté » sans aucune connexion)
                     }
                 }
             }
@@ -196,7 +188,7 @@ fun OfflineP2PLinkScreen(
         topBar = {
             Surface(
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -222,7 +214,7 @@ fun OfflineP2PLinkScreen(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Liaison Hors-Ligne 📡",
+                                    text = "Discuter sans Internet",
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
@@ -234,7 +226,7 @@ fun OfflineP2PLinkScreen(
                                     border = BorderStroke(0.8.dp, VibrantCyan.copy(alpha = 0.4f))
                                 ) {
                                     Text(
-                                        text = "Style Xender",
+                                        text = "Wi-Fi local",
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = VibrantCyan,
@@ -294,7 +286,7 @@ fun OfflineP2PLinkScreen(
                     Surface(
                         shape = RoundedCornerShape(18.dp),
                         color = MatteCardDark,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        border = BorderStroke(0.5.dp, BorderSubtleWhite),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -323,7 +315,7 @@ fun OfflineP2PLinkScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "1. Émetteur (Hôte)",
+                                        text = "1. Ce téléphone crée la liaison",
                                         fontSize = 12.sp,
                                         fontWeight = if (selectedRole == 0) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selectedRole == 0) TextPrimary else TextSecondary
@@ -355,7 +347,7 @@ fun OfflineP2PLinkScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "2. Récepteur (Client)",
+                                        text = "2. Ce téléphone rejoint la liaison",
                                         fontSize = 12.sp,
                                         fontWeight = if (selectedRole == 1) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selectedRole == 1) TextPrimary else TextSecondary
@@ -415,14 +407,14 @@ fun OfflineP2PLinkScreen(
                             Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = "Émetteur Prêt & Signal Actif 📡",
+                                text = "Liaison prête",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Demandez à votre partenaire de scanner le QR Code ou de taper le code PIN",
+                                text = "Activez le partage de connexion (point d'accès Wi-Fi) sur ce téléphone, demandez à votre partenaire de s'y connecter, puis de scanner ce QR code ou de taper le code PIN.",
                                 fontSize = 12.sp,
                                 color = TextSecondary,
                                 textAlign = TextAlign.Center
@@ -433,13 +425,13 @@ fun OfflineP2PLinkScreen(
                             // REAL GENERATED QR CODE DISPLAY
                             Surface(
                                 shape = RoundedCornerShape(18.dp),
-                                color = Color.White,
+                                color = TextPrimary,
                                 modifier = Modifier
                                     .size(170.dp)
                                     .clickable {
                                         Toast.makeText(context, "QR Code prêt ! Scanner avec l'autre appareil.", Toast.LENGTH_SHORT).show()
                                     },
-                                shadowElevation = 8.dp
+                                shadowElevation = 1.dp
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -498,7 +490,7 @@ fun OfflineP2PLinkScreen(
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         Text(
-                                            text = "IP Hôte : ${hostingState?.ip ?: "192.168.43.1"}:${hostingState?.port ?: 8888}",
+                                            text = "Adresse : ${hostingState?.ip ?: "…"}:${hostingState?.port ?: 8888}",
                                             fontSize = 11.sp,
                                             color = TextSecondary,
                                             fontFamily = FontFamily.Monospace
@@ -521,14 +513,7 @@ fun OfflineP2PLinkScreen(
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // Demo / Instant connection button
-                            GlowingGradientButton(
-                                text = "Tester Connexion Immédiate ⚡",
-                                icon = Icons.Rounded.FlashOn,
-                                onClick = {
-                                    P2PSocketManager.simulateConnectionForDemo(context)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            // (bouton de connexion simulée retiré : il affichait « connecté » sans aucune connexion)
                         }
                     }
                 }
@@ -552,14 +537,14 @@ fun OfflineP2PLinkScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Rejoindre le Signal de Mikayala 🚀",
+                                text = "Rejoindre votre partenaire",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Choisissez votre méthode de connexion préférée :",
+                                text = "Connectez-vous d'abord au point d'accès Wi-Fi du téléphone de votre partenaire, puis :",
                                 fontSize = 12.sp,
                                 color = TextSecondary,
                                 textAlign = TextAlign.Center
@@ -591,7 +576,7 @@ fun OfflineP2PLinkScreen(
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(text = "OPTION 1 : Scanner le QR Code", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = "Caméra temps réel • Connexion en 1s ⚡", fontSize = 11.sp, color = VibrantCyan)
+                                        Text(text = "Le plus simple", fontSize = 11.sp, color = VibrantCyan)
                                     }
                                     Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = VibrantCyan)
                                 }
@@ -613,7 +598,7 @@ fun OfflineP2PLinkScreen(
                             Surface(
                                 shape = RoundedCornerShape(18.dp),
                                 color = DeepSurfaceBlack,
-                                border = BorderStroke(1.dp, BorderSubtleWhite),
+                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
@@ -663,7 +648,7 @@ fun OfflineP2PLinkScreen(
                             Spacer(modifier = Modifier.height(16.dp))
 
                             GlowingGradientButton(
-                                text = "Rejoindre via Code PIN 🚀",
+                                text = "Rejoindre avec le code PIN",
                                 icon = Icons.Rounded.WifiTethering,
                                 onClick = {
                                     if (pinCodeInput.length == 6) {
@@ -672,7 +657,7 @@ fun OfflineP2PLinkScreen(
                                             ipAddress = hostIpInput.trim(),
                                             port = P2PSocketManager.DEFAULT_PORT,
                                             pinCode = pinCodeInput.trim(),
-                                            clientName = "Mon Appareil (Récepteur)"
+                                            clientName = repository.userSettings.value.displayName.ifBlank { "Partenaire" }
                                         )
                                     } else {
                                         Toast.makeText(context, "Veuillez entrer le code PIN à 6 chiffres", Toast.LENGTH_SHORT).show()
@@ -717,7 +702,7 @@ fun OfflineP2PLinkScreen(
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
-                                        Text(text = "Liaison TCP Socket Établie ⚡", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(text = "Connectés sans Internet", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                                         Text(text = "Connecté avec ${connectedState.partnerName}", fontSize = 12.sp, color = OnlinePresenceGreen)
                                     }
                                 }
@@ -728,7 +713,7 @@ fun OfflineP2PLinkScreen(
                                         Toast.makeText(context, "Liaison P2P déconnectée", Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
-                                    Text("Déconnecter", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Déconnecter", color = Color(0xFFC4605C), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
 
@@ -750,7 +735,7 @@ fun OfflineP2PLinkScreen(
                 // Beam File Action Bar
                 item {
                     Text(
-                        text = "ENVOI INSTANTANÉ DE FICHIERS (BEAM)",
+                        text = "COMMENT DISCUTER",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
@@ -759,43 +744,15 @@ fun OfflineP2PLinkScreen(
                 }
 
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        P2PBeamToolCard(
-                            title = "Photo HD",
-                            subtitle = "Zéro compression",
-                            icon = Icons.Rounded.Image,
-                            onClick = {
-                                P2PSocketManager.sendFile(context, "Photo_Souvenir_${System.currentTimeMillis().toString().takeLast(4)}.jpg", "14.2 Mo", false)
-                                Toast.makeText(context, "Photo transmise instantanément !", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        P2PBeamToolCard(
-                            title = "Note Vocale",
-                            subtitle = "Qualité FLAC",
-                            icon = Icons.Rounded.Mic,
-                            onClick = {
-                                P2PSocketManager.sendFile(context, "Note_Vocale_Intime.flac", "3.8 Mo", true)
-                                Toast.makeText(context, "Audio haute définition transmis !", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        P2PBeamToolCard(
-                            title = "Vidéo 4K",
-                            subtitle = "Beam Rapide",
-                            icon = Icons.Rounded.Videocam,
-                            onClick = {
-                                P2PSocketManager.sendFile(context, "Video_Couple_Mikayala.mp4", "88.4 Mo", false)
-                                Toast.makeText(context, "Vidéo 4K transmise !", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    // Les boutons « Photo / Vocal / Vidéo 4K » envoyaient seulement un nom de fichier fictif
+                    // et une taille inventée (aucun fichier réel) : retirés. Le transfert réel de fichiers en P2P
+                    // reste à développer ; les messages texte en P2P fonctionnent.
+                    Text(
+                        text = "Une fois connectés, écrivez normalement dans Discussions : vos messages passent par la liaison directe, avec accusés de réception et de lecture. Au retour d'Internet, ils sont enregistrés sur le serveur, sans doublon. Les photos et vocaux attendent le retour d'Internet.",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
                 }
 
                 // Chat Input Field over P2P
@@ -844,7 +801,7 @@ fun OfflineP2PLinkScreen(
                                     .clip(CircleShape)
                                     .background(Brush.horizontalGradient(listOf(CyanBlueGradientStart, CyanBlueGradientEnd)))
                             ) {
-                                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Envoyer", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Envoyer", tint = TextPrimary, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -853,7 +810,7 @@ fun OfflineP2PLinkScreen(
                 // Live P2P Chat & File Feed
                 item {
                     Text(
-                        text = "CANAL DE MESSAGES ET TRANSFERTS P2P",
+                        text = "MESSAGES EN LIAISON DIRECTE",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
@@ -929,7 +886,7 @@ private fun P2PMetricCard(label: String, value: String, icon: String, modifier: 
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = DeepSurfaceBlack,
-        border = BorderStroke(1.dp, BorderSubtleWhite),
+        border = BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = modifier
     ) {
         Column(
@@ -956,7 +913,7 @@ private fun P2PBeamToolCard(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         color = MatteCardDark,
-        border = BorderStroke(1.dp, BorderSubtleWhite),
+        border = BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = modifier
     ) {
         Column(

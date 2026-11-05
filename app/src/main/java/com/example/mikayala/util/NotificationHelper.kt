@@ -17,6 +17,10 @@ object NotificationHelper {
     private const val CHANNEL_CALLS_ID = "mikayala_incoming_calls"
     private const val CHANNEL_LOVE_TIME_ID = "mikayala_love_time_pinned"
     private const val CHANNEL_NOTIFS_ID = "mikayala_general_notifs"
+    // Canaux par catégorie (nouveaux IDs : un canal existant ne peut plus être modifié par l'app)
+    private const val CHANNEL_MESSAGES_ID = "mikayala_messages_v2"
+    private const val CHANNEL_GAMES_ID = "mikayala_games_v2"
+    private const val CHANNEL_CALENDAR_ID = "mikayala_calendar_v2"
 
     private const val NOTIF_ID_CALL = 1001
     private const val NOTIF_ID_LOVE_TIME = 1002
@@ -24,22 +28,71 @@ object NotificationHelper {
     private const val NOTIF_ID_ANNIVERSARY = 1004
     private const val NOTIF_ID_GAME = 1005
 
+    private data class ChannelSpec(val name: String, val description: String, val importance: Int, val vibration: LongArray)
+
+    private fun specFor(base: String): ChannelSpec = when (base) {
+        CHANNEL_CALLS_ID -> ChannelSpec("Appels entrants", "Appels vocaux et vidéo", NotificationManager.IMPORTANCE_HIGH, longArrayOf(0, 1000, 500, 1000))
+        CHANNEL_MESSAGES_ID -> ChannelSpec("Messages", "Messages, vocaux, photos et vidéos du partenaire", NotificationManager.IMPORTANCE_HIGH, longArrayOf(0, 120, 100, 120))
+        CHANNEL_GAMES_ID -> ChannelSpec("Jeux", "Invitations et tours de jeu", NotificationManager.IMPORTANCE_DEFAULT, longArrayOf(0, 200))
+        CHANNEL_CALENDAR_ID -> ChannelSpec("Calendrier", "Événements, rappels et anniversaires", NotificationManager.IMPORTANCE_DEFAULT, longArrayOf(0, 200))
+        else -> ChannelSpec("Autres activités", "Coffre, humeur, sondages et rappels", NotificationManager.IMPORTANCE_DEFAULT, longArrayOf(0, 200))
+    }
+
+    /**
+     * Canal à utiliser selon le profil son/vibration choisi dans l'app.
+     * Android 8+ fige le son d'un canal à sa création : on utilise donc une variante de canal par
+     * profil (suffixes _sv, _s, _v, _q). Si l'utilisateur a personnalisé une variante dans les réglages
+     * Android, ce choix système reste prioritaire : l'application ne peut pas l'écraser.
+     */
+    fun alertChannel(context: Context, base: String): String {
+        val profile = NotificationPrefs.alertProfile(context)
+        val id = base + profile.channelSuffix
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (manager.getNotificationChannel(id) == null) {
+                val spec = specFor(base)
+                val channel = NotificationChannel(id, spec.name, spec.importance).apply {
+                    description = spec.description
+                    if (!profile.sound) setSound(null, null)
+                    enableVibration(profile.vibrate)
+                    vibrationPattern = if (profile.vibrate) spec.vibration else null
+                }
+                manager.createNotificationChannel(channel)
+                // Une seule variante visible par catégorie dans les réglages Android
+                for (other in SUFFIXES) {
+                    val otherId = base + other
+                    if (otherId != id && manager.getNotificationChannel(otherId) != null) {
+                        manager.deleteNotificationChannel(otherId)
+                    }
+                }
+            }
+        }
+        return id
+    }
+
+    /** Android 7 (pas de canaux) : son/vibration réglés sur chaque notification. Ignoré sur Android 8+. */
+    fun applyLegacyAlerts(context: Context, builder: NotificationCompat.Builder) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) return
+        val profile = NotificationPrefs.alertProfile(context)
+        var defaults = NotificationCompat.DEFAULT_LIGHTS
+        if (profile.sound) defaults = defaults or NotificationCompat.DEFAULT_SOUND
+        if (profile.vibrate) defaults = defaults or NotificationCompat.DEFAULT_VIBRATE
+        builder.setDefaults(defaults)
+        if (!profile.sound && !profile.vibrate) builder.setSilent(true)
+    }
+
+    private val SUFFIXES = listOf("_sv", "_s", "_v", "_q")
+
+    /**
+     * Crée les canaux fixes et migre les anciens canaux.
+     * - Love Time (silencieux) et le canal général (canal FCM par défaut déclaré dans le manifeste).
+     * - Les canaux par catégorie sont créés à la demande par alertChannel() selon le profil son/vibration.
+     * - Les canaux des versions précédentes sans suffixe sont supprimés (remplacés par les variantes).
+     */
     fun createNotificationChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-            // 1. Incoming Calls Channel (High Priority with Sound & Vibration)
-            val callChannel = NotificationChannel(
-                CHANNEL_CALLS_ID,
-                "Appels Entrants (Style WhatsApp)",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notifications d'appels vocaux et vidéo en direct"
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 1000, 500, 1000)
-            }
-
-            // 2. Love Time Pinned Channel (Ongoing / Status Bar)
             val loveTimeChannel = NotificationChannel(
                 CHANNEL_LOVE_TIME_ID,
                 "Love Time Épinglé 💖",
@@ -47,21 +100,20 @@ object NotificationHelper {
             ).apply {
                 description = "Compteur de couple épinglé dans la barre de statut"
             }
-
-            // 3. General Notifications (Messages, Vocaux, Photos, Jeux, Anniversaires)
             val generalChannel = NotificationChannel(
                 CHANNEL_NOTIFS_ID,
-                "Messages & Activités de Couple",
-                NotificationManager.IMPORTANCE_HIGH
+                "Notifications générales",
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Messages, vocaux, photos, rappels et jeux du partenaire"
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 250, 250, 250)
+                description = "Notifications envoyées sans catégorie précise"
             }
-
-            manager.createNotificationChannel(callChannel)
             manager.createNotificationChannel(loveTimeChannel)
             manager.createNotificationChannel(generalChannel)
+
+            // Migration : anciens canaux sans suffixe (remplacés par les variantes son/vibration)
+            for (legacy in listOf(CHANNEL_CALLS_ID, CHANNEL_MESSAGES_ID, CHANNEL_GAMES_ID, CHANNEL_CALENDAR_ID)) {
+                if (manager.getNotificationChannel(legacy) != null) manager.deleteNotificationChannel(legacy)
+            }
         }
     }
 
@@ -102,8 +154,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_CALLS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALLS_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle(if (isVideo) "📹 Appel Vidéo Entrant" else "📞 Appel Vocal Entrant")
             .setContentText("$callerName vous appelle...")
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -124,6 +177,26 @@ object NotificationHelper {
         manager.cancel(NOTIF_ID_CALL)
     }
 
+    fun showCallDeclinedNotification(context: Context, partnerName: String) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, 4, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALLS_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
+            .setContentTitle("Appel refusé")
+            .setContentText("$partnerName a refusé votre appel")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIF_ID_CALL + 2, builder.build())
+    }
+
     fun showMissedCallNotification(context: Context, callerName: String, isVideo: Boolean, callId: String = "") {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -135,8 +208,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_CALLS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALLS_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle(if (isVideo) "Appel vidéo manqué" else "Appel vocal manqué")
             .setContentText("Appel manqué de $callerName")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -157,7 +231,7 @@ object NotificationHelper {
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_LOVE_TIME_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("💖 Love Time : $coupleNames")
             .setContentText("Ensemble depuis $daysTogether jours de pur bonheur ✨")
             .setOngoing(true) // Pinned in status bar
@@ -169,18 +243,24 @@ object NotificationHelper {
     }
 
     // --- 3. RAPPEL DU CYCLE MENSTRUEL / PÉRIODE ---
-    fun showCycleReminderNotification(context: Context, phaseName: String, partnerNickname: String) {
+    /** Texte neutre imposé : aucune donnée de cycle (phase, dates, symptômes, surnom) n'est affichée. */
+    const val CYCLE_NEUTRAL_TITLE = "Mikayala"
+    const val CYCLE_NEUTRAL_TEXT = "Vous avez une nouvelle notification"
+
+    fun showCycleReminderNotification(context: Context) {
         val intent = Intent(context, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("🌸 Suivi du Cycle • $partnerNickname")
-            .setContentText("Nouvelle phase détectée : $phaseName. Soyez aux petits soins ! 💕")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
+            .setContentTitle(CYCLE_NEUTRAL_TITLE)
+            .setContentText(CYCLE_NEUTRAL_TEXT)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
 
@@ -196,8 +276,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALENDAR_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🎉 Joyeux Anniversaire de Couple ! 🎉")
             .setContentText(anniversaryText)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -216,8 +297,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_GAMES_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🎮 Jeu de Couple • $partnerName")
             .setContentText("$partnerName vient de jouer à « $gameTitle » ! Découvrez son score 🔥")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -267,8 +349,9 @@ object NotificationHelper {
             replyPendingIntent
         ).addRemoteInput(remoteInput).build()
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_MESSAGES_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle(senderName)
             .setContentText(messageText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(messageText))
@@ -282,8 +365,9 @@ object NotificationHelper {
         manager.notify(notifId, builder.build())
 
         // Notification récapitulative pour regroupement intelligent sous Android
-        val summaryBuilder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val summaryBuilder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_MESSAGES_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setStyle(NotificationCompat.InboxStyle().setSummaryText("Mikayala"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setGroup("com.example.mikayala.CHAT_GROUP")
@@ -306,8 +390,9 @@ object NotificationHelper {
 
         val text = if (location.isNotBlank()) "À $eventDate • Lieu: $location" else "À $eventDate"
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALENDAR_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("📅 Rappel d'Événement : $eventTitle")
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -329,8 +414,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_GAMES_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🎮 C'est à ton tour de jouer !")
             .setContentText("$partnerName a validé son coup dans « $gameTitle ». À toi de jouer ! 🔥")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -348,6 +434,9 @@ object NotificationHelper {
         content: String,
         isFile: Boolean = false
     ) {
+        // Catégorie Messages désactivée : rien n'est affiché (pas de son ni de vibration)
+        if (!NotificationPrefs.isEnabled(context, NotificationPrefs.Category.MESSAGES)) return
+
         val notifId = ("p2p_" + System.currentTimeMillis()).hashCode()
 
         val openAppIntent = Intent(context, MainActivity::class.java).apply {
@@ -389,8 +478,9 @@ object NotificationHelper {
 
         val displayText = if (isFile) "📁 Fichier reçu en mode Proximité : $content" else "⚡ [Mode Proximité] $content"
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_MESSAGES_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("📡 Proximité • $senderName")
             .setContentText(displayText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(displayText))
@@ -411,8 +501,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🔒 Coffre-Fort Intime • $partnerName")
             .setContentText("$partnerName a ajouté un nouveau souvenir secret (« $itemTitle ») ! ✨")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -431,8 +522,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("🎭 Humeur du Jour • $partnerName")
             .setContentText("$partnerName se sent $moodEmoji $moodLabel aujourd'hui. Envoie-lui un mot doux ! 💕")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -451,8 +543,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("📊 Sondage de Couple • $partnerName")
             .setContentText("$partnerName demande : « $pollQuestion » ! Donne ton avis 🗳️")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -471,8 +564,9 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_NOTIFS_ID))
+            .also { applyLegacyAlerts(context, it) }
+            .setSmallIcon(R.drawable.ic_stat_mikayala)
             .setContentTitle("💋 Bisou Volant Envoyé ! 💖")
             .setContentText("$partnerName vient de t'envoyer $kissCount bisous virtuels ! Pluie d'amour 🌧️💕")
             .setPriority(NotificationCompat.PRIORITY_HIGH)

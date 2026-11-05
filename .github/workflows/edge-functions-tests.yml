@@ -1,0 +1,24 @@
+name: Edge Functions tests
+
+on:
+  push:
+    paths:
+      - "supabase/functions/**"
+      - ".github/workflows/edge-functions-tests.yml"
+  pull_request:
+    paths:
+      - "supabase/functions/**"
+  workflow_dispatch:
+
+jobs:
+  send-fcm-payload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Aucun secret, aucun réseau Supabase : tests purs du payload FCM (aucun déploiement)
+      - name: payload.test.ts (node --test)
+        run: node --experimental-strip-types --test --test-reporter=spec supabase/functions/send-fcm/payload.test.ts

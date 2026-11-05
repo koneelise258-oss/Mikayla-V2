@@ -68,7 +68,8 @@ object P2PSocketManager {
     var isChatScreenActive: Boolean = false
 
     // Callbacks for repository persistence and delivery/read status updates over P2P socket
-    var onP2PMessageReceived: ((senderName: String, content: String, isFile: Boolean, type: String?) -> Unit)? = null
+    /** Message texte reçu en P2P : même identifiant et même date que chez l'expéditeur (aucun doublon au retour d'Internet). */
+    var onP2PMessageReceived: ((msgId: String, createdAt: Long, senderName: String, content: String) -> Unit)? = null
     var onP2PStatusUpdated: ((msgId: String, status: String) -> Unit)? = null
     var onP2PAllReadReceived: (() -> Unit)? = null
 
@@ -222,12 +223,6 @@ object P2PSocketManager {
     /**
      * Mode Démo / Loopback direct pour tester instantanément la connexion sur un seul téléphone
      */
-    fun simulateConnectionForDemo(context: Context) {
-        scope.launch {
-            _p2pState.value = P2PState.Connected("Mikayala (Direct 5G)", "192.168.43.1", isHost = true)
-            addSystemMessage("🚀 Canal Direct P2P simulé et prêt pour démo !")
-        }
-    }
 
     /**
      * Envoyer un message texte avec ID specifique
@@ -253,6 +248,7 @@ object P2PSocketManager {
                 put("id", msgId)
                 put("sender", myName)
                 put("content", messageText)
+                put("createdAt", System.currentTimeMillis())
             }
             sendRawJson(json)
         }
@@ -353,7 +349,7 @@ object P2PSocketManager {
                             )
 
                             // Save to local repository
-                            onP2PMessageReceived?.invoke(sender, content, false, "text")
+                            onP2PMessageReceived?.invoke(msgId, json.optLong("createdAt", System.currentTimeMillis()), sender, content)
                         }
                         "file" -> {
                             val msgId = json.optString("id", "p2p_${System.currentTimeMillis()}")
@@ -397,12 +393,8 @@ object P2PSocketManager {
                             )
 
                             // Save to local repository
-                            onP2PMessageReceived?.invoke(
-                                sender,
-                                if (isAudio) "🎤 Note vocale P2P reçue ($fileSize)" else "📁 Fichier reçu : $fileName ($fileSize)",
-                                true,
-                                if (isAudio) "audio" else "file"
-                            )
+                            // Fichiers : seul le nom est transmis en P2P (pas le contenu) — on n'enregistre
+                            // donc pas de faux message dans la conversation ; le vrai fichier arrivera via Internet.
                         }
                         "ack_delivered" -> {
                             val msgId = json.optString("msg_id", "")

@@ -38,11 +38,14 @@ fun CallsScreen(
     val coroutineScope = rememberCoroutineScope()
     val callLogs by repository.allCallLogs.collectAsState()
     val dateFormat = remember { SimpleDateFormat("dd MMM, HH:mm", Locale.FRANCE) }
+    val callsSettings by repository.userSettings.collectAsState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(DeepNight)
+            .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
+            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(12.dp))
@@ -66,25 +69,24 @@ fun CallsScreen(
                         modifier = Modifier
                             .size(50.dp)
                             .clip(CircleShape)
-                            .background(Brush.radialGradient(listOf(AccentRose.copy(alpha = 0.3f), Color.Transparent)))
-                            .border(2.dp, AccentRose, CircleShape),
+                            .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(text = "👩‍🦰", fontSize = 26.sp)
+                        Icon(Icons.Rounded.Person, contentDescription = null, tint = AccentRose, modifier = Modifier.size(26.dp))
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column {
                         Text(
-                            text = "Mikayala ❤️",
+                            text = callsSettings.partnerNickname.ifBlank { "Mon partenaire" },
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Ligne privée P2P active",
+                            text = "Appel audio ou vidéo",
                             fontSize = 12.sp,
                             color = AccentViolet
                         )
@@ -95,10 +97,7 @@ fun CallsScreen(
                     // Audio Call Button
                     IconButton(
                         onClick = {
-                            coroutineScope.launch {
-                                repository.initiateSupabaseCall(false)
-                                onStartCall(false)
-                            }
+                            onStartCall(false) // la sonnerie est envoyée par l'écran principal
                         },
                         modifier = Modifier
                             .size(44.dp)
@@ -116,20 +115,17 @@ fun CallsScreen(
                     // Video Call Button
                     IconButton(
                         onClick = {
-                            coroutineScope.launch {
-                                repository.initiateSupabaseCall(true)
-                                onStartCall(true)
-                            }
+                            onStartCall(true)
                         },
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(AccentRose, AccentViolet)))
+                            .background(AccentRose)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Videocam,
                             contentDescription = "Appel Vidéo",
-                            tint = Color.White,
+                            tint = TextPrimary,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -156,10 +152,10 @@ fun CallsScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Aucun appel pour le moment",
-                    color = TextMuted,
-                    fontSize = 14.sp
+                com.example.mikayala.ui.components.SoftEmptyState(
+                    icon = Icons.Rounded.Call,
+                    title = "Aucun appel pour le moment",
+                    message = "Vos appels audio et vidéo avec votre partenaire s'afficheront ici."
                 )
             }
         } else {
@@ -189,7 +185,7 @@ private fun CallLogItem(
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = CardDark,
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtleWhite),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -205,7 +201,7 @@ private fun CallLogItem(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (log.isMissed) Color(0x33FF5252) else HoverStateWhite),
+                        .background(if (log.isMissed) Color(0x33C4605C) else HoverStateWhite),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -217,7 +213,7 @@ private fun CallLogItem(
                             Icons.AutoMirrored.Rounded.CallMade
                         },
                         contentDescription = null,
-                        tint = if (log.isMissed) Color(0xFFFF5252) else if (log.isIncoming) OnlinePresenceGreen else AccentViolet,
+                        tint = if (log.isMissed) Color(0xFFC4605C) else if (log.isIncoming) OnlinePresenceGreen else AccentViolet,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -235,7 +231,7 @@ private fun CallLogItem(
                     Text(
                         text = if (log.isMissed) "Appel manqué • $timeFormatted" else "${log.durationSeconds / 60} min ${log.durationSeconds % 60} s • $timeFormatted",
                         fontSize = 12.sp,
-                        color = if (log.isMissed) Color(0xFFFF5252) else TextSecondary
+                        color = if (log.isMissed) Color(0xFFC4605C) else TextSecondary
                     )
                 }
             }

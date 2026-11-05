@@ -53,8 +53,8 @@ fun AuthScreen(
     var loadingMessage by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
-    val darkBg = Color(0xFF0E0B16)
-    val cardBg = Color(0xFF1B182B)
+    val darkBg = DeepNight
+    val cardBg = com.example.mikayala.theme.MikayalaColors.surface
 
     Box(
         modifier = Modifier
@@ -62,24 +62,8 @@ fun AuthScreen(
             .background(darkBg)
     ) {
         // Glowing background effect
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AccentRose.copy(alpha = 0.2f), Color.Transparent),
-                    center = Offset(w * 0.8f, h * 0.2f),
-                    radius = w * 0.7f
-                )
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AccentViolet.copy(alpha = 0.15f), Color.Transparent),
-                    center = Offset(w * 0.2f, h * 0.8f),
-                    radius = w * 0.8f
-                )
-            )
-        }
+        // (halo lumineux décoratif retiré : style Soft, et rendu plus léger)
+
 
         Column(
             modifier = Modifier
@@ -93,55 +77,14 @@ fun AuthScreen(
         ) {
             Spacer(modifier = Modifier.height(30.dp))
 
-            // Glowing Animated Logo Header
-            val infiniteTransition = rememberInfiniteTransition(label = "auth_logo_pulse")
-            val pulseScale by infiniteTransition.animateFloat(
-                initialValue = 0.96f,
-                targetValue = 1.05f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(2200, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "auth_pulse_scale"
-            )
-
-            Box(
+            // Logo statique (ancienne animation « pulsation » et halo lumineux retirés)
+            Image(
+                painter = painterResource(id = R.drawable.ic_mikayala_logo),
+                contentDescription = "Mikayala",
                 modifier = Modifier
-                    .size(118.dp)
-                    .scale(pulseScale)
-                    .clip(RoundedCornerShape(32.dp))
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                AccentViolet.copy(alpha = 0.5f),
-                                AccentRose.copy(alpha = 0.2f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .border(
-                        BorderStroke(
-                            2.dp,
-                            Brush.linearGradient(
-                                listOf(
-                                    Color(0xFFE085FF),
-                                    Color(0xFF8C52FF),
-                                    Color(0xFF4A154B)
-                                )
-                            )
-                        ),
-                        RoundedCornerShape(32.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_butterfly_logo),
-                    contentDescription = "Mikayala Logo Papillon Liquid Glass",
-                    modifier = Modifier
-                        .size(110.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                )
-            }
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(26.dp))
+            )
 
             Spacer(modifier = Modifier.height(28.dp))
 
@@ -149,11 +92,11 @@ fun AuthScreen(
                 text = "Mikayala",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color.White
+                color = TextPrimary
             )
 
             Text(
-                text = "Votre sanctuaire de couple chiffré et intime",
+                text = "Votre espace privé, rien qu'à vous deux",
                 fontSize = 13.sp,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
@@ -173,13 +116,13 @@ fun AuthScreen(
                             onAuthSuccess()
                         } else {
                             isLoading = false
-                            Toast.makeText(context, "Erreur de connexion Supabase.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, repository.supabaseService.lastAuthError ?: "Erreur de connexion Supabase.", Toast.LENGTH_LONG).show()
                         }
                     }
                 },
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = cardBg),
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp)
@@ -212,7 +155,7 @@ fun AuthScreen(
                             text = "Créer un espace",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -237,13 +180,13 @@ fun AuthScreen(
                             onAuthSuccess()
                         } else {
                             isLoading = false
-                            Toast.makeText(context, "Erreur de connexion Supabase.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, repository.supabaseService.lastAuthError ?: "Erreur de connexion Supabase.", Toast.LENGTH_LONG).show()
                         }
                     }
                 },
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = cardBg),
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -274,7 +217,7 @@ fun AuthScreen(
                             text = "Rejoindre avec un code",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -294,7 +237,7 @@ fun AuthScreen(
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = cardBg,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
+                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
                     modifier = Modifier.width(280.dp)
                 ) {
                     Column(
@@ -305,7 +248,7 @@ fun AuthScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = loadingMessage,
-                            color = Color.White,
+                            color = TextPrimary,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Medium

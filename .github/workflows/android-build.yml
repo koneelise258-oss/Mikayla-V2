@@ -1,0 +1,209 @@
+name: Android build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Aucun cache Gradle lu ni écrit : chaque APK est reconstruit entièrement à partir du code
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+
+      # Diagnostic : présence des secrets (jamais leur valeur)
+      - name: Secrets disponibles
+        env:
+          S1: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          S2: ${{ secrets.SUPABASE_URL }}
+          S3: ${{ secrets.SUPABASE_ANON_KEY }}
+          S4: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          S5: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          S6: ${{ secrets.ANDROID_KEY_ALIAS }}
+          S7: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          check() { if [ -n "$2" ]; then echo "SECRET $1 : présent"; else echo "SECRET $1 : ABSENT"; fi; }
+          check GOOGLE_SERVICES_JSON "$S1"
+          check SUPABASE_URL "$S2"
+          check SUPABASE_ANON_KEY "$S3"
+          check ANDROID_KEYSTORE_BASE64 "$S4"
+          check ANDROID_KEYSTORE_PASSWORD "$S5"
+          check ANDROID_KEY_ALIAS "$S6"
+          check ANDROID_KEY_PASSWORD "$S7"
+          # Format Supabase (jamais la valeur) : URL du projet attendu, type et rôle de la clé
+          URL_CLEAN=$(printf '%s' "$S2" | tr -d '[:space:]' | sed 's#/*$##')
+          if [ "$URL_CLEAN" = "https://yrcnneyejqlkumjbetfh.supabase.co" ]; then echo "SUPABASE_URL : conforme au projet yrcnneyejqlkumjbetfh"; else echo "::error::SUPABASE_URL ne correspond pas à https://yrcnneyejqlkumjbetfh.supabase.co (espace, guillemet, faute ou autre projet)"; fi
+          if [ "$(printf '%s' "$S2" | tr -d '[:space:]')" != "$S2" ]; then echo "::warning::SUPABASE_URL contient des espaces ou un retour à la ligne"; fi
+          KEY=$(printf '%s' "$S3" | tr -d '[:space:]')
+          case "$KEY" in
+            sb_publishable_*) echo "SUPABASE_ANON_KEY : clé publishable (nouveau format)";;
+            sb_secret_*) echo "::error::SUPABASE_ANON_KEY est une clé SECRÈTE : ne jamais la mettre dans l'APK. Utiliser la clé anon/publishable."; exit 1;;
+            eyJ*.*.*)
+              PAYLOAD=$(printf '%s' "$KEY" | cut -d. -f2 | tr '_-' '/+')
+              while [ $(( ${#PAYLOAD} % 4 )) -ne 0 ]; do PAYLOAD="$PAYLOAD="; done
+              ROLE=$(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.role // "?"' 2>/dev/null)
+              REF=$(printf '%s' "$PAYLOAD" | base64 -d 2>/dev/null | jq -r '.ref // "?"' 2>/dev/null)
+              echo "SUPABASE_ANON_KEY : JWT, rôle=$ROLE, projet conforme=$([ "$REF" = yrcnneyejqlkumjbetfh ] && echo oui || echo NON)"
+              if [ "$ROLE" = "service_role" ]; then echo "::error::SUPABASE_ANON_KEY est la clé service_role : interdit dans un APK."; exit 1; fi;;
+            *) echo "::error::SUPABASE_ANON_KEY n'a pas un format de clé Supabase reconnu";;
+          esac
+
+      # Firebase : vrai fichier obligatoire pour un APK de test FCM.
+      # Sans secret, on compile seulement (contrôle du code) et AUCUN APK n'est publié.
+      - name: Configuration Firebase
+        id: firebase
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            if ! jq -e '.client[] | select(.client_info.android_client_info.package_name == "com.mikayla.app")' app/google-services.json > /dev/null; then
+              echo "::error::Le secret GOOGLE_SERVICES_JSON ne contient pas le package com.mikayla.app"
+              exit 1
+            fi
+            echo "Firebase : fichier RÉEL (secret GOOGLE_SERVICES_JSON), package com.mikayla.app vérifié"
+            echo "real=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Firebase : AUCUN secret GOOGLE_SERVICES_JSON. Fichier FACTICE pour compiler uniquement ; aucun APK publié."
+            cat > app/google-services.json <<'JSON'
+          {
+            "project_info": { "project_number": "000000000000", "project_id": "ci-placeholder", "storage_bucket": "ci-placeholder.appspot.com" },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                "android_client_info": { "package_name": "com.mikayla.app" }
+              },
+              "oauth_client": [],
+              "api_key": [{ "current_key": "ci-placeholder-key" }],
+              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+            }],
+            "configuration_version": "1"
+          }
+          JSON
+            echo "real=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Signature stable : même clé pour chaque APK, donc installation par-dessus la version précédente.
+      - name: Clé de signature
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/mikayala.jks"
+            {
+              echo "MIKAYALA_KEYSTORE_PATH=$RUNNER_TEMP/mikayala.jks"
+              echo "MIKAYALA_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "MIKAYALA_KEY_ALIAS=$KEY_ALIAS"
+              echo "MIKAYALA_KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Signature : clé STABLE (secrets ANDROID_KEYSTORE_*)"
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Signature : secrets ANDROID_KEYSTORE_* absents. Clé debug temporaire : chaque APK devra être désinstallé avant d'installer le suivant."
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build debug APK
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::warning::SUPABASE_URL / SUPABASE_ANON_KEY absents : l'APK ne pourra pas se connecter au serveur."
+          fi
+          chmod +x gradlew
+          # Compilation propre : aucun résultat réutilisé d'une compilation précédente
+          ./gradlew --no-daemon --stacktrace --no-build-cache clean assembleDebug
+
+      - name: Unit tests
+        run: |
+          ./gradlew --no-daemon testDebugUnitTest
+          echo "Résumé des tests :"
+          for f in app/build/test-results/testDebugUnitTest/*.xml; do grep -o 'testsuite name="[^"]*" tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' "$f"; done
+
+      # Analyse statique Android Lint : erreurs (API trop récente pour Android 7, autorisations, ressources…)
+      - name: Android Lint
+        continue-on-error: true
+        run: |
+          ./gradlew --no-daemon lintDebug -Dlint.baselines.continue=true || true
+          R=app/build/reports/lint-results-debug.xml
+          if [ -f "$R" ]; then
+            echo "=== LINT ERREURS ==="
+            python3 - "$R" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          from collections import Counter
+          sev = Counter(); ids = Counter()
+          for i in root.findall('issue'):
+              sev[i.get('severity')] += 1
+              if i.get('severity') in ('Error', 'Fatal'):
+                  ids[i.get('id')] += 1
+                  loc = i.find('location')
+                  f = (loc.get('file') or '').split('/app/src/')[-1] if loc is not None else ''
+                  print(f"LINTERR {i.get('id')} | {f}:{loc.get('line') if loc is not None else ''} | {i.get('message')[:160]}")
+          print("LINTSUM", dict(sev))
+          print("LINTIDS", dict(ids))
+          wanted = ('NewApi','InlinedApi','MissingPermission','UnspecifiedRegisterReceiverFlag','ScheduleExactAlarm','UnusedResources','ObsoleteSdkInt')
+          for i in root.findall('issue'):
+              if i.get('id') in wanted and i.get('severity') == 'Warning':
+                  loc = i.find('location')
+                  f = (loc.get('file') or '').split('/app/src/')[-1] if loc is not None else ''
+                  print(f"LINTWARN {i.get('id')} | {f}:{loc.get('line') if loc is not None else ''} | {i.get('message')[:140]}")
+          PY
+          fi
+
+      # Empreinte du certificat (information publique) : doit être identique d'un APK à l'autre
+      - name: Empreinte de signature
+        id: cert
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          FP=$("$APKSIGNER" verify --print-certs "$APK" | grep -m1 "SHA-256 digest" | awk '{print $NF}')
+          echo "Empreinte SHA-256 du certificat : $FP"
+          {
+            echo "### Mikayala — APK de test"
+            echo "- Firebase réel : ${{ steps.firebase.outputs.real }}"
+            echo "- Signature stable : ${{ steps.signing.outputs.stable }}"
+            echo "- Empreinte SHA-256 : \`$FP\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Vérifie que l'APK contient EXACTEMENT les valeurs actuelles des secrets (jamais affichées)
+      - name: Contrôle de l'APK final
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          mkdir -p "$RUNNER_TEMP/apk" && unzip -q -o "$APK" 'classes*.dex' -d "$RUNNER_TEMP/apk"
+          DEX="$RUNNER_TEMP/apk"
+          KEY=$(printf '%s' "$SUPABASE_ANON_KEY" | tr -d '[:space:]')
+          URL=$(printf '%s' "$SUPABASE_URL" | tr -d '[:space:]')
+          has() { grep -a -q -F "$1" "$DEX"/classes*.dex && echo oui || echo NON; }
+          echo "APK : clé Supabase actuelle intégrée = $(has "$KEY")"
+          echo "APK : URL Supabase actuelle intégrée = $(has "$URL")"
+          # Valeur de repli de build.gradle (secret absent) : ne doit pas être la valeur intégrée
+          echo "APK : valeur de repli 'eyJ...dummykey' intégrée = $(has 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummykey') (attendu : NON)"
+          [ "$(has "$KEY")" = oui ] && [ "$(has "$URL")" = oui ] || { echo "::error::L'APK ne contient pas les valeurs actuelles des secrets Supabase"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        if: steps.firebase.outputs.real == 'true'
+        with:
+          name: mikayala-apk-test-fcm
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

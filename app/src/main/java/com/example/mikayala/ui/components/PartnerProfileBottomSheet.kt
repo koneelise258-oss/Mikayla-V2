@@ -57,16 +57,7 @@ fun PartnerProfileBottomSheet(
 
     val isOnline = userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse_profile_dot")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dot_alpha"
-    )
+    val pulseAlpha = 1f // point de présence fixe (plus de clignotement)
 
     val mediaMessages = remember(messages) {
         messages.filter { it.type == "image" || it.type == "video" || it.type == "audio" }
@@ -104,7 +95,7 @@ fun PartnerProfileBottomSheet(
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -119,16 +110,25 @@ fun PartnerProfileBottomSheet(
                             modifier = Modifier
                                 .size(88.dp)
                                 .clip(CircleShape)
-                                .background(Brush.radialGradient(listOf(VibrantCyan.copy(alpha = 0.3f), Color.Transparent)))
-                                .border(2.dp, VibrantCyan, CircleShape),
+                                .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Person,
-                                contentDescription = "Avatar Partenaire",
-                                tint = VibrantCyan,
-                                modifier = Modifier.size(50.dp)
-                            )
+                            // Vraie photo du partenaire si elle existe, sinon icône neutre
+                            if (userSettings.partnerAvatarUrl.isNotBlank()) {
+                                coil.compose.AsyncImage(
+                                    model = userSettings.partnerAvatarUrl,
+                                    contentDescription = "Photo de votre partenaire",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Rounded.Person,
+                                    contentDescription = "Photo de votre partenaire",
+                                    tint = AccentRose,
+                                    modifier = Modifier.size(50.dp)
+                                )
+                            }
                         }
 
                         // Online Presence Dot / Badge
@@ -247,7 +247,7 @@ fun PartnerProfileBottomSheet(
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = CardDarkElevated,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -263,13 +263,13 @@ fun PartnerProfileBottomSheet(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Chiffrement de bout en bout",
+                            text = "Espace privé du couple",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
                         Text(
-                            text = "Les messages et appels sont chiffrés. Personne d'autre ne peut les lire.",
+                            text = "Les échanges sont réservés à vous deux par les règles d'accès du serveur et transitent en connexion sécurisée (HTTPS). Ils ne sont pas chiffrés de bout en bout.",
                             fontSize = 11.sp,
                             color = TextSecondary
                         )
@@ -283,7 +283,7 @@ fun PartnerProfileBottomSheet(
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MatteCardDark,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -317,7 +317,7 @@ fun PartnerProfileBottomSheet(
                             onClick = { selectedMediaTab = 0 },
                             label = { Text("Photos/Médias (${mediaMessages.size})", fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x3800E5FF),
+                                selectedContainerColor = Color(0x387FA8CC),
                                 selectedLabelColor = Color.White,
                                 containerColor = CardDarkElevated,
                                 labelColor = TextSecondary
@@ -328,7 +328,7 @@ fun PartnerProfileBottomSheet(
                             onClick = { selectedMediaTab = 1 },
                             label = { Text("Liens (${linkMessages.size})", fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x3800E5FF),
+                                selectedContainerColor = Color(0x387FA8CC),
                                 selectedLabelColor = Color.White,
                                 containerColor = CardDarkElevated,
                                 labelColor = TextSecondary
@@ -339,7 +339,7 @@ fun PartnerProfileBottomSheet(
                             onClick = { selectedMediaTab = 2 },
                             label = { Text("Favoris ⭐ (${starredMessages.size})", fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x3800E5FF),
+                                selectedContainerColor = Color(0x387FA8CC),
                                 selectedLabelColor = Color.White,
                                 containerColor = CardDarkElevated,
                                 labelColor = TextSecondary
@@ -359,7 +359,7 @@ fun PartnerProfileBottomSheet(
                                         Surface(
                                             shape = RoundedCornerShape(10.dp),
                                             color = CardDarkElevated,
-                                            border = BorderStroke(1.dp, BorderSubtleWhite),
+                                            border = BorderStroke(0.5.dp, BorderSubtleWhite),
                                             modifier = Modifier.size(70.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
@@ -407,14 +407,14 @@ fun PartnerProfileBottomSheet(
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = CardDarkElevated,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
+                border = BorderStroke(0.5.dp, BorderSubtleWhite),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("Code de couple", coupleSpace.pairingCode)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Code copié dans le presse-papier ! 📋", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Code copié dans le presse-papier", Toast.LENGTH_SHORT).show()
                     }
             ) {
                 Row(
@@ -456,7 +456,7 @@ fun ContactActionButton(
         Surface(
             shape = CircleShape,
             color = CardDarkElevated,
-            border = BorderStroke(1.dp, BorderSubtleWhite),
+            border = BorderStroke(0.5.dp, BorderSubtleWhite),
             modifier = Modifier.size(46.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
