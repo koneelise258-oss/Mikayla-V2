@@ -37,6 +37,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import io.ktor.client.request.headers
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.contentType
 
 class SupabaseService(
     private var customUrl: String? = null,
@@ -79,8 +84,34 @@ class SupabaseService(
     @Volatile var lastAuthError: String? = null
         private set
 
+    /**
+     * Attend que la session enregistrée sur le téléphone soit rechargée.
+     *
+     * Au démarrage, le SDK recharge la session de manière asynchrone : tant que ce n'est pas fini,
+     * currentSessionOrNull() vaut null. Sans cette attente, l'application interrogeait Supabase
+     * sans identité (clé anon) : la RLS renvoyait une liste de couples VIDE, et l'application
+     * effaçait le couple local ou créait un nouveau compte anonyme. Retourne true si une session existe.
+     */
+    suspend fun awaitSessionReady(timeoutMs: Long = 10_000L): Boolean {
+        return try {
+            withTimeoutOrNull(timeoutMs) { supabase.auth.awaitInitialization() }
+            supabase.auth.currentSessionOrNull() != null
+        } catch (e: Exception) {
+            Log.w("MikayalaAuth", "[AUTH] awaitSessionReady: ${e.message}")
+            false
+        }
+    }
+
+    /** Jeton utilisateur réel (jamais la clé anon), ou null si aucune session n'est chargée. */
+    fun userAccessTokenOrNull(): String? = try {
+        supabase.auth.currentSessionOrNull()?.accessToken?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) { null }
+
     suspend fun ensureAnonymousSession(): Boolean {
         try {
+            // Ne jamais conclure « aucune session » avant que la session enregistrée soit rechargée :
+            // sinon un nouveau compte anonyme est créé et le téléphone perd son couple.
+            awaitSessionReady()
             val session = supabase.auth.currentSessionOrNull()
             if (session != null) {
                 Log.d("MikayalaAuth", "[AUTH] Session active trouvée pour UID: ${session.user?.id}")
@@ -335,6 +366,50 @@ class SupabaseService(
         paired ?: couples.firstOrNull()
     }
 
+    /** Résultat de la recherche des couples : une liste vide n'est fiable que dans [Found]. */
+    sealed class CoupleFetch {
+        data class Found(val couples: List<JSONObject>) : CoupleFetch()
+        /** Réseau, serveur, RLS, session absente : on ne sait PAS s'il existe un couple. */
+        data class Failed(val reason: String) : CoupleFetch()
+    }
+
+    /**
+     * Recherche fiable des couples de l'utilisateur. Contrairement à [getAllCouplesForUser],
+     * une erreur n'est jamais transformée en « aucun couple ».
+     */
+    suspend fun fetchCouplesForUser(userId: String): CoupleFetch = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext CoupleFetch.Failed("serveur non configuré")
+        if (userId.isEmpty()) return@withContext CoupleFetch.Failed("utilisateur inconnu")
+        awaitSessionReady()
+        val token = userAccessTokenOrNull()
+            ?: return@withContext CoupleFetch.Failed("session non chargée")
+        val sessionUid = getCurrentSessionUid()
+        if (sessionUid != null && sessionUid != userId) {
+            return@withContext CoupleFetch.Failed("session d'un autre compte")
+        }
+        val results = mutableListOf<JSONObject>()
+        val seen = mutableSetOf<String>()
+        for (column in listOf("user1_id", "user2_id")) {
+            val r = executeGetResult("/rest/v1/couples?$column=eq.$userId&order=created_at.desc", token)
+            if (!r.ok || r.body == null) {
+                Log.w("MikayalaCouple", "[COUPLE] Recherche impossible ($column) : code=${r.code} ${r.error ?: ""}")
+                return@withContext CoupleFetch.Failed("HTTP ${r.code} ${r.error ?: ""}".trim())
+            }
+            try {
+                val array = JSONArray(r.body)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val id = obj.optString("id", "")
+                    if (id.isNotEmpty() && seen.add(id)) results.add(obj)
+                }
+            } catch (e: Exception) {
+                return@withContext CoupleFetch.Failed("réponse illisible")
+            }
+        }
+        Log.d("MikayalaCouple", "[COUPLE] Couples trouvés (réponse fiable) : ${results.size}")
+        CoupleFetch.Found(results)
+    }
+
     suspend fun getAllCouplesForUser(userId: String): List<JSONObject> = withContext(Dispatchers.IO) {
         if (!isConfigured() || userId.isEmpty()) return@withContext emptyList()
         val results = mutableListOf<JSONObject>()
@@ -373,11 +448,43 @@ class SupabaseService(
         results
     }
 
-    suspend fun fetchMessages(coupleId: String, pairingCode: String = ""): JSONArray? = withContext(Dispatchers.IO) {
+    /**
+     * Messages du couple, du plus ancien au plus récent.
+     * - [createdAfterIso] : seulement les messages plus récents (synchronisation légère) ;
+     * - [createdBeforeIso] : page de messages plus anciens (pagination) ;
+     * - sinon : les [limit] messages les plus récents (fenêtre de réconciliation).
+     * Retourne null en cas d'erreur (jamais une liste vide trompeuse).
+     */
+    suspend fun fetchMessages(
+        coupleId: String,
+        pairingCode: String = "",
+        createdAfterIso: String? = null,
+        createdBeforeIso: String? = null,
+        limit: Int = 500
+    ): JSONArray? = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty()) return@withContext null
+        val token = userAccessTokenOrNull() ?: return@withContext null
         try {
-            val res = executeGet("/rest/v1/messages?couple_id=eq.$coupleId&order=created_at.asc")
-            if (res != null) return@withContext JSONArray(res)
+            fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
+            val path = when {
+                createdAfterIso != null ->
+                    "/rest/v1/messages?couple_id=eq.$coupleId&created_at=gt.${enc(createdAfterIso)}&order=created_at.asc&limit=$limit"
+                createdBeforeIso != null ->
+                    "/rest/v1/messages?couple_id=eq.$coupleId&created_at=lt.${enc(createdBeforeIso)}&order=created_at.desc&limit=$limit"
+                else ->
+                    "/rest/v1/messages?couple_id=eq.$coupleId&order=created_at.desc&limit=$limit"
+            }
+            val r = executeGetResult(path, token)
+            if (!r.ok || r.body == null) {
+                Log.w("SupabaseService", "fetchMessages HTTP ${r.code}: ${r.error}")
+                return@withContext null
+            }
+            val array = JSONArray(r.body)
+            if (createdAfterIso != null) return@withContext array
+            // Requêtes triées du plus récent au plus ancien : on remet dans l'ordre chronologique
+            val asc = JSONArray()
+            for (i in array.length() - 1 downTo 0) asc.put(array.get(i))
+            return@withContext asc
         } catch (e: Exception) {
             Log.e("SupabaseService", "fetchMessages error: ${e.message}")
         }
@@ -445,7 +552,9 @@ class SupabaseService(
                 put("content", msg.content)
                 put("message_type", messageType)
                 put("is_ephemeral", msg.isViewOnce)
-                put("status", msg.status.ifEmpty { "sent" })
+                // Toujours « sent » côté serveur : l'état local « pending »/« failed » ne doit jamais
+                // être publié (sinon mark_messages_delivered, qui cherche status = 'sent', ne le voit pas).
+                put("status", "sent")
 
                 val path = storagePath ?: msg.storagePath ?: if (!msg.mediaUrl.isNullOrEmpty() && !msg.mediaUrl.startsWith("http")) msg.mediaUrl else null
                 if (!path.isNullOrEmpty()) {
@@ -472,15 +581,23 @@ class SupabaseService(
                 }
             }
 
-            Log.d("SupabaseMessage", "Posting message to /rest/v1/messages: $body")
-            val res = executePost("/rest/v1/messages", body.toString())
-            if (res != null) {
-                Log.d("SupabaseMessage", "MESSAGE INSERT SUCCESS: $res")
+            Log.d("SupabaseMessage", "Posting message id=$validUuid type=$messageType")
+            val res = executePostResult("/rest/v1/messages", body.toString())
+            if (res.ok) {
+                Log.d("SupabaseMessage", "MESSAGE INSERT SUCCESS id=$validUuid")
                 return@withContext true
-            } else {
-                Log.e("SupabaseMessage", "MESSAGE INSERT FAILED: executePost returned null for payload $body")
-                return@withContext false
             }
+            // 409 = l'identifiant existe déjà : un envoi précédent a réussi mais sa réponse s'est perdue
+            // (coupure réseau). Avant, le message restait « en attente » et était renvoyé à l'infini.
+            if (res.code == 409 || (res.error ?: "").contains("23505")) {
+                val existing = executeGet("/rest/v1/messages?id=eq.$validUuid&select=id")
+                if (existing != null && existing.trim() != "[]") {
+                    Log.d("SupabaseMessage", "MESSAGE ALREADY STORED id=$validUuid (renvoi idempotent)")
+                    return@withContext true
+                }
+            }
+            Log.e("SupabaseMessage", "MESSAGE INSERT FAILED id=$validUuid code=${res.code}: ${res.error}")
+            return@withContext false
         } catch (e: Exception) {
             Log.e("SupabaseMessage", "MESSAGE INSERT FAILED exception: ${e.message}", e)
             return@withContext false
@@ -608,10 +725,11 @@ class SupabaseService(
     }
 
     suspend fun updateMessageFields(messageId: String, fields: JSONObject): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured() || messageId.isEmpty()) return@withContext true
+        if (!isConfigured() || messageId.isEmpty()) return@withContext false
         try {
             val res = executePatch("/rest/v1/messages?id=eq.$messageId", fields.toString())
-            return@withContext res != null
+            // « [] » = aucune ligne modifiée (RLS refuse ou message absent) : ce n'est PAS un succès
+            return@withContext res != null && res.trim().let { it.isNotEmpty() && it != "[]" }
         } catch (e: Exception) {
             Log.e("SupabaseService", "updateMessageFields error: ${e.message}")
             return@withContext false
@@ -636,7 +754,7 @@ class SupabaseService(
                 put("content", "Ce message a été supprimé")
             }
             val res = executePatch("/rest/v1/messages?id=eq.$messageId", body.toString())
-            return@withContext res != null
+            return@withContext res != null && res.trim().let { it.isNotEmpty() && it != "[]" }
         } catch (e: Exception) {
             Log.e("SupabaseService", "deleteMessageForEveryone error: ${e.message}")
             return@withContext false
@@ -654,6 +772,9 @@ class SupabaseService(
 
     private var activePresenceChannel: RealtimeChannel? = null
     private var presenceJob: Job? = null
+    @Volatile private var activePresenceCoupleId: String? = null
+    @Volatile private var presenceSubscribeAttemptAt = 0L
+    @Volatile private var messagesSubscribeAttemptAt = 0L
 
     fun subscribeToPresenceRealtime(
         coupleId: String,
@@ -661,6 +782,18 @@ class SupabaseService(
         onPresenceUpdate: (List<String>) -> Unit
     ) {
         if (!isConfigured() || coupleId.isEmpty()) return
+        if (userAccessTokenOrNull() == null) return
+
+        // Même protection que pour les messages : recréer le canal toutes les 4 s faisait
+        // clignoter le partenaire « en ligne / hors ligne ».
+        val st = activePresenceChannel?.status?.value
+        val sinceAttempt = System.currentTimeMillis() - presenceSubscribeAttemptAt
+        if (activePresenceCoupleId == coupleId && (st == RealtimeChannel.Status.SUBSCRIBED ||
+                (st == RealtimeChannel.Status.SUBSCRIBING && sinceAttempt < 45_000L))) {
+            return
+        }
+        presenceSubscribeAttemptAt = System.currentTimeMillis()
+        activePresenceCoupleId = coupleId
 
         presenceJob?.cancel()
         presenceJob = realtimeScope.launch {
@@ -717,15 +850,26 @@ class SupabaseService(
         onUpdate: (JSONObject) -> Unit,
         onDelete: (String) -> Unit,
         onTyping: (String, Boolean) -> Unit,
-        onRecording: (String, Boolean) -> Unit
+        onRecording: (String, Boolean) -> Unit,
+        onSubscribed: () -> Unit = {}
     ) {
         if (!isConfigured() || coupleId.isEmpty()) return
-
-        // If already connected to this couple and channel is active, do not re-register flows
-        if (activeSubscribedCoupleId == coupleId && activeRealtimeChannel?.status?.value?.name == "SUBSCRIBED") {
-            Log.d("SupabaseRealtime", "[REALTIME] Already subscribed to couple $coupleId, skipping duplicate subscribe")
+        if (userAccessTokenOrNull() == null) {
+            // Sans jeton utilisateur, la RLS filtrerait tous les événements : canal muet.
+            Log.w("SupabaseRealtime", "[REALTIME] Session non chargée : abonnement reporté")
             return
         }
+
+        // Canal déjà actif OU en cours de (re)connexion pour ce couple : ne rien casser.
+        // Avant, la synchronisation (toutes les 2,5–4 s) détruisait et recréait le canal pendant
+        // sa reconnexion (délai SDK 7 s) : il n'était plus jamais abonné et les messages n'arrivaient plus.
+        val st = activeRealtimeChannel?.status?.value
+        val sinceAttempt = System.currentTimeMillis() - messagesSubscribeAttemptAt
+        if (activeSubscribedCoupleId == coupleId && (st == RealtimeChannel.Status.SUBSCRIBED ||
+                (st == RealtimeChannel.Status.SUBSCRIBING && sinceAttempt < 45_000L))) {
+            return
+        }
+        messagesSubscribeAttemptAt = System.currentTimeMillis()
 
         subscriptionJob?.cancel()
         subscriptionJob = realtimeScope.launch {
@@ -753,7 +897,11 @@ class SupabaseService(
                         val statusName = status.name
                         Log.d("SupabaseRealtime", "[REALTIME STATUS] $statusName on $channelId")
                         when (statusName) {
-                            "SUBSCRIBED" -> Log.i("SupabaseRealtime", "[REALTIME] SUBSCRIBED to $channelId successfully")
+                            "SUBSCRIBED" -> {
+                                Log.i("SupabaseRealtime", "[REALTIME] SUBSCRIBED to $channelId successfully")
+                                // (Ré)abonné : rattraper ce qui a pu arriver pendant la coupure
+                                try { onSubscribed() } catch (_: Exception) {}
+                            }
                             "CHANNEL_ERROR" -> Log.e("SupabaseRealtime", "[REALTIME] CHANNEL_ERROR on $channelId")
                             "TIMED_OUT" -> Log.w("SupabaseRealtime", "[REALTIME] TIMED_OUT on $channelId")
                             "CLOSED" -> Log.w("SupabaseRealtime", "[REALTIME] CLOSED on $channelId")
@@ -892,6 +1040,7 @@ class SupabaseService(
         try {
             presenceJob?.cancel()
             presenceJob = null
+            activePresenceCoupleId = null
             val channel = activePresenceChannel
             activePresenceChannel = null
             if (channel != null) {
@@ -1148,6 +1297,57 @@ class SupabaseService(
         }
     }
 
+    /** Réponse HTTP brute : permet de distinguer « vide » (succès) d'une erreur. */
+    data class HttpResult(val code: Int, val body: String?, val error: String?) {
+        val ok: Boolean get() = code in 200..299
+    }
+
+    private fun readAll(stream: java.io.InputStream?): String? =
+        stream?.bufferedReader()?.use { it.readText() }
+
+    private fun executeGetResult(path: String, tokenOverride: String? = null): HttpResult {
+        return try {
+            val fullUrl = if (path.startsWith("http")) path else "$supabaseUrl$path"
+            val conn = URL(fullUrl).openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("apikey", supabaseKey)
+            conn.setRequestProperty("Authorization", "Bearer ${tokenOverride ?: getAuthToken()}")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+            val code = conn.responseCode
+            if (code in 200..299) HttpResult(code, readAll(conn.inputStream), null)
+            else HttpResult(code, null, readAll(conn.errorStream)?.take(300))
+        } catch (e: Exception) {
+            HttpResult(-1, null, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun executePostResult(path: String, jsonBody: String, prefer: String = "return=representation"): HttpResult {
+        return try {
+            val fullUrl = if (path.startsWith("http")) path else "$supabaseUrl$path"
+            val conn = URL(fullUrl).openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("apikey", supabaseKey)
+            conn.setRequestProperty("Authorization", "Bearer ${getAuthToken()}")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Prefer", prefer)
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody) }
+            val code = conn.responseCode
+            if (code in 200..299) HttpResult(code, if (code == 204) "" else readAll(conn.inputStream), null)
+            else HttpResult(code, null, readAll(conn.errorStream)?.take(300))
+        } catch (e: Exception) {
+            HttpResult(-1, null, e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    /** Client HTTP capable d'envoyer un vrai PATCH (HttpURLConnection ne le sait pas). */
+    private val restHttp by lazy {
+        io.ktor.client.HttpClient(io.ktor.client.engine.okhttp.OkHttp) { expectSuccess = false }
+    }
+
     private fun executePost(
         path: String,
         jsonBody: String,
@@ -1244,41 +1444,33 @@ class SupabaseService(
         }
     }
 
-    private fun executePatch(path: String, jsonBody: String): String? {
+    /**
+     * Vraie requête HTTP PATCH (mise à jour).
+     *
+     * Avant : POST + en-tête « X-HTTP-Method-Override: PATCH ». PostgREST (Supabase) ignore cet
+     * en-tête et traite la requête comme un POST, c'est-à-dire une INSERTION d'une ligne incomplète,
+     * refusée. Conséquence : réactions, modifications, suppression pour les deux, coups de jeu,
+     * profil, surnoms, statut des appels et replis des accusés n'étaient jamais enregistrés.
+     * Retourne le corps (« [] » si aucune ligne modifiée) ou null en cas d'erreur.
+     */
+    private suspend fun executePatch(path: String, jsonBody: String): String? {
+        val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) path else "$supabaseUrl$path"
         return try {
-            val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) {
-                path
-            } else {
-                "$supabaseUrl$path"
-            }
-            Log.d("SupabaseService", "DEBUG: executePatch path: $path, supabaseUrl: $supabaseUrl, fullUrl: $fullUrl")
-            val url = URL(fullUrl)
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST" // HTTP connection workaround for PATCH or use X-HTTP-Method-Override
-            conn.setRequestProperty("X-HTTP-Method-Override", "PATCH")
-            conn.setRequestProperty("apikey", supabaseKey)
-            val token = getAuthToken()
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.doOutput = true
-            conn.connectTimeout = 6000
-            conn.readTimeout = 6000
-
-            val writer = OutputStreamWriter(conn.outputStream)
-            writer.write(jsonBody)
-            writer.flush()
-            writer.close()
-
-            if (conn.responseCode in 200..299) {
-                val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                val sb = java.lang.StringBuilder()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    sb.append(line)
+            val response = restHttp.request(fullUrl) {
+                method = io.ktor.http.HttpMethod.Patch
+                headers {
+                    append("apikey", supabaseKey)
+                    append(io.ktor.http.HttpHeaders.Authorization, "Bearer ${getAuthToken()}")
+                    append("Prefer", "return=representation")
                 }
-                reader.close()
-                sb.toString()
-            } else null
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(jsonBody)
+            }
+            val text = response.bodyAsText()
+            if (response.status.value in 200..299) text else {
+                Log.w("SupabaseService", "executePatch HTTP ${response.status.value} on ${path.substringBefore('?')}: ${text.take(300)}")
+                null
+            }
         } catch (e: Exception) {
             Log.e("SupabaseService", "executePatch failed: ${e.message}")
             null
@@ -1356,6 +1548,12 @@ class SupabaseService(
         }
     }
 
+    private fun nowIso(): String {
+        val f = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        f.timeZone = TimeZone.getTimeZone("UTC")
+        return f.format(Date())
+    }
+
     suspend fun markMessagesDelivered(coupleId: String, myUserId: String = ""): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty() || coupleId == "couple_main" || !isValidUuid(coupleId)) return@withContext false
         try {
@@ -1364,9 +1562,13 @@ class SupabaseService(
             }
             var success = executeRpc("mark_messages_delivered", rpcBody)
             if (!success) {
-                val url = "$supabaseUrl/rest/v1/messages?couple_id=eq.$coupleId&status=eq.sent"
-                val body = JSONObject().apply { put("status", "delivered") }.toString()
-                success = executePatch(url, body) != null
+                // Repli : uniquement les messages REÇUS (jamais les miens), avec l'heure de réception
+                val me = myUserId.ifEmpty { getCurrentSessionUid() ?: "" }
+                if (me.isNotEmpty()) {
+                    val url = "$supabaseUrl/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$me&status=eq.sent"
+                    val body = JSONObject().apply { put("status", "delivered"); put("delivered_at", nowIso()) }.toString()
+                    success = executePatch(url, body) != null
+                }
             }
             if (success) {
                 Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesDelivered SUCCESS for coupleId=$coupleId")
@@ -1388,9 +1590,14 @@ class SupabaseService(
             }
             var success = executeRpc("mark_messages_read", rpcBody)
             if (!success) {
-                val url = "$supabaseUrl/rest/v1/messages?couple_id=eq.$coupleId&status=eq.delivered"
-                val body = JSONObject().apply { put("status", "read") }.toString()
-                success = executePatch(url, body) != null
+                // Repli : uniquement les messages REÇUS ; « sent » aussi (lu sans accusé de réception préalable)
+                val me = myUserId.ifEmpty { getCurrentSessionUid() ?: "" }
+                if (me.isNotEmpty()) {
+                    val now = nowIso()
+                    val url = "$supabaseUrl/rest/v1/messages?couple_id=eq.$coupleId&sender_id=neq.$me&status=in.(sent,delivered)"
+                    val body = JSONObject().apply { put("status", "read"); put("read_at", now) }.toString()
+                    success = executePatch(url, body) != null
+                }
             }
             if (success) {
                 Log.d("SupabaseService", "[MIKAYALA_MESSAGING] markMessagesRead SUCCESS for coupleId=$coupleId")

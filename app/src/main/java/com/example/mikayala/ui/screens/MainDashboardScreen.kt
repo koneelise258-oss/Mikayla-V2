@@ -152,12 +152,11 @@ fun MainDashboardScreen(
     // Background Realtime Sync for Supabase (Messages, Shared Vault, Call Signals)
     LaunchedEffect(coupleSpace.pairingCode, coupleSpace.isPaired) {
         if (coupleSpace.pairingCode.isNotEmpty() && coupleSpace.isPaired) {
+            // Synchronisation : un seul mécanisme, dans le dépôt (boucle légère + temps réel).
+            // Ici, uniquement la détection d'appel entrant.
+            repository.requestFullSync()
             while (true) {
                 try {
-                    repository.syncWithSupabase()
-                    if (coupleSpace.id.isNotEmpty()) {
-                        repository.markMessagesDelivered(coupleSpace.id)
-                    }
                     val incomingCall = repository.checkForIncomingCall()
                     if (incomingCall != null && activeCallState == null) {
                         activeCallState = incomingCall

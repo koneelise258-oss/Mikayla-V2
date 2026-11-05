@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
 
         Log.d("MikayalaStartup", "Initializing repository...")
         try {
-            repository = MikayalaRepository(applicationContext)
+            repository = MikayalaRepository.getInstance(applicationContext)
             Log.d("MikayalaStartup", "Repository initialized successfully")
             
             Log.d("MikayalaStartup", "Creating notification channels...")
@@ -111,6 +111,8 @@ class MainActivity : ComponentActivity() {
                         when (event) {
                             androidx.lifecycle.Lifecycle.Event.ON_STOP -> backgroundSince[0] = System.currentTimeMillis()
                             androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                                // Retour au premier plan : récupérer tout ce qui est arrivé pendant l'absence
+                                repository.requestFullSync()
                                 val s = repository.userSettings.value
                                 val since = backgroundSince[0]
                                 backgroundSince[0] = 0L

@@ -160,8 +160,12 @@ fun ChatScreen(
 
     val rawMessages by repository.allMessages.collectAsState()
     val myUserId = remember { repository.getCurrentUserId() }
-    val baseMessages = remember(rawMessages, myUserId) {
-        rawMessages.filter { !it.deletedFor.contains(myUserId) }
+    val activeCoupleId = repository.activeCoupleSpace.collectAsState().value.id
+    val baseMessages = remember(rawMessages, myUserId, activeCoupleId) {
+        rawMessages.filter {
+            !it.deletedFor.contains(myUserId) &&
+                (activeCoupleId.isEmpty() || it.coupleId.isEmpty() || it.coupleId == activeCoupleId)
+        }
     }
 
     var searchQuery by remember { mutableStateOf("") }
@@ -186,6 +190,11 @@ fun ChatScreen(
     val isPartnerTyping by repository.isPartnerTyping.collectAsState()
     val isPartnerRecording by repository.isPartnerRecordingAudio.collectAsState()
     val userSettings by repository.userSettings.collectAsState()
+
+    // Pagination : bouton « Messages précédents » en haut de la conversation
+    val hasOlderMessages by repository.hasOlderMessages.collectAsState()
+    var loadingOlder by remember { mutableStateOf(false) }
+    val hasOlderHeader = hasOlderMessages && searchMode == null && messages.isNotEmpty()
 
     var selectedMessageIds by remember { mutableStateOf(setOf<String>()) }
     var textInput by remember { mutableStateOf("") }
@@ -213,10 +222,12 @@ fun ChatScreen(
 
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.FRANCE) }
 
-    // Scroll to bottom on new message
-    LaunchedEffect(messages.size) {
+    // Défilement vers le bas seulement quand un NOUVEAU message arrive en fin de liste
+    // (pas quand des messages plus anciens sont chargés en haut).
+    val lastMessageId = messages.lastOrNull()?.id
+    LaunchedEffect(lastMessageId) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            listState.animateScrollToItem(messages.size - 1 + if (hasOlderHeader) 1 else 0)
         }
     }
 
@@ -239,22 +250,10 @@ fun ChatScreen(
         }
     }
 
-    // Fast periodic sync loop while viewing chat screen so message checkmark statuses update live in real-time
+    // Plus de synchronisation complète toutes les 2,5 s ici (le dépôt s'en charge, et le temps réel
+    // met à jour les accusés en direct). À l'ouverture de la conversation : rattrapage immédiat.
     LaunchedEffect(Unit) {
-        while (true) {
-            try {
-                repository.syncWithSupabase()
-                val cId = coupleSpace.id
-                if (cId.isNotEmpty()) {
-                    repository.markMessagesDelivered(cId)
-                    repository.markMessagesRead(cId)
-                    com.example.mikayala.util.P2PSocketManager.sendReadAckAll()
-                }
-            } catch (e: Exception) {
-                // Ignore transient network errors
-            }
-            delay(2500)
-        }
+        repository.requestFullSync()
     }
 
     // Broadcast typing status with debounce
@@ -587,6 +586,25 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(top = 10.dp, bottom = 10.dp)
             ) {
+                if (hasOlderHeader) {
+                    item(key = "older_messages_header") {
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            TextButton(
+                                enabled = !loadingOlder,
+                                onClick = {
+                                    loadingOlder = true
+                                    coroutineScope.launch {
+                                        val n = repository.loadOlderMessages()
+                                        loadingOlder = false
+                                        if (n < 0) Toast.makeText(context, "Impossible de charger les anciens messages (réseau)", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Text(if (loadingOlder) "Chargement…" else "Afficher les messages précédents")
+                            }
+                        }
+                    }
+                }
                 itemsIndexed(messages, key = { _, item -> item.id }) { index, message ->
                     val currentDay = remember(message.createdAt) { getDayHeaderText(message.createdAt) }
                     val previousDay = if (index > 0) {

@@ -116,6 +116,22 @@ class MikayalaRepository(private val context: Context) {
     private val _cycleInfo = MutableStateFlow(MenstrualCycleInfo())
     val cycleInfo: StateFlow<MenstrualCycleInfo> = _cycleInfo.asStateFlow()
 
+    private val syncMutex = kotlinx.coroutines.sync.Mutex()
+    @Volatile private var lastRemoteCreatedAtIso: String? = null
+    @Volatile private var lastRemoteCreatedAtMs: Long = 0L
+    @Volatile private var lastFullSyncAt = 0L
+    @Volatile private var lastProfilesSyncAt = 0L
+    @Volatile private var lastVaultSyncAt = 0L
+    @Volatile private var fullSyncRequested = true
+    @Volatile private var syncedCoupleId: String = ""
+
+    private val _hasOlderMessages = MutableStateFlow(true)
+    /** Il reste peut-être des messages plus anciens sur le serveur (pagination). */
+    val hasOlderMessages: StateFlow<Boolean> = _hasOlderMessages.asStateFlow()
+
+    // --- Envois en cours (évite qu'une synchronisation publie un message pendant son propre envoi) ---
+    private val outgoingInFlight = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     private val prefs = context.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
 
     init {
@@ -197,22 +213,22 @@ class MikayalaRepository(private val context: Context) {
                     status = "delivered",
                     deliveredAt = System.currentTimeMillis()
                 )
-                _messages.value = (_messages.value + rcvdMsg).sortedBy { it.createdAt }
+                _messages.update { cur -> if (cur.any { it.id == msgId }) cur else (cur + rcvdMsg).sortedBy { it.createdAt } }
                 saveLocalMessagesCache()
             }
         }
 
         com.example.mikayala.util.P2PSocketManager.onP2PStatusUpdated = { msgId, status ->
-            _messages.value = _messages.value.map {
+            _messages.update { cur -> cur.map {
                 if (it.id == msgId) it.copy(status = status) else it
-            }
+            } }
             saveLocalMessagesCache()
         }
 
         com.example.mikayala.util.P2PSocketManager.onP2PAllReadReceived = {
-            _messages.value = _messages.value.map { msg ->
+            _messages.update { cur -> cur.map { msg ->
                 if (isMessageFromMe(msg) && msg.status != "read") msg.copy(status = "read") else msg
-            }
+            } }
             saveLocalMessagesCache()
         }
 
@@ -222,14 +238,8 @@ class MikayalaRepository(private val context: Context) {
             if (cm != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                 cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: android.net.Network) {
-                        Log.d("MikayalaRepository", "[NETWORK] Internet network restored -> trigger immediate syncWithSupabase()")
-                        repositoryScope.launch {
-                            try {
-                                syncWithSupabase()
-                            } catch (e: Exception) {
-                                Log.w("MikayalaRepository", "Network restored sync failed: ${e.message}")
-                            }
-                        }
+                        Log.d("MikayalaRepository", "[NETWORK] Internet revenu -> synchronisation complète")
+                        requestFullSync()
                     }
                 })
             }
@@ -440,24 +450,41 @@ class MikayalaRepository(private val context: Context) {
         data class SingleCoupleFound(val couple: CoupleSpaceEntity) : CoupleRecoveryResult()
         data class MultipleCouplesFound(val couples: List<CoupleSummaryItem>) : CoupleRecoveryResult()
         data class WaitingCouple(val pairingCode: String) : CoupleRecoveryResult()
+        /**
+         * Supabase n'a pas pu répondre de façon fiable (réseau, serveur, RLS, session pas encore chargée).
+         * Le couple enregistré sur le téléphone est CONSERVÉ tel quel.
+         */
+        data class ServerUnavailable(val reason: String, val keptCachedCouple: Boolean) : CoupleRecoveryResult()
     }
 
     suspend fun recoverCoupleFromSupabase(): CoupleRecoveryResult {
+        // Attendre le rechargement de la session enregistrée AVANT toute requête (cause du bug
+        // « retour à la création d'un couple après fermeture complète »).
+        val hasSession = supabaseService.awaitSessionReady()
         var myUserId = getCurrentUserId()
-        if (myUserId.isEmpty()) {
-            val restoredUid = restoreSupabaseSession()
-            if (restoredUid != null) {
-                myUserId = restoredUid
-            } else {
-                Log.w("MikayalaRecovery", "[RECOVERY] Aucun utilisateur connecté.")
-                return CoupleRecoveryResult.NoSession
-            }
+        if (!hasSession) {
+            val cached = _coupleSpace.value
+            Log.w("MikayalaRecovery", "[RECOVERY] Aucune session Supabase chargée (couple local conservé : ${cached.isPaired}).")
+            return if (myUserId.isEmpty()) CoupleRecoveryResult.NoSession
+            else CoupleRecoveryResult.ServerUnavailable("session absente", cached.isPaired)
         }
+        restoreSupabaseSession()?.let { myUserId = it }
+        if (myUserId.isEmpty()) return CoupleRecoveryResult.NoSession
 
         Log.d("MikayalaRecovery", "[RECOVERY] Interrogation de Supabase (source de vérité) pour UID: $myUserId")
-        val rawCouples = supabaseService.getAllCouplesForUser(myUserId)
+        val fetch = supabaseService.fetchCouplesForUser(myUserId)
+        val rawCouples = when (fetch) {
+            is SupabaseService.CoupleFetch.Failed -> {
+                // Une erreur n'est PAS une absence de couple : on ne touche à rien.
+                val cached = _coupleSpace.value
+                Log.w("MikayalaRecovery", "[RECOVERY] Supabase indisponible (${fetch.reason}) : couple local conservé (${cached.isPaired}).")
+                return CoupleRecoveryResult.ServerUnavailable(fetch.reason, cached.isPaired)
+            }
+            is SupabaseService.CoupleFetch.Found -> fetch.couples
+        }
         if (rawCouples.isEmpty()) {
-            Log.d("MikayalaRecovery", "[RECOVERY] Aucun couple trouvé dans la table couples pour cet UID.")
+            // Réponse fiable, avec le jeton de CET utilisateur : il n'a réellement aucun couple.
+            Log.d("MikayalaRecovery", "[RECOVERY] Aucun couple trouvé (réponse fiable) pour cet UID.")
             clearCoupleCache()
             return CoupleRecoveryResult.NoCoupleFound
         }
@@ -563,6 +590,9 @@ class MikayalaRepository(private val context: Context) {
                 activateCouple(first)
                 true
             }
+            // Réseau / serveur indisponible : le couple enregistré reste actif (messages en cache,
+            // envoi différé). Avant, l'utilisateur était renvoyé vers la création d'un couple.
+            is CoupleRecoveryResult.ServerUnavailable -> result.keptCachedCouple
             else -> false
         }
     }
@@ -771,7 +801,10 @@ class MikayalaRepository(private val context: Context) {
                         }
                     }
                 }
-            }
+            },
+            // Chaque (ré)abonnement : synchronisation complète pour récupérer les messages,
+            // accusés et modifications survenus pendant la coupure (Realtime ne les rejoue pas).
+            onSubscribed = { requestFullSync() }
         )
 
         supabaseService.subscribeToPresenceRealtime(
@@ -822,9 +855,9 @@ class MikayalaRepository(private val context: Context) {
                 if (!forceRefresh) {
                     val cached = mediaUrlCache[storagePath]
                     if (cached != null) {
-                        _messages.value = _messages.value.map {
+                        _messages.update { cur -> cur.map {
                             if (it.id == messageId) it.copy(mediaUrl = cached) else it
-                        }
+                        } }
                         return@launch
                     }
                 }
@@ -832,9 +865,9 @@ class MikayalaRepository(private val context: Context) {
                 val signed = supabaseService.getSignedMessageMediaUrl(storagePath)
                 if (signed != null) {
                     mediaUrlCache[storagePath] = signed
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(mediaUrl = signed) else it
-                    }
+                    } }
                     Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] Successfully updated mediaUrl for messageId=$messageId")
                 } else {
                     Log.e("MikayalaRepository", "[MIKAYALA_MEDIA_ERROR] Failed to generate signed URL for messageId=$messageId storagePath=$storagePath")
@@ -858,14 +891,14 @@ class MikayalaRepository(private val context: Context) {
             }
         }
 
-        _messages.value = _messages.value.let { currentList ->
+        _messages.update { cur -> cur.let { currentList ->
             val existingIndex = currentList.indexOfFirst { it.id == newEntity.id }
             if (existingIndex >= 0) {
                 currentList.toMutableList().apply { set(existingIndex, newEntity) }
             } else {
                 (currentList + newEntity).sortedBy { it.createdAt }
             }
-        }
+        } }
         saveLocalMessagesCache()
 
         if (!newEntity.storagePath.isNullOrEmpty() && newEntity.mediaUrl.isNullOrEmpty()) {
@@ -876,7 +909,7 @@ class MikayalaRepository(private val context: Context) {
     private fun handleRealtimeMessageUpdate(obj: JSONObject) {
         val updatedEntity = parseMessageJson(obj) ?: return
         Log.d("MikayalaRepository", "[MIKAYALA_REALTIME] UPDATE RECEIVED id=${updatedEntity.id}, status=${updatedEntity.status}")
-        _messages.value = _messages.value.map { local ->
+        _messages.update { cur -> cur.map { local ->
             if (local.id == updatedEntity.id) {
                 // Keep local valid mediaUrl if remote mediaUrl was not resolved yet
                 if (updatedEntity.mediaUrl.isNullOrEmpty() && !local.mediaUrl.isNullOrEmpty()) {
@@ -887,7 +920,7 @@ class MikayalaRepository(private val context: Context) {
             } else {
                 local
             }
-        }
+        } }
         saveLocalMessagesCache()
         if (!updatedEntity.storagePath.isNullOrEmpty() && updatedEntity.mediaUrl.isNullOrEmpty()) {
             fetchAndApplySignedUrl(updatedEntity.id, updatedEntity.storagePath)
@@ -895,7 +928,7 @@ class MikayalaRepository(private val context: Context) {
     }
 
     private fun handleRealtimeMessageDelete(id: String) {
-        _messages.value = _messages.value.filterNot { it.id == id }
+        _messages.update { cur -> cur.filterNot { it.id == id } }
         saveLocalMessagesCache()
     }
 
@@ -1016,6 +1049,20 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
+    private fun beginOutgoing(msg: MessageEntity) {
+        outgoingInFlight[msg.id] = System.currentTimeMillis()
+        _messages.update { cur -> if (cur.any { it.id == msg.id }) cur else cur + msg }
+    }
+
+    private fun endOutgoing(id: String) { outgoingInFlight.remove(id) }
+
+    /** Un envoi média long (vidéo) reste protégé 5 minutes, ensuite la synchronisation peut reprendre la main. */
+    private fun isOutgoingInFlight(id: String): Boolean {
+        val started = outgoingInFlight[id] ?: return false
+        if (System.currentTimeMillis() - started > 5 * 60_000L) { outgoingInFlight.remove(id); return false }
+        return true
+    }
+
     // --- Message Actions (Real Couple Checked & Supabase Synced) ---
     fun sendMessage(
         content: String,
@@ -1058,7 +1105,7 @@ class MikayalaRepository(private val context: Context) {
             replyToSender = replyToSender,
             replyToContent = replyToContent
         )
-        _messages.value = _messages.value + pendingMsg
+        beginOutgoing(pendingMsg)
         saveLocalMessagesCache()
         Log.d("MikayalaRepository", "[MIKAYALA_MESSAGE] Message added locally: id=$messageUuid status=$initialStatus hasNetwork=$hasNetwork hasP2P=$hasP2P")
 
@@ -1067,18 +1114,26 @@ class MikayalaRepository(private val context: Context) {
             com.example.mikayala.util.P2PSocketManager.sendMessageWithId(context, messageUuid, content)
         }
 
+        // Hors ligne : pas d'envoi en cours, la synchronisation le renverra dès le retour d'Internet
+        if (!hasNetwork) endOutgoing(messageUuid)
+
         // If connected to internet, post to Supabase
         if (hasNetwork) {
             repositoryScope.launch {
-                val success = supabaseService.postMessageEntity(pendingMsg)
+                val success = try { supabaseService.postMessageEntity(pendingMsg) } finally { endOutgoing(messageUuid) }
                 Log.d("MikayalaRepository", "[MIKAYALA_MESSAGE] postMessageEntity result=$success for ID $messageUuid")
                 if (success) {
-                    _messages.value = _messages.value.map {
-                        if (it.id == messageUuid && it.status == "pending") it.copy(status = "sent") else it
-                    }
+                    _messages.update { cur -> cur.map {
+                        if (it.id == messageUuid && (it.status == "pending" || it.status == "failed")) it.copy(status = "sent") else it
+                    } }
                     notifyPartnerAfterInsert("chat_message", pendingMsg.content, messageUuid)
                 } else {
-                    Log.e("MikayalaRepository", "[MIKAYALA_MESSAGE] INSERT FAILED for ID $messageUuid - keeping status as pending for auto-sync on reconnect")
+                    // Avant : le message restait affiché « envoyé » (statut initial "sent") alors qu'il
+                    // n'était pas sur le serveur, et la synchronisation ne le renvoyait jamais → perdu.
+                    Log.e("MikayalaRepository", "[MIKAYALA_MESSAGE] INSERT FAILED for ID $messageUuid -> pending, renvoi automatique")
+                    _messages.update { cur -> cur.map {
+                        if (it.id == messageUuid && it.status == "sent") it.copy(status = "pending") else it
+                    } }
                 }
                 saveLocalMessagesCache()
             }
@@ -1130,7 +1185,7 @@ class MikayalaRepository(private val context: Context) {
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
                 )
-                _messages.value = _messages.value + pendingMsg
+                beginOutgoing(pendingMsg)
                 saveLocalMessagesCache()
 
                 // 2. Envoi via socket P2P local si connecté (la confirmation d'état reste pending jusqu'à confirmation d'insertion)
@@ -1158,9 +1213,9 @@ class MikayalaRepository(private val context: Context) {
 
                         val insertSuccess = supabaseService.postMessageEntity(msgToPost, storagePath = storagePath)
                         if (insertSuccess) {
-                            _messages.value = _messages.value.map {
+                            _messages.update { cur -> cur.map {
                                 if (it.id == messageId) it.copy(status = "sent", mediaUrl = finalMediaUrl, storagePath = storagePath) else it
-                            }
+                            } }
                             Log.d("MikayalaRepository", "[MIKAYALA_AUDIO] Voice note $messageId successfully sent and confirmed!")
                             notifyPartnerAfterInsert("audio", "🎤 Note vocale reçue", messageId)
                         } else {
@@ -1221,16 +1276,16 @@ class MikayalaRepository(private val context: Context) {
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
                 )
-                _messages.value = _messages.value + pendingMsg
+                beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=image storagePath=$storagePath UPLOAD START")
 
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, webpBytes, "image/webp")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
                     Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=image storagePath=$storagePath uploadResult=false - marking as failed")
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed") else it
-                    }
+                    } }
                     return@launch
                 }
 
@@ -1244,14 +1299,14 @@ class MikayalaRepository(private val context: Context) {
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=image storagePath=$storagePath uploadResult=true signedUrl=${signedUrl != null} insertResult=$insertSuccess")
 
                 if (insertSuccess) {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                     notifyPartnerAfterInsert("image", contentText, messageId)
                 } else {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                 }
             } catch (e: Exception) {
                 Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] Failed to send edited image media: ${e.message}", e)
@@ -1294,16 +1349,16 @@ class MikayalaRepository(private val context: Context) {
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
                 )
-                _messages.value = _messages.value + pendingMsg
+                beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=video storagePath=$storagePath UPLOAD START")
 
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "video/mp4")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
                     Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=video storagePath=$storagePath uploadResult=false - marking as failed")
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed") else it
-                    }
+                    } }
                     return@launch
                 }
 
@@ -1317,15 +1372,15 @@ class MikayalaRepository(private val context: Context) {
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=video storagePath=$storagePath uploadResult=true signedUrl=${signedUrl != null} insertResult=$insertSuccess")
 
                 if (insertSuccess) {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                     notifyPartnerAfterInsert("video", contentText, messageId)
                     try { videoFile.delete() } catch (_: Exception) {}
                 } else {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                 }
             } catch (e: Exception) {
                 Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] Failed to send edited video media: ${e.message}", e)
@@ -1387,16 +1442,16 @@ class MikayalaRepository(private val context: Context) {
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
                 )
-                _messages.value = _messages.value + pendingMsg
+                beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=image storagePath=$storagePath UPLOAD START")
 
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/webp")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
                     Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=image storagePath=$storagePath uploadResult=false - marking as failed")
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed") else it
-                    }
+                    } }
                     return@launch
                 }
 
@@ -1410,14 +1465,14 @@ class MikayalaRepository(private val context: Context) {
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=image storagePath=$storagePath uploadResult=true signedUrl=${signedUrl != null} insertResult=$insertSuccess")
 
                 if (insertSuccess) {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                     notifyPartnerAfterInsert("image", contentText, messageId)
                 } else {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                 }
             } catch (e: Exception) {
                 Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] Failed to send image media: ${e.message}", e)
@@ -1464,16 +1519,16 @@ class MikayalaRepository(private val context: Context) {
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
                 )
-                _messages.value = _messages.value + pendingMsg
+                beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=camera_photo storagePath=$storagePath UPLOAD START")
 
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/webp")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
                     Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=camera_photo storagePath=$storagePath uploadResult=false - marking as failed")
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed") else it
-                    }
+                    } }
                     return@launch
                 }
 
@@ -1487,14 +1542,14 @@ class MikayalaRepository(private val context: Context) {
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=camera_photo storagePath=$storagePath uploadResult=true signedUrl=${signedUrl != null} insertResult=$insertSuccess")
 
                 if (insertSuccess) {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                     notifyPartnerAfterInsert("image", contentText, messageId)
                 } else {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                 }
             } catch (e: Exception) {
                 Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] Failed to send camera photo: ${e.message}", e)
@@ -1539,16 +1594,16 @@ class MikayalaRepository(private val context: Context) {
                     createdAt = System.currentTimeMillis(),
                     status = "pending"
                 )
-                _messages.value = _messages.value + pendingMsg
+                beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=video storagePath=$storagePath UPLOAD START")
 
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "video/mp4")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
                     Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=video storagePath=$storagePath uploadResult=false - marking as failed")
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed") else it
-                    }
+                    } }
                     return@launch
                 }
 
@@ -1562,14 +1617,14 @@ class MikayalaRepository(private val context: Context) {
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=video storagePath=$storagePath uploadResult=true signedUrl=${signedUrl != null} insertResult=$insertSuccess")
 
                 if (insertSuccess) {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "sent", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                     notifyPartnerAfterInsert("video", pendingMsg.content, messageId)
                 } else {
-                    _messages.value = _messages.value.map {
+                    _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(status = "failed", mediaUrl = signedUrl, storagePath = storagePath) else it
-                    }
+                    } }
                 }
             } catch (e: Exception) {
                 Log.e("MikayalaRepository", "[MIKAYALA_MEDIA] Failed to send video media: ${e.message}", e)
@@ -1636,11 +1691,11 @@ class MikayalaRepository(private val context: Context) {
             createdAt = System.currentTimeMillis(),
             status = "pending"
         )
-        _messages.value = _messages.value + msg
+        _messages.update { cur -> cur + msg }
         val inserted = supabaseService.postMessageEntity(msg, storagePath = storagePath)
-        _messages.value = _messages.value.map {
+        _messages.update { cur -> cur.map {
             if (it.id == messageId) it.copy(status = if (inserted) "sent" else "failed") else it
-        }
+        } }
         if (inserted) notifyPartnerAfterInsert("chat_message", "📄 $fileName", messageId)
         return true
     }
@@ -1656,7 +1711,7 @@ class MikayalaRepository(private val context: Context) {
     fun toggleReaction(messageId: String, emoji: String) {
         var updatedReactionsJson = "{}"
         val myUserId = getCurrentUserId().ifEmpty { "me" }
-        _messages.value = _messages.value.map { msg ->
+        _messages.update { cur -> cur.map { msg ->
             if (msg.id == messageId) {
                 try {
                     val json = if (msg.reactions.isNotBlank() && msg.reactions != "{}") JSONObject(msg.reactions) else JSONObject()
@@ -1673,7 +1728,7 @@ class MikayalaRepository(private val context: Context) {
                     msg.copy(reactions = updatedReactionsJson)
                 }
             } else msg
-        }
+        } }
         saveLocalMessagesCache()
         repositoryScope.launch {
             try {
@@ -1690,12 +1745,12 @@ class MikayalaRepository(private val context: Context) {
 
     fun toggleStarred(messageId: String) {
         var newStarred = false
-        _messages.value = _messages.value.map {
+        _messages.update { cur -> cur.map {
             if (it.id == messageId) {
                 newStarred = !it.isStarred
                 it.copy(isStarred = newStarred)
             } else it
-        }
+        } }
         saveLocalMessagesCache()
         repositoryScope.launch {
             supabaseService.updateMessageFields(
@@ -1707,12 +1762,12 @@ class MikayalaRepository(private val context: Context) {
 
     fun togglePinned(messageId: String) {
         var newPinned = false
-        _messages.value = _messages.value.map {
+        _messages.update { cur -> cur.map {
             if (it.id == messageId) {
                 newPinned = !it.isPinned
                 it.copy(isPinned = newPinned)
             } else it
-        }
+        } }
         saveLocalMessagesCache()
         repositoryScope.launch {
             supabaseService.updateMessageFields(
@@ -1729,10 +1784,10 @@ class MikayalaRepository(private val context: Context) {
      */
     suspend fun playGameMove(messageId: String, newState: String, gameTitle: String): Boolean {
         val before = _messages.value.firstOrNull { it.id == messageId } ?: return false
-        _messages.value = _messages.value.map { if (it.id == messageId) it.copy(mediaUrl = newState) else it }
+        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(mediaUrl = newState) else it } }
         val ok = supabaseService.updateMessageFields(messageId, JSONObject().apply { put("media_url", newState) })
         if (!ok) {
-            _messages.value = _messages.value.map { if (it.id == messageId) it.copy(mediaUrl = before.mediaUrl) else it }
+            _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(mediaUrl = before.mediaUrl) else it } }
             return false
         }
         saveLocalMessagesCache()
@@ -1754,9 +1809,9 @@ class MikayalaRepository(private val context: Context) {
 
     fun editMessage(messageId: String, newContent: String) {
         val now = System.currentTimeMillis()
-        _messages.value = _messages.value.map {
+        _messages.update { cur -> cur.map {
             if (it.id == messageId) it.copy(content = newContent, editedAt = now) else it
-        }
+        } }
         repositoryScope.launch {
             supabaseService.updateMessageFields(
                 messageId,
@@ -1771,20 +1826,20 @@ class MikayalaRepository(private val context: Context) {
     fun deleteMessage(messageId: String, forEveryone: Boolean) {
         val myUserId = getCurrentUserId()
         if (forEveryone) {
-            _messages.value = _messages.value.map {
+            _messages.update { cur -> cur.map {
                 if (it.id == messageId) it.copy(isDeletedForEveryone = true, content = "Ce message a été supprimé") else it
-            }
+            } }
             saveLocalMessagesCache()
             repositoryScope.launch {
                 supabaseService.deleteMessageForEveryone(messageId)
             }
         } else {
-            _messages.value = _messages.value.map {
+            _messages.update { cur -> cur.map {
                 if (it.id == messageId) {
                     val updatedList = (it.deletedFor + myUserId).distinct()
                     it.copy(deletedFor = updatedList)
                 } else it
-            }
+            } }
             saveLocalMessagesCache()
             repositoryScope.launch {
                 val currentMsg = _messages.value.firstOrNull { it.id == messageId }
@@ -1802,9 +1857,9 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun markViewOnceAsViewed(messageId: String) {
-        _messages.value = _messages.value.map {
+        _messages.update { cur -> cur.map {
             if (it.id == messageId) it.copy(isViewed = true) else it
-        }
+        } }
         repositoryScope.launch {
             supabaseService.updateMessageFields(
                 messageId,
@@ -2670,10 +2725,10 @@ class MikayalaRepository(private val context: Context) {
         val myUserId = getCurrentUserId()
         if (myUserId.isEmpty()) return
 
-        // 0. Ensure session is active before updating activity presence
-        if (!supabaseService.hasActiveSession()) {
-            supabaseService.ensureAnonymousSession()
-        }
+        // Ne JAMAIS créer de session ici. Avant, si la session enregistrée n'était pas encore rechargée
+        // (démarrage) ou momentanément absente, un nouveau compte anonyme était créé en silence :
+        // le téléphone changeait d'identité et perdait définitivement son couple et ses messages.
+        if (!supabaseService.hasActiveSession()) return
         // Dernière connexion (Paramètres > Confidentialité) : « nobody » = on ne publie pas notre activité
         if (supabaseService.hasActiveSession() && _userSettings.value.lastSeenPrivacy != "nobody") {
             supabaseService.touchUserActivity()
@@ -2905,74 +2960,254 @@ class MikayalaRepository(private val context: Context) {
         return scaled to quality
     }
 
+    // --- Synchronisation avec Supabase ---
+    // Une seule synchronisation à la fois (avant : 3 boucles concurrentes — dépôt 4 s, accueil 3 s,
+    // conversation 2,5 s — téléchargeaient chacune TOUT l'historique et se marchaient dessus).
+    companion object {
+        @Volatile private var shared: MikayalaRepository? = null
+
+        /**
+         * Instance unique par processus. Chaque instance lance sa propre boucle de synchronisation et
+         * son écouteur réseau : en créer plusieurs (écran principal + récepteurs) multipliait les
+         * synchronisations concurrentes sur les mêmes messages.
+         */
+        fun getInstance(context: Context): MikayalaRepository =
+            shared ?: synchronized(this) {
+                shared ?: MikayalaRepository(context.applicationContext).also { shared = it }
+            }
+
+        const val FULL_WINDOW = 500
+        const val OLDER_PAGE = 100
+        private const val FULL_SYNC_EVERY_MS = 60_000L
+        private const val PROFILES_SYNC_EVERY_MS = 60_000L
+        private const val VAULT_SYNC_EVERY_MS = 30_000L
+
+        private val STATUS_RANK = mapOf("failed" to 0, "pending" to 1, "sent" to 2, "delivered" to 3, "read" to 4)
+
+        /**
+         * Fusion d'un message local avec sa version serveur, sans perte :
+         * - l'état d'un accusé ne recule jamais (lu > reçu > envoyé) ;
+         * - on garde l'URL média locale tant que le serveur n'en donne pas ;
+         * - on garde l'aperçu de la réponse (colonnes absentes du serveur).
+         */
+        fun mergeRemoteMessage(local: MessageEntity, remote: MessageEntity): MessageEntity {
+            val lr = STATUS_RANK[local.status] ?: 2
+            val rr = STATUS_RANK[remote.status] ?: 2
+            val status = if (lr >= 2 && lr > rr) local.status else remote.status
+            return remote.copy(
+                status = status,
+                deliveredAt = remote.deliveredAt ?: local.deliveredAt,
+                readAt = remote.readAt ?: local.readAt,
+                mediaUrl = remote.mediaUrl ?: local.mediaUrl,
+                replyToSender = remote.replyToSender ?: local.replyToSender,
+                replyToContent = remote.replyToContent ?: local.replyToContent
+            )
+        }
+
+        /** Fusionne une liste serveur dans la liste locale : aucun message local n'est perdu, aucun doublon. */
+        fun mergeMessageLists(local: List<MessageEntity>, fetched: List<MessageEntity>): List<MessageEntity> {
+            if (fetched.isEmpty()) return local
+            val remoteMap = fetched.associateBy { it.id }
+            val localIds = HashSet<String>(local.size)
+            val merged = ArrayList<MessageEntity>(local.size + fetched.size)
+            for (m in local) {
+                if (!localIds.add(m.id)) continue // doublon local éventuel
+                val r = remoteMap[m.id]
+                merged.add(if (r != null) mergeRemoteMessage(m, r) else m)
+            }
+            for (r in fetched) if (r.id !in localIds) { merged.add(r); localIds.add(r.id) }
+            merged.sortBy { it.createdAt }
+            return merged
+        }
+    }
+
+    /** Demande une synchronisation complète (réouverture de l'app, retour réseau, ré-abonnement temps réel). */
+    fun requestFullSync() {
+        fullSyncRequested = true
+        repositoryScope.launch {
+            try { syncWithSupabase() } catch (e: Exception) { Log.w("MikayalaRepository", "requestFullSync: ${e.message}") }
+        }
+    }
+
     suspend fun syncWithSupabase() {
+        // Une synchronisation est déjà en cours : inutile d'en lancer une seconde en parallèle.
+        if (!syncMutex.tryLock()) return
+        try {
+            syncWithSupabaseLocked()
+        } finally {
+            syncMutex.unlock()
+        }
+    }
+
+    private suspend fun syncWithSupabaseLocked() {
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return
+        // Session pas encore rechargée : ne jamais interroger Supabase sans identité (résultats vides trompeurs).
+        if (!supabaseService.hasActiveSession()) return
         val coupleId = couple.id
         val pairingCode = couple.pairingCode
+        if (syncedCoupleId != coupleId) {
+            // Changement de couple : repartir d'une synchronisation complète
+            syncedCoupleId = coupleId
+            lastRemoteCreatedAtIso = null
+            lastRemoteCreatedAtMs = 0L
+            fullSyncRequested = true
+            _hasOlderMessages.value = true
+        }
+        val now = System.currentTimeMillis()
 
-        // 0. Sync profiles
-        syncProfiles()
-
-        // 0.1 Upload pending P2P / Offline messages to Supabase when network is back
-        val (myUserId, _) = resolveCoupleMembers()
-        val pendingMsgs = _messages.value.filter { (it.status == "pending" || it.status == "failed") && (it.senderId == myUserId || it.senderId == "me") }
-        if (pendingMsgs.isNotEmpty()) {
-            Log.d("MikayalaRepository", "Syncing ${pendingMsgs.size} pending offline/P2P messages to Supabase...")
-            for (pending in pendingMsgs) {
-                try {
-                    val success = supabaseService.postMessageEntity(pending)
-                    if (success) {
-                        _messages.value = _messages.value.map {
-                            if (it.id == pending.id) it.copy(status = "sent") else it
-                        }
-                        Log.d("MikayalaRepository", "Offline/P2P message ${pending.id} successfully synced to Supabase!")
-                    }
-                } catch (e: Exception) {
-                    Log.w("MikayalaRepository", "Failed to sync pending message ${pending.id}: ${e.message}")
-                }
-            }
-            saveLocalMessagesCache()
+        // 0. Profils et activité : pas besoin toutes les 4 secondes
+        if (now - lastProfilesSyncAt > PROFILES_SYNC_EVERY_MS) {
+            lastProfilesSyncAt = now
+            try { syncProfiles() } catch (e: Exception) { Log.w("MikayalaRepository", "syncProfiles: ${e.message}") }
         }
 
-        // 1. Sync messages from Supabase
-        val remoteMsgs = supabaseService.fetchMessages(coupleId, pairingCode)
+        // 1. Renvoi des messages en attente (hors ligne, P2P, échec d'envoi)
+        uploadPendingMessages()
+
+        // 2. Messages du serveur : léger (nouveaux seulement) ou complet (fenêtre récente)
+        val needFull = fullSyncRequested || lastRemoteCreatedAtIso == null || now - lastFullSyncAt > FULL_SYNC_EVERY_MS
+        val remoteMsgs = if (needFull) {
+            supabaseService.fetchMessages(coupleId, pairingCode, limit = FULL_WINDOW)
+        } else {
+            supabaseService.fetchMessages(coupleId, pairingCode, createdAfterIso = lastRemoteCreatedAtIso, limit = 200)
+        }
         if (remoteMsgs != null) {
-            val fetchedList = mutableListOf<MessageEntity>()
-            for (i in 0 until remoteMsgs.length()) {
-                val obj = remoteMsgs.getJSONObject(i)
-                val msg = parseMessageJson(obj)
-                if (msg != null) {
-                    fetchedList.add(msg)
-                }
+            if (needFull) {
+                fullSyncRequested = false
+                lastFullSyncAt = now
+                if (remoteMsgs.length() < FULL_WINDOW) _hasOlderMessages.value = false
             }
-            if (fetchedList.isNotEmpty()) {
-                val remoteMap = fetchedList.associateBy { it.id }
-                val updatedList = _messages.value.map { localMsg ->
-                    val remoteMsg = remoteMap[localMsg.id]
-                    remoteMsg ?: localMsg
-                }.toMutableList()
-
-                val localIds = _messages.value.map { it.id }.toSet()
-                val brandNew = fetchedList.filterNot { localIds.contains(it.id) }
-                updatedList.addAll(brandNew)
-
-                val finalSorted = updatedList.sortedBy { it.createdAt }
-                _messages.value = finalSorted
-
-                // Resolve any pending signed URLs for media messages
-                for (msg in finalSorted) {
-                    if (!msg.storagePath.isNullOrEmpty() && msg.mediaUrl.isNullOrEmpty()) {
-                        fetchAndApplySignedUrl(msg.id, msg.storagePath)
-                    }
-                }
-            }
+            applyRemoteMessages(remoteMsgs)
         }
 
-        // Ensure Realtime channel is connected
+        // 3. Temps réel : (ré)abonnement seulement s'il n'est ni actif ni en cours
         connectRealtime()
 
-        // 2. Sync Shared Vault from Supabase
+        // 4. Coffre partagé
+        if (now - lastVaultSyncAt > VAULT_SYNC_EVERY_MS) {
+            lastVaultSyncAt = now
+            syncVaultFromSupabase(coupleId, pairingCode)
+        }
+    }
+
+    /** Applique une réponse serveur (liste chronologique) à la liste locale. Retourne le nombre de messages lus. */
+    private fun applyRemoteMessages(remoteMsgs: JSONArray): Int {
+        val fetched = ArrayList<MessageEntity>(remoteMsgs.length())
+        for (i in 0 until remoteMsgs.length()) {
+            val obj = remoteMsgs.optJSONObject(i) ?: continue
+            val msg = parseMessageJson(obj) ?: continue
+            fetched.add(msg)
+            val raw = obj.optString("created_at", "")
+            val ms = parseTimestamp(raw)
+            if (raw.isNotEmpty() && ms != null && ms >= lastRemoteCreatedAtMs) {
+                lastRemoteCreatedAtMs = ms
+                lastRemoteCreatedAtIso = raw
+            }
+        }
+        if (fetched.isEmpty()) return 0
+        _messages.update { cur -> mergeMessageLists(cur, fetched) }
+        saveLocalMessagesCache()
+
+        // Messages du partenaire arrivés pendant que l'app était fermée : accusé « reçu »
+        val myUserId = getCurrentUserId()
+        if (fetched.any { it.senderId != myUserId && it.senderId != "me" && it.status == "sent" }) {
+            repositoryScope.launch { markMessagesDelivered(_coupleSpace.value.id) }
+        }
+        // URL signées des médias pas encore résolues
+        for (msg in fetched) {
+            if (!msg.storagePath.isNullOrEmpty() && msg.mediaUrl.isNullOrEmpty()) {
+                fetchAndApplySignedUrl(msg.id, msg.storagePath)
+            }
+        }
+        return fetched.size
+    }
+
+    /**
+     * Charge une page de messages plus anciens que le plus ancien message affiché (pagination).
+     * Retourne le nombre de messages ajoutés, ou -1 en cas d'erreur réseau.
+     */
+    suspend fun loadOlderMessages(): Int {
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return 0
+        val oldest = _messages.value.filter { it.coupleId == couple.id || it.coupleId.isEmpty() }
+            .minByOrNull { it.createdAt } ?: return 0
+        val f = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+        f.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val beforeIso = f.format(java.util.Date(oldest.createdAt))
+        val page = supabaseService.fetchMessages(couple.id, couple.pairingCode, createdBeforeIso = beforeIso, limit = OLDER_PAGE)
+            ?: return -1
+        if (page.length() < OLDER_PAGE) _hasOlderMessages.value = false
+        val fetched = (0 until page.length()).mapNotNull { page.optJSONObject(it)?.let { o -> parseMessageJson(o) } }
+        if (fetched.isNotEmpty()) _messages.update { cur -> mergeMessageLists(cur, fetched) }
+        return fetched.size
+    }
+
+    /** Renvoie les messages restés en attente ou en échec. Jamais un média dont le fichier n'est pas envoyé. */
+    private suspend fun uploadPendingMessages() {
+        val (myUserId, _) = resolveCoupleMembers()
+        val pendingMsgs = _messages.value.filter {
+            (it.status == "pending" || it.status == "failed") &&
+                (it.senderId == myUserId || it.senderId == "me") &&
+                !it.isDeletedForEveryone && !isOutgoingInFlight(it.id)
+        }
+        if (pendingMsgs.isEmpty()) return
+        Log.d("MikayalaRepository", "Renvoi de ${pendingMsgs.size} message(s) en attente...")
+        var changed = false
+        for (pending in pendingMsgs) {
+            outgoingInFlight[pending.id] = System.currentTimeMillis()
+            try {
+                var toPost = if (pending.senderId == "me" && myUserId.isNotEmpty()) pending.copy(senderId = myUserId) else pending
+                val storagePath = toPost.storagePath
+                if (!storagePath.isNullOrEmpty()) {
+                    // Média : renvoyer d'abord le fichier depuis la copie locale, sinon ne rien publier
+                    val localFile = toPost.mediaUrl
+                        ?.takeIf { !it.startsWith("http") && !it.startsWith("content:") }
+                        ?.let { File(it.removePrefix("file://")) }
+                        ?.takeIf { it.exists() && it.length() > 0 }
+                    if (localFile == null) {
+                        Log.w("MikayalaRepository", "Média ${pending.id} sans copie locale : non republié (à renvoyer manuellement)")
+                        if (pending.status != "failed") {
+                            _messages.update { cur -> cur.map { if (it.id == pending.id) it.copy(status = "failed") else it } }
+                            changed = true
+                        }
+                        continue
+                    }
+                    val mime = when (toPost.type) {
+                        "audio" -> "audio/mp4"
+                        "video" -> "video/mp4"
+                        "image" -> if (storagePath.endsWith(".webp")) "image/webp" else "image/jpeg"
+                        else -> "application/octet-stream"
+                    }
+                    val uploaded = supabaseService.uploadMessageMedia(toPost.coupleId, storagePath, localFile.readBytes(), mime)
+                    if (uploaded == null) continue
+                    val signed = supabaseService.getSignedMessageMediaUrl(storagePath)
+                    if (signed != null) mediaUrlCache[storagePath] = signed
+                    toPost = toPost.copy(mediaUrl = signed)
+                }
+                val success = supabaseService.postMessageEntity(toPost, storagePath = toPost.storagePath)
+                if (success) {
+                    _messages.update { cur -> cur.map {
+                        if (it.id == pending.id && (it.status == "pending" || it.status == "failed"))
+                            it.copy(status = "sent", senderId = toPost.senderId) else it
+                    } }
+                    changed = true
+                    notifyPartnerAfterInsert(
+                        if (toPost.type == "text") "chat_message" else toPost.type,
+                        toPost.content, toPost.id
+                    )
+                    Log.d("MikayalaRepository", "Message en attente ${pending.id} envoyé.")
+                }
+            } catch (e: Exception) {
+                Log.w("MikayalaRepository", "Échec du renvoi ${pending.id}: ${e.message}")
+            } finally {
+                endOutgoing(pending.id)
+            }
+        }
+        if (changed) saveLocalMessagesCache()
+    }
+
+    private suspend fun syncVaultFromSupabase(coupleId: String, pairingCode: String) {
         val remoteVault = supabaseService.fetchVaultItems(coupleId, pairingCode)
         if (remoteVault != null) {
             val fetchedVault = mutableListOf<VaultItemEntity>()
