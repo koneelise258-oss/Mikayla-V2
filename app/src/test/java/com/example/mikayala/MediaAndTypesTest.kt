@@ -45,7 +45,7 @@ class MediaAndTypesTest {
     @Test
     fun tagIsInvisibleSoOldAppsShowNormalText() {
         val stored = MessageTypeTag.encode("wheel", "Roue de l'amour")
-        val visible = stored.filter { it != '⁣' }
+        val visible = stored.filter { it != '\u2063' }
         assertEquals("mk:wheelRoue de l'amour", visible) // seul « mk:wheel » serait visible, sans séparateurs
         assertTrue(stored.endsWith("Roue de l'amour"))
     }

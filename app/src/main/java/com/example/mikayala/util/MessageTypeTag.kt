@@ -13,7 +13,7 @@ package com.example.mikayala.util
  * Si la base accepte les vrais types, aucune étiquette n'est utilisée.
  */
 object MessageTypeTag {
-    private const val MARK = '⁣'
+    private const val MARK = '\u2063'
     private const val PREFIX = "${MARK}mk:"
 
     /** Types acceptés par toute base (pas besoin d'étiquette). */
