@@ -96,3 +96,54 @@ export function validateServiceAccount(raw: string, expectedProjectId = EXPECTED
   if (sa.project_id !== expectedProjectId) return "unexpected_project_id";
   return null;
 }
+
+/**
+ * Lit le compte de service Firebase de façon tolérante, sans jamais journaliser de valeur secrète.
+ * Formats acceptés (causes fréquentes de l'erreur « client_email / private_key / project_id manquants ») :
+ * - JSON brut (cas normal) ;
+ * - JSON entouré de guillemets ou d'espaces en trop (copier-coller) ;
+ * - JSON encodé en base64 ;
+ * - clé privée dont les retours à la ligne sont des « \\n » littéraux ;
+ * - à défaut, trois secrets séparés : FCM_CLIENT_EMAIL, FCM_PRIVATE_KEY, FCM_PROJECT_ID.
+ * Retourne le JSON normalisé (chaîne) à passer à validateServiceAccount.
+ */
+export function normalizeServiceAccount(
+  raw: string,
+  separate: { clientEmail?: string; privateKey?: string; projectId?: string } = {},
+): string {
+  let text = (raw ?? "").trim();
+  if ((text.startsWith("'") && text.endsWith("'")) || (text.startsWith('"') && text.endsWith('"') && !text.startsWith('"{'))) {
+    text = text.slice(1, -1).trim();
+  }
+  let sa: Record<string, unknown> | null = null;
+  const tryParse = (t: string): Record<string, unknown> | null => {
+    try {
+      const v = JSON.parse(t);
+      if (typeof v === "string") return tryParse(v); // JSON « doublement encodé »
+      return v && typeof v === "object" ? v as Record<string, unknown> : null;
+    } catch {
+      return null;
+    }
+  };
+  if (text) sa = tryParse(text);
+  if (!sa && text && /^[A-Za-z0-9+/=\s_-]+$/.test(text)) {
+    try {
+      const decoded = atob(text.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/"));
+      sa = tryParse(decoded);
+    } catch { /* pas du base64 */ }
+  }
+  if (!sa && separate.clientEmail && separate.privateKey && separate.projectId) {
+    sa = {
+      type: "service_account",
+      client_email: separate.clientEmail.trim(),
+      private_key: separate.privateKey,
+      project_id: separate.projectId.trim(),
+    };
+  }
+  if (!sa) return text; // validateServiceAccount produira le code d'erreur adapté
+  if (typeof sa.private_key === "string") {
+    sa.private_key = (sa.private_key as string).replace(/\\n/g, "\n").replace(/\r/g, "");
+  }
+  if (!sa.type && sa.client_email && sa.private_key) sa.type = "service_account";
+  return JSON.stringify(sa);
+}

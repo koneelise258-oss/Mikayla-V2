@@ -241,9 +241,12 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(messages.size, coupleSpace.id) {
+    // Accusés : à chaque nouveau message ET au retour au premier plan, uniquement si l'écran est visible
+    val chatLifecycleState by androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val chatVisible = chatLifecycleState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+    LaunchedEffect(lastMessageId, coupleSpace.id, chatVisible) {
         val coupleId = coupleSpace.id
-        if (coupleId.isNotEmpty()) {
+        if (coupleId.isNotEmpty() && chatVisible) {
             repository.markMessagesDelivered(coupleId)
             repository.markMessagesRead(coupleId)
             com.example.mikayala.util.P2PSocketManager.sendReadAckAll()

@@ -109,10 +109,15 @@ class MainActivity : ComponentActivity() {
                 androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
                     val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                         when (event) {
-                            androidx.lifecycle.Lifecycle.Event.ON_STOP -> backgroundSince[0] = System.currentTimeMillis()
+                            androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                                backgroundSince[0] = System.currentTimeMillis()
+                                com.example.mikayala.util.AppForeground.isResumed = false
+                                repository.onAppBackground()
+                            }
                             androidx.lifecycle.Lifecycle.Event.ON_START -> {
-                                // Retour au premier plan : récupérer tout ce qui est arrivé pendant l'absence
-                                repository.requestFullSync()
+                                // Retour au premier plan : présence + récupération de tout ce qui est arrivé
+                                com.example.mikayala.util.AppForeground.isResumed = true
+                                repository.onAppForeground()
                                 val s = repository.userSettings.value
                                 val since = backgroundSince[0]
                                 backgroundSince[0] = 0L

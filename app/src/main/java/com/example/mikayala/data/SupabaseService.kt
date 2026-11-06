@@ -538,18 +538,20 @@ class SupabaseService(
         try {
             val validUuid = if (isValidUuid(msg.id)) msg.id else java.util.UUID.randomUUID().toString()
 
-            val messageType = when (msg.type.lowercase()) {
-                "image", "photo", "camera" -> "image"
-                "audio", "voice", "voice_note" -> "audio"
-                "video" -> "video"
-                else -> "text"
-            }
+            // Type réel du message (morpion, roue, document…). Si la base n'accepte que les types de
+            // base, repli : message_type de base + étiquette invisible dans le contenu (MessageTypeTag).
+            val tagType = com.example.mikayala.util.MessageTypeTag
+            val appType = msg.type.lowercase()
+            val extended = tagType.isExtended(appType)
+            val useTag = extended && extendedMessageTypesAccepted == false
+            val messageType = if (extended && !useTag) appType else tagType.coreType(appType)
+            val contentToStore = if (useTag) tagType.encode(appType, msg.content) else msg.content
 
             val body = JSONObject().apply {
                 put("id", validUuid)
                 put("couple_id", msg.coupleId)
                 put("sender_id", authUid)
-                put("content", msg.content)
+                put("content", contentToStore)
                 put("message_type", messageType)
                 put("is_ephemeral", msg.isViewOnce)
                 // Toujours « sent » côté serveur : l'état local « pending »/« failed » ne doit jamais
@@ -582,7 +584,17 @@ class SupabaseService(
             }
 
             Log.d("SupabaseMessage", "Posting message id=$validUuid type=$messageType")
-            val res = executePostResult("/rest/v1/messages", body.toString())
+            var res = executePostResult("/rest/v1/messages", body.toString())
+            if (!res.ok && extended && !useTag && res.code == 400 && isTypeConstraintError(res.error)) {
+                // La colonne message_type refuse ce type : on retient l'information et on renvoie étiqueté
+                Log.i("SupabaseMessage", "message_type '$appType' refusé par la base : envoi avec étiquette")
+                extendedMessageTypesAccepted = false
+                body.put("message_type", tagType.coreType(appType))
+                body.put("content", tagType.encode(appType, msg.content))
+                res = executePostResult("/rest/v1/messages", body.toString())
+            } else if (res.ok && extended && !useTag) {
+                extendedMessageTypesAccepted = true
+            }
             if (res.ok) {
                 Log.d("SupabaseMessage", "MESSAGE INSERT SUCCESS id=$validUuid")
                 return@withContext true
@@ -604,6 +616,15 @@ class SupabaseService(
         }
     }
 
+    /** null = inconnu ; false = la colonne message_type n'accepte que text/image/audio/video. */
+    @Volatile private var extendedMessageTypesAccepted: Boolean? = null
+
+    private fun isTypeConstraintError(error: String?): Boolean {
+        val e = error.orEmpty()
+        return e.contains("23514") || e.contains("22P02") || e.contains("check constraint", ignoreCase = true) ||
+            e.contains("invalid input value for enum", ignoreCase = true) || e.contains("message_type", ignoreCase = true)
+    }
+
     suspend fun uploadMessageMedia(
         coupleId: String,
         storagePath: String,
@@ -622,8 +643,12 @@ class SupabaseService(
             conn.setRequestProperty("Content-Type", mimeType)
             conn.setRequestProperty("x-upsert", "true")
             conn.doOutput = true
-            conn.connectTimeout = 25000
-            conn.readTimeout = 25000
+            // Envoi en flux de taille connue : sans cela, HttpURLConnection recopie tout le fichier en
+            // mémoire avant l'envoi (deux copies d'une vidéo en RAM). Délai de réponse adapté aux
+            // gros fichiers sur réseau mobile lent.
+            conn.setFixedLengthStreamingMode(bytes.size)
+            conn.connectTimeout = 20000
+            conn.readTimeout = 120000
 
             val os = conn.outputStream
             os.write(bytes)
@@ -773,6 +798,8 @@ class SupabaseService(
     private var activePresenceChannel: RealtimeChannel? = null
     private var presenceJob: Job? = null
     @Volatile private var activePresenceCoupleId: String? = null
+    /** false quand l'app est en arrière-plan ou que l'utilisateur masque sa présence. */
+    @Volatile var presenceTrackingEnabled: Boolean = true
     @Volatile private var presenceSubscribeAttemptAt = 0L
     @Volatile private var messagesSubscribeAttemptAt = 0L
 
@@ -826,7 +853,7 @@ class SupabaseService(
                 launch {
                     channel.status.collectLatest { status ->
                         Log.d("SupabasePresence", "[REALTIME STATUS] Presence channel status: ${status.name}")
-                        if (status.name == "SUBSCRIBED") {
+                        if (status.name == "SUBSCRIBED" && presenceTrackingEnabled) {
                             try {
                                 channel.track(buildJsonObject { put("userId", myUserId) })
                                 Log.d("SupabasePresence", "[REALTIME] Successfully tracking presence for user $myUserId after SUBSCRIBED")
@@ -1024,7 +1051,22 @@ class SupabaseService(
         }
     }
 
+    /** Republie la présence sur le canal existant (après un retour au premier plan). */
+    fun retrackPresence(myUserId: String) {
+        presenceTrackingEnabled = true
+        val channel = activePresenceChannel ?: return
+        if (myUserId.isEmpty() || channel.status.value != RealtimeChannel.Status.SUBSCRIBED) return
+        realtimeScope.launch {
+            try {
+                channel.track(buildJsonObject { put("userId", myUserId) })
+            } catch (e: Exception) {
+                Log.w("SupabasePresence", "[REALTIME] retrack: ${e.message}")
+            }
+        }
+    }
+
     fun untrackPresence() {
+        presenceTrackingEnabled = false
         val channel = activePresenceChannel ?: return
         realtimeScope.launch {
             try {
@@ -1545,6 +1587,43 @@ class SupabaseService(
         } catch (e: Exception) {
             Log.e("SupabaseService", "signOut failed: ${e.message}")
             false
+        }
+    }
+
+    /** null = pas encore testé ; false = fonctions par message absentes du serveur (migration non appliquée). */
+    @Volatile private var perMessageReceiptsAvailable: Boolean? = null
+
+    private fun executeRpcResult(rpcName: String, params: JSONObject): HttpResult =
+        executePostResult("/rest/v1/rpc/$rpcName", params.toString(), prefer = "return=minimal")
+
+    /**
+     * Accusé « reçu » pour CES messages seulement (migration 20261106090000). Si la fonction n'existe
+     * pas encore sur le serveur, repli sur l'ancienne fonction qui marque tout le couple.
+     */
+    suspend fun markMessagesDeliveredIds(coupleId: String, ids: List<String>): Boolean =
+        markIds("mark_messages_delivered_ids", ids) ?: markMessagesDelivered(coupleId)
+
+    /** Accusé « lu » pour CES messages seulement, avec le même repli. */
+    suspend fun markMessagesReadIds(coupleId: String, ids: List<String>): Boolean =
+        markIds("mark_messages_read_ids", ids) ?: markMessagesRead(coupleId)
+
+    private suspend fun markIds(rpc: String, ids: List<String>): Boolean? = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext false
+        val valid = ids.filter { isValidUuid(it) }.distinct()
+        if (valid.isEmpty()) return@withContext false
+        if (perMessageReceiptsAvailable == false) return@withContext null
+        val r = executeRpcResult(rpc, JSONObject().put("message_ids", JSONArray(valid)))
+        when {
+            r.ok -> { perMessageReceiptsAvailable = true; true }
+            r.code == 404 || (r.error ?: "").contains("PGRST202") -> {
+                Log.i("SupabaseService", "[MIKAYALA_MESSAGING] $rpc absente : repli sur l'accusé par couple")
+                perMessageReceiptsAvailable = false
+                null
+            }
+            else -> {
+                Log.w("SupabaseService", "[MIKAYALA_MESSAGING] $rpc HTTP ${r.code}: ${r.error}")
+                false
+            }
         }
     }
 
