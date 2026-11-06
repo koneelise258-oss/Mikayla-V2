@@ -321,3 +321,50 @@ avion (message d'échec, rien d'affiché à tort). Chat : réactions simultanée
 chez l'autre), supprimer pour moi puis synchronisation, supprimer pour les deux, modifier, épingler, répondre
 (aperçu chez l'autre), glisser pour répondre, document, position, contact, audio, sondage voté des deux côtés.
 Émojis : recherche « coeur », « fete », drapeau de Côte d'Ivoire, rendu identique sur Android 7 et 10.
+
+---
+
+## Phase 4 — Interface et expérience utilisateur
+
+CI : run `42138474525` — APK ✅, tous les tests unitaires ✅, Lint : 0 erreur.
+Aucun écran n'a pu être **vu** (pas d'émulateur ni de téléphone ici) : corrections faites à partir du code.
+
+### 4.1 Barre de navigation
+| Problème | Cause | Correction (`MainDashboardScreen.kt`, `GlassmorphicFloatingNavBar.kt`) |
+|---|---|---|
+| Barre trop haute dans Discussions | pastille « Plein écran Chat 💬 » ajoutée au-dessus de la barre (~100 dp au total) | pastille retirée (le plein écran reste dans le menu ⋮) ; barre de 58 dp |
+| Barre absente en revenant aux Discussions | changer d'onglet mettait `showNavBarInChat = false` | supprimé : la barre ne disparaît que sur demande |
+| Barre au-dessus du clavier | aucune prise en compte du clavier | masquée tant que le clavier est ouvert |
+| Saisie cachée par les boutons système (barre masquée) | contenu sans marge système | marge des boutons système ajoutée quand la barre est masquée |
+| Libellés coupés (« Paramètres », « Discussions ») en grande taille de texte | hauteur fixe 64 dp, taille de texte multipliée sans limite | taille plafonnée dans la barre, coupure propre (…), hauteur minimale au lieu de fixe |
+| Tablette : onglets étirés | largeur pleine | barre centrée, 640 dp max |
+| Zones tactiles | — | ≥ 48 dp ; badge élargi pour « 99+ » |
+
+### 4.2 Dimensions et disposition
+- Bulles de discussion : largeur max fixe 300 dp (toute la largeur d'un écran de 320 dp, minuscules sur
+  tablette) → **78 % de l'écran** (200–440 dp), appliqué aux 13 types de bulles.
+- Barre de réactions rapides (8 émojis + « + ») plus large qu'un petit écran → défilante.
+- Fenêtre « Réagir avec un émoji » : hauteur fixe 420 dp → 75 % de l'écran, 460 dp max.
+- En-tête : un surnom long repoussait les boutons d'appel hors de l'écran → surnom et statut tronqués (…).
+
+### 4.3 Animations et transitions
+- À chaque ouverture de la conversation, la liste **défilait en animation depuis le premier message** :
+  positionnement immédiat à l'ouverture, animation seulement pour un nouveau message.
+- Pendant la lecture d'anciens messages, l'arrivée d'un message ne ramène plus en bas (sauf si l'on était déjà
+  en bas ou si c'est son propre message).
+- Les animations en boucle restantes sont légitimes (micro pendant l'enregistrement, scanner QR).
+- Rafraîchissements intempestifs : supprimés à la source en phase 1 (une seule synchronisation, plus de
+  remplacement de toute la liste toutes les 2,5 s) et phase 2 (liens média mis en cache).
+- Roue qui tourne seule : traitée en phase 5.
+
+### 4.4 Cohérence générale
+- Bouton Retour : vérifié — conversation (sélection, recherche, émojis, pièces jointes), Paramètres (sous-pages),
+  accueil (feuilles, onglets → Discussions) ; visionneuses et éditeurs sont des fenêtres qui le gèrent.
+- Contenus factices restants retirés : prénom « Mikey » écrit en dur (cycle) ; ceux du trombone en phase 3.
+- Confirmations trompeuses remplacées par des confirmations après succès réel (phase 3) ; échecs annoncés.
+- État : IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS (aucune vérification visuelle possible ici).
+
+### Tests sur téléphones à faire (phase 4)
+Android 7 et 10, thème clair et sombre, taille de texte normale et « très grande » : barre de navigation
+(hauteur, libellés), clavier ouvert dans la conversation, plein écran du chat, bulles longues, surnom long,
+ouverture de la conversation (pas de défilement animé), bouton Retour sur chaque écran, tablette si disponible.
