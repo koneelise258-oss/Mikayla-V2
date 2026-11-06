@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
 
         Log.d("MikayalaStartup", "Initializing repository...")
         try {
-            repository = MikayalaRepository(applicationContext)
+            repository = MikayalaRepository.getInstance(applicationContext)
             Log.d("MikayalaStartup", "Repository initialized successfully")
             
             Log.d("MikayalaStartup", "Creating notification channels...")
@@ -109,8 +109,15 @@ class MainActivity : ComponentActivity() {
                 androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
                     val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                         when (event) {
-                            androidx.lifecycle.Lifecycle.Event.ON_STOP -> backgroundSince[0] = System.currentTimeMillis()
+                            androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                                backgroundSince[0] = System.currentTimeMillis()
+                                com.example.mikayala.util.AppForeground.isResumed = false
+                                repository.onAppBackground()
+                            }
                             androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                                // Retour au premier plan : présence + récupération de tout ce qui est arrivé
+                                com.example.mikayala.util.AppForeground.isResumed = true
+                                repository.onAppForeground()
                                 val s = repository.userSettings.value
                                 val since = backgroundSince[0]
                                 backgroundSince[0] = 0L
@@ -171,7 +178,14 @@ class MainActivity : ComponentActivity() {
                                             if (repository.getCurrentUserId().isEmpty()) {
                                                 navigationState = AppNavigationState.AUTH
                                             } else {
-                                                repository.findExistingCoupleSpace()
+                                                // Couple déjà connu sur ce téléphone : ouverture immédiate, vérification
+                                                // auprès de Supabase en arrière-plan (réseau lent : plus d'écran de
+                                                // démarrage bloqué). Sinon : on attend la réponse avant de choisir l'écran.
+                                                if (repository.activeCoupleSpace.value.isPaired) {
+                                                    lifecycleScope.launch { repository.findExistingCoupleSpace() }
+                                                } else {
+                                                    repository.findExistingCoupleSpace()
+                                                }
                                                 val coupleSpace = repository.activeCoupleSpace.value
                                                 val userSettings = repository.userSettings.value
                                                 if (coupleSpace.isPaired) {
@@ -239,7 +253,11 @@ class MainActivity : ComponentActivity() {
                                     repository = repository,
                                     onUnlockSuccess = {
                                         lifecycleScope.launch {
-                                            repository.findExistingCoupleSpace()
+                                            if (repository.activeCoupleSpace.value.isPaired) {
+                                                lifecycleScope.launch { repository.findExistingCoupleSpace() }
+                                            } else {
+                                                repository.findExistingCoupleSpace()
+                                            }
                                             val coupleSpace = repository.activeCoupleSpace.value
                                             if (repository.getCurrentUserId().isEmpty()) {
                                                 navigationState = AppNavigationState.AUTH

@@ -36,7 +36,7 @@ class CallActionReceiver : BroadcastReceiver() {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        val repository = MikayalaRepository(context.applicationContext)
+                        val repository = MikayalaRepository.getInstance(context.applicationContext)
                         repository.declineIncomingCall(callId)
                         Log.d("CallActionReceiver", "Appel entrant ($callId) refusé et rejet notifié")
                     } catch (e: Exception) {

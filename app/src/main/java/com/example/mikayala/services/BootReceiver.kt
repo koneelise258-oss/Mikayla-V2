@@ -11,7 +11,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != "android.intent.action.MY_PACKAGE_REPLACED") return
         try {
-            MikayalaRepository(context.applicationContext).rescheduleAllReminders()
+            MikayalaRepository.getInstance(context.applicationContext).rescheduleAllReminders()
         } catch (e: Exception) {
             Log.w("BootReceiver", "Reprogrammation des rappels impossible : ${e.message}")
         }

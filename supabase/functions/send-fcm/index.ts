@@ -4,7 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
-import { buildPayloadData, isAllowedType, isPairedCoupleMember, ttlFor, validateServiceAccount } from "./payload.ts";
+import { buildPayloadData, isAllowedType, isPairedCoupleMember, normalizeServiceAccount, ttlFor, validateServiceAccount } from "./payload.ts";
 
 interface SendFcmRequest {
   coupleId: string;
@@ -104,7 +104,12 @@ serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const fcmServiceAccountJson = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON") ?? "";
+    // Lecture tolérante du secret (guillemets, base64, « \\n » littéraux, ou 3 secrets séparés)
+    const fcmServiceAccountJson = normalizeServiceAccount(Deno.env.get("FCM_SERVICE_ACCOUNT_JSON") ?? "", {
+      clientEmail: Deno.env.get("FCM_CLIENT_EMAIL") ?? undefined,
+      privateKey: Deno.env.get("FCM_PRIVATE_KEY") ?? undefined,
+      projectId: Deno.env.get("FCM_PROJECT_ID") ?? undefined,
+    });
 
     // Vérification du compte de service Firebase (aucune valeur secrète renvoyée ni journalisée)
     const saError = validateServiceAccount(

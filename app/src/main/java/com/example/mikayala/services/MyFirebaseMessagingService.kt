@@ -277,6 +277,14 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             val coupleId = data["coupleId"] ?: data["couple_id"] ?: ""
             val senderId = data["senderId"] ?: data["sender_id"]
 
+            // Application fermée : Android vient de démarrer le processus pour ce message, et la session
+            // enregistrée n'est pas encore rechargée. Avant, currentUid valait null ici et la notification
+            // était IGNORÉE (« aucune session active ») : rien n'arrivait quand l'app était fermée.
+            // onMessageReceived tourne sur un fil d'arrière-plan : une attente courte est autorisée.
+            try {
+                kotlinx.coroutines.runBlocking { SupabaseService.getInstance().awaitSessionReady(5_000L) }
+            } catch (_: Exception) {}
+
             // Ne jamais notifier l'utilisateur de ses propres messages
             val currentUid = try { SupabaseService.getInstance().getCurrentSessionUid() } catch (_: Exception) { null }
             if (shouldIgnoreNotification(currentUid, senderId)) {
@@ -374,18 +382,26 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         isReply = isReply
                     )
 
-                    NotificationHelper.showNewMessageNotification(
-                        context = applicationContext,
-                        senderName = displayedTitle,
-                        messageText = displayedText,
-                        messageId = messageId
-                    )
+                    // Conversation ouverte et visible : le message s'affiche déjà, pas de notification en double
+                    val chatVisible = com.example.mikayala.util.AppForeground.isResumed &&
+                        com.example.mikayala.util.P2PSocketManager.isChatScreenActive
+                    if (!chatVisible) {
+                        NotificationHelper.showNewMessageNotification(
+                            context = applicationContext,
+                            senderName = displayedTitle,
+                            messageText = displayedText,
+                            messageId = messageId
+                        )
+                    }
 
                     // Signaler la délivrance sur le serveur sans bloquer
                     if (coupleId.isNotEmpty()) {
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
-                                SupabaseService.getInstance().markMessagesDelivered(coupleId)
+                                // Accusé « reçu » pour CE message (repli : tout le couple si la fonction serveur manque)
+                                val svc = SupabaseService.getInstance()
+                                if (data["messageId"].isNullOrBlank()) svc.markMessagesDelivered(coupleId)
+                                else svc.markMessagesDeliveredIds(coupleId, listOf(messageId))
                             } catch (e: Exception) {
                                 Log.w("FCM_MSG", "Échec confirmation message délivré: ${e.message}")
                             }

@@ -10,7 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -31,7 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -66,11 +68,18 @@ fun GlassmorphicFloatingNavBar(
             .navigationBarsPadding()
     ) {
         HorizontalDivider(thickness = 0.5.dp, color = c.border)
+        // Taille de texte de l'app (jusqu'à « très grande ») : plafonnée ici pour que les 5 libellés
+        // tiennent toujours sur une ligne sans être coupés.
+        val density = LocalDensity.current
+        val labelSize = (11f * minOf(density.fontScale, 1.15f) / density.fontScale).sp
+        val badgeSize = (9f * minOf(density.fontScale, 1.15f) / density.fontScale).sp
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
-                .padding(horizontal = 6.dp),
+                .widthIn(max = 640.dp) // tablette : barre centrée, onglets pas étirés sur toute la largeur
+                .align(Alignment.CenterHorizontally)
+                .heightIn(min = 58.dp)
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -84,7 +93,7 @@ fun GlassmorphicFloatingNavBar(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight()
+                        .heightIn(min = 50.dp) // zone tactile ≥ 48 dp
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = ripple(bounded = false, radius = 32.dp),
@@ -97,15 +106,15 @@ fun GlassmorphicFloatingNavBar(
                     Box(contentAlignment = Alignment.Center) {
                         Box(
                             modifier = Modifier
-                                .width(56.dp)
-                                .height(30.dp)
-                                .clip(RoundedCornerShape(15.dp))
+                                .width(52.dp)
+                                .height(28.dp)
+                                .clip(RoundedCornerShape(14.dp))
                                 .background(if (selected) c.accentSoft else c.surface),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = if (selected) item.selectedIcon else item.icon,
-                                contentDescription = item.label,
+                                contentDescription = null, // le libellé visible suffit (lecteur d'écran)
                                 tint = tint,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -115,27 +124,32 @@ fun GlassmorphicFloatingNavBar(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .offset(x = (-6).dp, y = (-2).dp)
-                                    .size(if (item.badgeCount > 9) 20.dp else 16.dp)
-                                    .clip(CircleShape)
-                                    .background(c.accent),
+                                    .heightIn(min = 16.dp)
+                                    .widthIn(min = 16.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(c.accent)
+                                    .padding(horizontal = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = if (item.badgeCount > 99) "99+" else item.badgeCount.toString(),
                                     color = c.background,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontSize = badgeSize,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
                                 )
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = item.label,
-                        fontSize = 11.sp,
+                        fontSize = labelSize,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         color = tint,
-                        maxLines = 1
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }

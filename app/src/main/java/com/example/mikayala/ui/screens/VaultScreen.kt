@@ -38,6 +38,9 @@ fun VaultScreen(
 ) {
     val context = LocalContext.current
     val vaultItems by repository.allVaultItems.collectAsState()
+    val vaultScreenScope = rememberCoroutineScope()
+    // À l'ouverture : rechargement depuis le serveur (ajouts et suppressions faits sur l'autre téléphone)
+    LaunchedEffect(Unit) { repository.refreshVault() }
 
     var selectedCategory by remember { mutableStateOf("intime") }
     var searchQuery by remember { mutableStateOf("") }
@@ -119,9 +122,15 @@ fun VaultScreen(
                     ) {
                         Button(
                             onClick = {
-                                repository.deleteVaultItem(item.id)
-                                selectedItemForPreview = null
-                                Toast.makeText(context, "Élément supprimé du coffre", Toast.LENGTH_SHORT).show()
+                                vaultScreenScope.launch {
+                                    val ok = repository.deleteVaultItem(item.id)
+                                    if (ok) {
+                                        selectedItemForPreview = null
+                                        Toast.makeText(context, "Élément supprimé du coffre", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Suppression impossible : vérifiez la connexion", Toast.LENGTH_LONG).show()
+                                    }
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0x33C4605C)),
                             shape = RoundedCornerShape(12.dp)
@@ -238,9 +247,18 @@ fun VaultScreen(
                         onClick = {
                             val photo = pickedPhoto
                             if (photo == null) {
-                                repository.addVaultItem(newTitle, "note", selectedCategory, newCaption)
-                                showAddDialog = false
-                                Toast.makeText(context, "Enregistré dans le coffre", Toast.LENGTH_SHORT).show()
+                                saving = true
+                                vaultScope.launch {
+                                    // Confirmation seulement après l'enregistrement réel sur le serveur
+                                    val ok = repository.addVaultItem(newTitle, "note", selectedCategory, newCaption)
+                                    saving = false
+                                    if (ok) {
+                                        showAddDialog = false
+                                        Toast.makeText(context, "Enregistré dans le coffre", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Non enregistré : vérifiez la connexion", Toast.LENGTH_LONG).show()
+                                    }
+                                }
                             } else {
                                 saving = true
                                 vaultScope.launch {

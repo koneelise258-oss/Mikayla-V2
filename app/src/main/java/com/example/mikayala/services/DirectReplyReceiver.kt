@@ -12,6 +12,7 @@ import com.example.mikayala.data.repository.MikayalaRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 class DirectReplyReceiver : BroadcastReceiver() {
 
@@ -33,14 +34,24 @@ class DirectReplyReceiver : BroadcastReceiver() {
 
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        val repository = MikayalaRepository(context.applicationContext)
+                        val repository = MikayalaRepository.getInstance(context.applicationContext)
+                        // App fermée : attendre le rechargement de la session avant d'envoyer
+                        com.example.mikayala.data.SupabaseService.getInstance().awaitSessionReady()
                         repository.sendMessage(replyText)
+                        // Attendre la confirmation réelle du serveur (le message reste sinon en attente
+                        // et sera renvoyé automatiquement à la prochaine ouverture)
+                        val confirmed = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                            repository.allMessages.first { list ->
+                                val mine = list.lastOrNull { it.content == replyText && repository.isMessageFromMe(it) }
+                                mine != null && mine.status != "pending" && mine.status != "failed"
+                            }
+                        } != null
 
                         // Mettre à jour la notification pour indiquer que le message a été envoyé
                         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         val updatedNotif = NotificationCompat.Builder(context, CHANNEL_NOTIFS_ID)
                             .setSmallIcon(R.drawable.ic_stat_mikayala)
-                            .setContentTitle("Message envoyé ✓")
+                            .setContentTitle(if (confirmed) "Message envoyé" else "Réponse en attente d'envoi")
                             .setContentText(replyText)
                             .setTimeoutAfter(3000)
                             .build()

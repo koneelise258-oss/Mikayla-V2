@@ -1,6 +1,7 @@
 package com.example.mikayala.ui.screens.couple
 
 import android.widget.Toast
+import kotlinx.coroutines.launch
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -594,22 +596,29 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
         )
     }
 
-    var rotationAngle by remember { mutableFloatStateOf(0f) }
+    // Résultat tiré au clic, puis animation vers CETTE case (déterministe). Avant : les cases étaient
+    // dessinées depuis la droite (0°) mais le pointeur est en haut, et le gagnant était lu à droite :
+    // le résultat annoncé n'était pas la case montrée par le pointeur.
+    val rotation = remember { androidx.compose.animation.core.Animatable(0f) }
     var isSpinning by remember { mutableStateOf(false) }
     var selectedPrize by remember { mutableStateOf<String?>(null) }
-
-    val animatedRotation by animateFloatAsState(
-        targetValue = rotationAngle,
-        animationSpec = tween(durationMillis = 3000, easing = FastOutSlowInEasing),
-        finishedListener = {
-            isSpinning = false
-            val normalized = (rotationAngle % 360 + 360) % 360
-            val sectorDegrees = 360f / items.size
-            val winningIndex = (((360 - normalized) % 360) / sectorDegrees).toInt() % items.size
-            selectedPrize = items[winningIndex]
-        },
-        label = "WheelRotation"
-    )
+    val wheelScope = rememberCoroutineScope()
+    val animatedRotation = rotation.value
+    val spin: () -> Unit = {
+        if (!isSpinning) {
+            isSpinning = true
+            selectedPrize = null
+            val idx = Random.nextInt(items.size)
+            wheelScope.launch {
+                val current = rotation.value
+                val target = com.example.mikayala.util.ChatGames.wheelAngleFor(idx, items.size)
+                val delta = ((target - current % 360f) % 360f + 360f) % 360f
+                rotation.animateTo(current + Random.nextInt(4, 7) * 360f + delta, tween(durationMillis = 3000, easing = FastOutSlowInEasing))
+                selectedPrize = items[idx]
+                isSpinning = false
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -668,7 +677,7 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
                             items.forEachIndexed { index, _ ->
                                 drawArc(
                                     color = colors[index % colors.size],
-                                    startAngle = index * sweepAngle,
+                                    startAngle = index * sweepAngle - 90f, // case 0 sous le pointeur du haut
                                     sweepAngle = sweepAngle,
                                     useCenter = true
                                 )
@@ -691,7 +700,27 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // Légende : quelle couleur correspond à quoi
+                    val legendColors = listOf(
+                        Color(0xFFC97B86), Color(0xFF7FA8CC), Color(0xFFC9A15E), Color(0xFF9283C4),
+                        Color(0xFF7FA8CC), Color(0xFFC97B86), Color(0xFF7FAF93), Color(0xFF9283C4)
+                    )
+                    items.chunked(2).forEachIndexed { r, pair ->
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            pair.forEachIndexed { c, label ->
+                                val idx = r * 2 + c
+                                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(legendColors[idx % legendColors.size]))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(label, fontSize = 11.sp, color = TextSecondary, maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                            }
+                            if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Winner Display
                     selectedPrize?.let { prize ->
@@ -716,17 +745,17 @@ private fun WheelOfDesiresSection(repository: MikayalaRepository) {
                     GlowingGradientButton(
                         text = if (isSpinning) "La roue tourne..." else "Tourner la Roue ! 🎡",
                         icon = Icons.Rounded.Casino,
-                        onClick = {
-                            if (!isSpinning) {
-                                isSpinning = true
-                                selectedPrize = null
-                                val extraSpins = Random.nextInt(4, 8) * 360
-                                val randomAngle = Random.nextFloat() * 360
-                                rotationAngle += extraSpins + randomAngle
-                            }
-                        },
+                        onClick = spin,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Ici la roue est personnelle ; dans la conversation, le même tirage s'affiche chez les deux
+                    TextButton(onClick = {
+                        repository.sendMessage(content = "Roue des désirs 🎡", type = "wheel", mediaUrl = items.joinToString("|"))
+                        Toast.makeText(context, "Roue envoyée dans la conversation : tournez-la à deux", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Jouer à deux dans la conversation", color = AccentRose, fontSize = 13.sp)
+                    }
                 }
             }
         }
@@ -806,6 +835,13 @@ private fun QuizGameSection(
                             )
                         }
 
+                        // Jouer à deux : envoyé dans la conversation, où la réponse du partenaire est partagée
+                        IconButton(onClick = {
+                            repository.sendMessage(content = "🧠 Quiz : ${quiz.question}", type = "quiz", mediaUrl = quiz.answerMe.orEmpty())
+                            Toast.makeText(context, "Quiz envoyé dans la conversation", Toast.LENGTH_SHORT).show()
+                        }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Jouer à deux dans la conversation", tint = AccentRose, modifier = Modifier.size(16.dp))
+                        }
                         IconButton(onClick = { repository.deleteQuizItem(quiz.id) }, modifier = Modifier.size(24.dp)) {
                             Icon(Icons.Rounded.Close, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
                         }
@@ -1027,6 +1063,12 @@ private fun LoveCouponsGameSection(
                         }
                     }
 
+                    IconButton(onClick = {
+                        repository.sendMessage(content = "🎟️ Bon d'amour : ${coupon.title} — ${coupon.description}", type = "coupon")
+                        Toast.makeText(context, "Bon offert dans la conversation", Toast.LENGTH_SHORT).show()
+                    }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Offrir dans la conversation", tint = AccentRose, modifier = Modifier.size(16.dp))
+                    }
                     IconButton(onClick = { repository.deleteCoupon(coupon.id) }, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Rounded.Close, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
                     }
@@ -1243,6 +1285,7 @@ private fun WouldYouRatherGameSection(
     repository: MikayalaRepository,
     dilemmas: List<CoupleDilemmaEntity>
 ) {
+    val context = LocalContext.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -1261,7 +1304,14 @@ private fun WouldYouRatherGameSection(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(text = "TU PRÉFÈRES :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WarningGold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "TU PRÉFÈRES :", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WarningGold, modifier = Modifier.weight(1f))
+                        // Ici le vote reste sur ce téléphone ; dans la conversation, les deux réponses sont partagées
+                        TextButton(onClick = {
+                            repository.sendMessage(content = "Tu préfères ? ⚖️", type = "dilemma", mediaUrl = "${dilemma.optionA}|${dilemma.optionB}")
+                            Toast.makeText(context, "Envoyé dans la conversation", Toast.LENGTH_SHORT).show()
+                        }) { Text("Jouer à deux", fontSize = 11.sp, color = AccentRose) }
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 

@@ -44,7 +44,7 @@ fun ChatAttachmentAndGamesBottomSheet(
     onSendAudio: () -> Unit,
     onSendPoll: () -> Unit,
     onSendEvent: () -> Unit,
-    onSendAiImage: () -> Unit,
+    onSendAiImage: (() -> Unit)? = null,
     // Interactive Chat Games
     onSendScratchCard: () -> Unit,
     onSendTruthOrDare: () -> Unit,
@@ -219,15 +219,19 @@ fun ChatAttachmentAndGamesBottomSheet(
                             icon = Icons.Rounded.Event,
                             gradientColors = listOf(Color(0xFFC97B86), Color(0xFFC97B86)),
                             onClick = onSendEvent
-                        ),
-                        AttachmentGridItem(
-                            id = "ai_image",
-                            title = "Images d'IA",
-                            icon = Icons.Rounded.AutoAwesome,
-                            gradientColors = listOf(Color(0xFF7FA8CC), Color(0xFF9283C4)),
-                            badge = "IA",
-                            onClick = onSendAiImage
                         )
+                    ) + listOfNotNull(
+                        // Affiché seulement si une vraie fonction est fournie
+                        onSendAiImage?.let { action ->
+                            AttachmentGridItem(
+                                id = "ai_image",
+                                title = "Images d'IA",
+                                icon = Icons.Rounded.AutoAwesome,
+                                gradientColors = listOf(Color(0xFF7FA8CC), Color(0xFF9283C4)),
+                                badge = "IA",
+                                onClick = action
+                            )
+                        }
                     )
 
                     AttachmentGrid(items = mediaItems)

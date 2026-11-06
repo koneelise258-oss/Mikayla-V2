@@ -2,7 +2,7 @@
 // (compatible Deno : `deno test supabase/functions/send-fcm/payload.test.ts`)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPayloadData, CYCLE_NEUTRAL_TEXT, isAllowedType, ttlFor } from "./payload.ts";
+import { CYCLE_NEUTRAL_TEXT, EXPECTED_FCM_PROJECT_ID, buildPayloadData, isAllowedType, isPairedCoupleMember, normalizeServiceAccount, ttlFor, validateServiceAccount } from "./payload.ts";
 
 const SENSITIVE = ["phaseName", "partnerNickname", "periodStart", "fertileWindow", "ovulation", "symptoms", "prediction"];
 
@@ -75,7 +75,6 @@ test("recipientId transmis et non usurpable par data", () => {
   assert.equal(out.recipientId, "u2");
 });
 
-import { isPairedCoupleMember, validateServiceAccount } from "./payload.ts";
 
 test("couple : status paired obligatoire", () => {
   const row = { user1_id: "a", user2_id: "b", status: "paired" };
@@ -99,4 +98,44 @@ test("compte de service : validé sans exposer de valeur", () => {
   // le code d'erreur ne contient jamais la clé
   const bad = validateServiceAccount(ok.replace("gen-lang-client-0988385912", "p"));
   assert.ok(!String(bad).includes("PRIVATE"));
+});
+
+// --- Lecture tolérante du compte de service (erreur « client_email / private_key / project_id ») ---
+
+const FAKE_KEY = "-----BEGIN PRIVATE KEY-----\nMIIBVQIBADANBgkqhkiG9w0BAQEFAASCAT8wggE7AgEAAkEA\n-----END PRIVATE KEY-----\n";
+const SA = { type: "service_account", project_id: EXPECTED_FCM_PROJECT_ID, client_email: "x@y.iam.gserviceaccount.com", private_key: FAKE_KEY };
+
+test("compte de service : JSON normal accepté", () => {
+  assert.equal(validateServiceAccount(normalizeServiceAccount(JSON.stringify(SA))), null);
+});
+
+test("compte de service : guillemets et espaces autour du JSON", () => {
+  assert.equal(validateServiceAccount(normalizeServiceAccount(`  '${JSON.stringify(SA)}'  `)), null);
+});
+
+test("compte de service : JSON encodé en base64", () => {
+  const b64 = Buffer.from(JSON.stringify(SA)).toString("base64");
+  assert.equal(validateServiceAccount(normalizeServiceAccount(b64)), null);
+});
+
+test("compte de service : JSON doublement encodé (chaîne JSON)", () => {
+  assert.equal(validateServiceAccount(normalizeServiceAccount(JSON.stringify(JSON.stringify(SA)))), null);
+});
+
+test("compte de service : \\n littéraux dans la clé privée convertis", () => {
+  const raw = JSON.stringify({ ...SA, private_key: FAKE_KEY.replace(/\n/g, "\\n") });
+  const norm = JSON.parse(normalizeServiceAccount(raw));
+  assert.ok(norm.private_key.includes("\n"));
+  assert.ok(!norm.private_key.includes("\\n"));
+});
+
+test("compte de service : trois secrets séparés en secours", () => {
+  const out = normalizeServiceAccount("", { clientEmail: SA.client_email, privateKey: FAKE_KEY, projectId: SA.project_id });
+  assert.equal(validateServiceAccount(out), null);
+});
+
+test("compte de service : secret vide ou tronqué toujours refusé avec un code neutre", () => {
+  assert.equal(validateServiceAccount(normalizeServiceAccount("")), "missing_service_account");
+  assert.equal(validateServiceAccount(normalizeServiceAccount('{"type":"service_account","project_id":"p"')), "invalid_service_account_json");
+  assert.equal(validateServiceAccount(normalizeServiceAccount(JSON.stringify({ type: "service_account", project_id: EXPECTED_FCM_PROJECT_ID }))), "missing_client_email");
 });
