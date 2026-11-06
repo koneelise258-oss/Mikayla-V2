@@ -178,7 +178,14 @@ class MainActivity : ComponentActivity() {
                                             if (repository.getCurrentUserId().isEmpty()) {
                                                 navigationState = AppNavigationState.AUTH
                                             } else {
-                                                repository.findExistingCoupleSpace()
+                                                // Couple déjà connu sur ce téléphone : ouverture immédiate, vérification
+                                                // auprès de Supabase en arrière-plan (réseau lent : plus d'écran de
+                                                // démarrage bloqué). Sinon : on attend la réponse avant de choisir l'écran.
+                                                if (repository.activeCoupleSpace.value.isPaired) {
+                                                    lifecycleScope.launch { repository.findExistingCoupleSpace() }
+                                                } else {
+                                                    repository.findExistingCoupleSpace()
+                                                }
                                                 val coupleSpace = repository.activeCoupleSpace.value
                                                 val userSettings = repository.userSettings.value
                                                 if (coupleSpace.isPaired) {
@@ -246,7 +253,11 @@ class MainActivity : ComponentActivity() {
                                     repository = repository,
                                     onUnlockSuccess = {
                                         lifecycleScope.launch {
-                                            repository.findExistingCoupleSpace()
+                                            if (repository.activeCoupleSpace.value.isPaired) {
+                                                lifecycleScope.launch { repository.findExistingCoupleSpace() }
+                                            } else {
+                                                repository.findExistingCoupleSpace()
+                                            }
                                             val coupleSpace = repository.activeCoupleSpace.value
                                             if (repository.getCurrentUserId().isEmpty()) {
                                                 navigationState = AppNavigationState.AUTH

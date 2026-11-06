@@ -368,3 +368,99 @@ Aucun écran n'a pu être **vu** (pas d'émulateur ni de téléphone ici) : corr
 Android 7 et 10, thème clair et sombre, taille de texte normale et « très grande » : barre de navigation
 (hauteur, libellés), clavier ouvert dans la conversation, plein écran du chat, bulles longues, surnom long,
 ouverture de la conversation (pas de défilement animé), bouton Retour sur chaque écran, tablette si disponible.
+
+---
+
+## Phase 5 — Jeux de couple
+
+CI : run `42139502029` — APK ✅, 106 tests unitaires ✅ (dont 4 nouveaux : `WheelGameTest`), Lint : 0 erreur.
+
+### 5.1 Audit des jeux
+| Jeu | Où | Règle attendue | État trouvé | État après correction |
+|---|---|---|---|---|
+| Morpion | chat | ❌ lanceur, ⭕ partenaire, tour par tour, victoire/nul | **simulation locale** (plateau en mémoire d'un seul téléphone) | synchronisé, tours vérifiés (`TicTacToe`, 9 tests) |
+| Carte à gratter | chat | grattée par le destinataire, visible chez les deux | locale ; gain toujours identique | synchronisée ; 12 gains tirés au hasard |
+| Quiz complicité | chat | le partenaire répond, la réponse attendue s'affiche ensuite | local ; question imposée et **réponse « attendue » inventée** | synchronisé ; question et réponse rédigées par l'expéditeur |
+| Tu préfères | chat | chacun choisit, les 2 choix révélés à la fin | local ; un seul dilemme | synchronisé ; 10 dilemmes |
+| Bon d'amour | chat | utilisé par le destinataire, statut partagé | local ; un seul bon | synchronisé ; 8 bons |
+| Roue | chat | même tirage pour les deux | **tournait seule en boucle**, résultats différents | voir 5.2 |
+| Action ou vérité | chat | carte envoyée | 4 cartes | 12 cartes |
+| Sondage | chat | votes des deux visibles | vote local, perdu | votes partagés (phase 3) |
+| Roue des désirs | espace Couple | résultat = case sous le pointeur | **case annoncée ≠ case montrée** | corrigée, légende, « Jouer à deux » |
+| Quiz, bons, Tu préfères, liste de rêves, action/vérité | espace Couple | — | enregistrés sur un seul téléphone | inchangés (voir limite) + bouton « Jouer à deux » vers la version synchronisée du chat |
+| Capsules d'amour | espace Couple | partagées | synchronisées (Supabase) | inchangées |
+
+**Cause de la régression des jeux du chat** : le commit `8e57f7a` (« add back navigation handling », 05/11)
+a remplacé les branches synchronisées de `ChatScreen.kt` par d'anciennes versions locales (6 appels
+`playGameMove` → 0). Elles ont été restaurées depuis `f06bf69`, branche par branche, sans toucher au reste.
+
+### 5.2 Roue et résultats
+- Problème : la roue tournait toute seule ; les deux téléphones pouvaient afficher des résultats différents.
+- Causes profondes :
+  1. à l'affichage d'une roue déjà jouée, un « réalignement » animé de 3,5 s se lançait ;
+  2. la fin de **toute** animation (y compris ce réalignement) calculait un résultat et l'enregistrait comme un
+     nouveau coup → notification → la roue tournait chez le partenaire → qui réenregistrait : **boucle** ;
+  3. la case lue à la fin de l'animation était décalée d'une case par rapport à la formule d'affichage.
+- Solution : résultat tiré **au clic**, enregistré (état `index:numéroDuTour`), puis les deux téléphones animent
+  vers cette même case ; aucune écriture pendant ou après une animation ; à l'affichage, la roue est directement
+  sur le dernier résultat ; formules angle ↔ case exactement inverses (testé de 2 à 12 cases) ; résultat affiché
+  seulement à la fin de l'animation ; anciens messages (`index` seul) toujours lisibles.
+- Fichiers : `util/ChatGames.kt`, `ui/screens/ChatScreen.kt` (`WheelOfFortuneMessageItem`),
+  `ui/screens/couple/CoupleGamesView.kt`.
+
+### 5.3 / 5.4 Règles, déroulement, expérience
+- État des parties stocké dans le message : une partie en cours est conservée après fermeture et sur l'autre
+  téléphone ; chaque coup refusé par le serveur est annulé à l'écran et signalé.
+- Contenus variés (`util/GameContent.kt`), quiz et sondage rédigés par les joueurs, légende de la roue.
+- Dépendance Supabase : la politique UPDATE de `messages` doit autoriser **les deux membres** à modifier
+  `media_url` ; sinon le partenaire voit « Non enregistré » à chaque coup (requête 13).
+- Limite : les listes de l'espace Couple (bons, liste de rêves, quiz, Tu préfères) restent propres à chaque
+  téléphone tant qu'aucune table Supabase partagée n'existe ; le partage passe par « Jouer à deux » (chat).
+- État : IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS.
+
+---
+
+# Rapport global
+
+**Aucune fonctionnalité n'a pu être vérifiée sur deux téléphones** depuis cet environnement : aucune n'est donc
+déclarée « TERMINÉ ET VÉRIFIÉ SUR DEUX APPAREILS ». Preuves disponibles : compilation de l'APK par GitHub
+Actions à chaque étape, 106 tests unitaires Android + 16 tests de la fonction `send-fcm`, Android Lint sans erreur.
+
+| Fonctionnalité | État |
+|---|---|
+| Session conservée après fermeture complète, pas de nouveau compte créé en silence | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Couple conservé (erreur ≠ absence de couple) | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Envoi/réception de messages, renvoi automatique, pas de doublon | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Messages manqués récupérés à la réouverture, temps réel rétabli | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Pagination des anciens messages | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Notifications (app fermée, pas de doublon conversation ouverte) — côté Android | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Fonction `send-fcm` (secret Firebase, déploiement) | BLOQUÉ (accès Supabase nécessaire) |
+| Présence et dernière connexion | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Accusés message par message | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS (exactitude complète : migration `20261106090000` à appliquer) |
+| Photos, vidéos, vocaux, documents | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Coffre persistant | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Coffre privé côté serveur | BLOQUÉ (migration `20261106091000` à appliquer) |
+| Actions du chat (réactions, suppression, réponse, favoris, épingle, modification) | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Glisser pour répondre | Non modifié (préservé) — à revérifier sur téléphone |
+| Pièces jointes réelles (position, contact, audio, sondage, événement) | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Sélecteur d'émojis complet, rendu homogène | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Émojis « style Apple » | NON COMMENCÉ — impossible légalement (voir `LICENCES_TIERCES.md`) |
+| Barre de navigation, dimensions, animations, bouton Retour | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Jeux du chat synchronisés (morpion, roue, carte, quiz, Tu préfères, bon, sondage) | IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS |
+| Jeux de l'espace Couple partagés nativement | NON COMMENCÉ (tables Supabase à créer ; contournement « Jouer à deux ») |
+| Appels audio/vidéo réels (WebRTC) | NON COMMENCÉ (hors plan ; signalisation seule) |
+
+## Actions externes nécessaires (dans l'ordre)
+1. **GitHub** : vérifier que le secret `SUPABASE_ANON_KEY` contient la clé *anon* (format JWT) du projet.
+2. **Installer le même APK sur les deux téléphones** (artefact de la dernière construction de la branche
+   `claude/stabilisation-5-phases`), puis faire les tests listés à la fin de chaque phase.
+3. **Supabase — lecture seule d'abord** : exécuter `docs/AUDIT_SUPABASE_REQUETES.sql` (surtout la requête 13 :
+   politique UPDATE de `messages`) et la requête de contrainte `message_type` (phase 2, C19).
+4. **Supabase — Firebase** : recoller le secret `FCM_SERVICE_ACCOUNT_JSON` (fichier JSON complet du compte de
+   service, projet `gen-lang-client-0988385912`) puis `supabase functions deploy send-fcm`.
+5. **Supabase — migrations proposées** (non destructives, à relire avant) : `20261105090000` parties A et B,
+   `20261106090000` (accusés par message), `20261106091000` (coffre privé, après revue des politiques
+   existantes), puis la partie C de `20261105090000` (Storage) une fois le nouvel APK sur les deux téléphones.
+6. **Politique UPDATE de `messages`** : autoriser les deux membres du couple à modifier `reactions`,
+   `media_url`, `is_pinned`, `is_viewed`, `status`, `delivered_at`, `read_at` (réactions et jeux du partenaire).
+7. Fusionner la branche dans `main` après les tests sur téléphones.
