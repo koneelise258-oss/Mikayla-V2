@@ -239,3 +239,85 @@ Notification app ouverte / en arrière-plan / fermée / écran verrouillé ; con
 notification) ; présence quand l'autre ferme l'app ; « Vu il y a… » ; accusés ✓ / ✓✓ / lu message par message ;
 photo, vidéo, vocal dans les deux sens ; envoi en mode avion puis retour réseau ; médias de plus de 7 jours ;
 morpion et roue reçus comme des jeux chez le partenaire.
+
+---
+
+## Phase 3 — Coffre-fort, actions de chat et émojis
+
+CI : run `42136822229` — APK ✅, 102 tests unitaires ✅ (dont 3 nouveaux : `EmojiCatalogTest`), Lint : 0 erreur.
+
+### 3.1 Coffre-fort privé
+
+**C23 — Table `vault_items` vide, « Enregistré » affiché quand même**
+- Causes profondes :
+  1. identifiant envoyé `v_<uuid>` : refusé si la colonne `id` est de type uuid ;
+  2. dates envoyées en millisecondes (`created_at`, `date_added`) : refusées si la colonne est un timestamptz,
+     et `date_added` n'existe peut-être pas ;
+  3. l'insertion était lancée en arrière-plan sans attendre le résultat : l'élément s'affichait, le message
+     « Enregistré » apparaissait, puis tout disparaissait à la réouverture ;
+  4. identifiant local (`v_xxxxxxxx`) différent de l'identifiant serveur : doublons et suppression impossible ;
+  5. la synchronisation n'ajoutait que les nouveaux éléments (suppressions de l'autre téléphone ignorées) et
+     lisait une date ISO comme « maintenant ».
+- Solution (`SupabaseService.kt`, `MikayalaRepository.kt`, `VaultScreen.kt`, `ChatScreen.kt`,
+  `MessageOptionBottomSheet.kt`) : UUID standard identique partout ; dates laissées au serveur ; colonnes
+  absentes retirées automatiquement (erreur PGRST204) ; ajout, enregistrement depuis le chat et suppression
+  **attendent la confirmation du serveur** avant tout message de succès (sinon : « vérifiez la connexion ») ;
+  suppression vérifiée (une ligne réellement supprimée) et fichier propre au coffre supprimé ; le serveur fait
+  foi à chaque synchronisation et à l'ouverture du coffre ; copie locale pour l'affichage hors ligne ; photo du
+  coffre supprimée du stockage si l'élément est refusé (pas de fichier orphelin).
+- Confidentialité : fichiers dans le bucket **privé** `messages-media` (liens signés) ; politique RLS proposée
+  `supabase/migrations_proposees/20261106091000_coffre_prive.sql` (lecture/ajout/suppression réservés aux 2
+  membres d'un couple apparié, **non appliquée** — contrôler d'abord les politiques existantes, qui se cumulent).
+- État : IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS ; confidentialité serveur BLOQUÉE tant que la migration
+  n'est pas appliquée.
+
+### 3.2 Actions de conversation
+
+| Action | Problème initial | Cause | Correction |
+|---|---|---|---|
+| Réactions | La réaction du partenaire disparaissait | tout l'objet `reactions` local était renvoyé, écrasant l'état serveur | seule ma clé est modifiée, à partir de l'état serveur ; rétablie + message si refus |
+| Favoris | visibles chez le partenaire, perdus à la synchro | colonne partagée `is_starred` (peut-être absente) | favoris personnels, enregistrés sur le téléphone (repris des anciens) |
+| Supprimer pour moi | le message réapparaissait | colonne `deleted_for` (peut-être absente) écrasée à la synchro | masquage durable sur le téléphone |
+| Supprimer pour les deux | échec silencieux | PATCH inopérant (phase 1) ; aucun contrôle | vrai PATCH ; rétabli + message si refus |
+| Modifier | non enregistré | date en millisecondes vers une colonne date | date ISO, colonne facultative ; rétabli si refus |
+| Épingler | échec silencieux | idem | rétabli + message si refus |
+| Répondre | aperçu vide chez le partenaire | colonnes d'aperçu absentes du serveur | aperçu reconstitué depuis le message cité |
+| Recherche / filtre favoris | — | (ajouté le 05/11) | inchangé ; utilise les favoris personnels |
+| Glisser pour répondre | — | — | **non modifié** (préservé) |
+| Document | illisible chez le partenaire | seule l'adresse locale `content://` était envoyée | vrai envoi dans le stockage privé |
+| Position | toujours Paris (48.8566, 2.3522) | coordonnées écrites en dur | position réelle (GPS/réseau, autorisation demandée) |
+| Contact | faux « +33 6 12 34 56 78 » | texte écrit en dur | vrai contact choisi dans le carnet |
+| Audio | faux morceau « 42 s » sans son | texte écrit en dur | vrai fichier audio choisi, envoyé comme un vocal |
+| Sondage | question imposée, vote local perdu | contenu en dur, état non partagé | sondage rédigé (2 à 4 choix), votes partagés et synchronisés |
+| Événement | « Escapade Spa… samedi 18 h » imposé | contenu en dur | événement rédigé |
+| Image IA | message texte prétendant une image générée | aucune génération n'existe | option retirée |
+
+Dépendance Supabase : la politique UPDATE de `messages` doit permettre au **destinataire** de modifier
+`reactions` et `media_url` (réactions, jeux, sondages) — requête 13 de `AUDIT_SUPABASE_REQUETES.sql`.
+
+### 3.3 Catalogue d'émojis
+
+- Problème : ~420 entrées écrites à la main, dont **43 mots** (« Map », « Camping », « Hotel »…) insérés tels
+  quels dans le message ; catalogue très incomplet (pas de catégorie Personnes, très peu de drapeaux —
+  pas de Côte d'Ivoire) ; rendu dépendant de la police du téléphone (émojis récents illisibles sous Android 7).
+- Solution : catalogue complet de 1 870 émojis (Unicode ≤ 15.0) avec noms et mots-clés **français**
+  (`assets/emoji/emoji_fr.tsv`, source emojibase-data MIT / CLDR) ; recherche insensible aux accents et à la
+  casse (plusieurs mots possibles) ; 9 catégories + récents (32) ; barre de catégories défilante, cibles de
+  40 dp ; grille adaptée à la largeur ; récents nettoyés des anciens « mots ».
+- Rendu homogène : police **Noto Color Emoji embarquée** (`androidx.emoji2:emoji2-bundled`, licence OFL),
+  initialisée au démarrage ; même rendu sur les deux téléphones, hors ligne, sans services Google.
+  Coût : APK de 41,7 → 51,7 Mo.
+- **Visuels Apple : non intégrés** (protégés par le droit d'auteur d'Apple, non redistribuables). Alternatives
+  libres analysées dans `docs/LICENCES_TIERCES.md`.
+- État : IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS.
+
+**C24 — Stabilité : application figée après une erreur** : le gestionnaire global de plantage remplaçait celui
+d'Android ; une exception sur le fil principal laissait l'écran bloqué. Il est désormais chaîné (journalisation
+puis comportement normal d'Android). Fichier : `MikayalaApplication.kt`.
+
+### Tests sur téléphones à faire (phase 3)
+Coffre : ajout note/photo, fermeture complète, réouverture sur l'autre téléphone, suppression croisée, mode
+avion (message d'échec, rien d'affiché à tort). Chat : réactions simultanées des deux côtés, favoris (non visibles
+chez l'autre), supprimer pour moi puis synchronisation, supprimer pour les deux, modifier, épingler, répondre
+(aperçu chez l'autre), glisser pour répondre, document, position, contact, audio, sondage voté des deux côtés.
+Émojis : recherche « coeur », « fete », drapeau de Côte d'Ivoire, rendu identique sur Android 7 et 10.
