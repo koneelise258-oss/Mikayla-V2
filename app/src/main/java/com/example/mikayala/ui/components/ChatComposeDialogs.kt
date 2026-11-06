@@ -86,3 +86,33 @@ fun EventComposerDialog(onDismiss: () -> Unit, onSend: (title: String, whenText:
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
     )
 }
+
+/**
+ * Quiz rédigé : question + VOTRE réponse (celle que le partenaire doit deviner).
+ * Avant : question imposée et « bonne réponse » inventée par l'application.
+ */
+@Composable
+fun QuizComposerDialog(onDismiss: () -> Unit, onSend: (question: String, answer: String) -> Unit) {
+    var question by remember { mutableStateOf("") }
+    var answer by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Quiz de complicité") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = question, onValueChange = { question = it.take(140) },
+                    label = { Text("Question (ex. mon plat préféré ?)") }, modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = answer, onValueChange = { answer = it.replace("§", "").take(100) },
+                    label = { Text("Votre réponse (cachée jusqu'à sa réponse)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = question.isNotBlank() && answer.isNotBlank(), onClick = { onSend(question.trim(), answer.trim()) }) { Text("Envoyer") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+    )
+}

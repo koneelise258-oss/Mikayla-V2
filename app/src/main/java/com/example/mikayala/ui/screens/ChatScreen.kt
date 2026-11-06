@@ -214,6 +214,7 @@ fun ChatScreen(
         else Toast.makeText(context, "Autorisation de localisation refusée", Toast.LENGTH_SHORT).show()
     }
     var showPollComposer by remember { mutableStateOf(false) }
+    var showQuizComposer by remember { mutableStateOf(false) }
     var showEventComposer by remember { mutableStateOf(false) }
 
     val rawMessages by repository.allMessages.collectAsState()
@@ -956,24 +957,17 @@ fun ChatScreen(
                 // Chat Games
                 onSendScratchCard = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "🎁 Carte Mystère : Massage du dos sensuel aux huiles chaudes (20 min) 💆‍♂️", type = "scratch_card")
+                    repository.sendMessage(content = "🎁 Carte mystère : " + com.example.mikayala.util.GameContent.scratchPrizes.random(), type = "scratch_card")
                     Toast.makeText(context, "Carte à gratter envoyée 🎴", Toast.LENGTH_SHORT).show()
                 },
                 onSendTruthOrDare = {
                     showAttachmentSheet = false
-                    val challenges = listOf(
-                        "🔥 Action : Fais-moi un massage des mains pendant 2 minutes les yeux fermés.",
-                        "✨ Vérité : Quel a été le moment exact où tu as su que tu tombais amoureux(se) de moi ?",
-                        "🔥 Action : Chuchote à mon oreille la chose la plus douce que tu n'as jamais osé dire.",
-                        "✨ Vérité : Quel est ton fantasme secret pour notre prochain voyage à deux ?"
-                    )
-                    repository.sendMessage(content = challenges.random(), type = "truth_or_dare")
+                    repository.sendMessage(content = com.example.mikayala.util.GameContent.truthOrDare.random(), type = "truth_or_dare")
                     Toast.makeText(context, "Défi Action ou Vérité lancé 🔥", Toast.LENGTH_SHORT).show()
                 },
                 onSendQuiz = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "🧠 Quiz Complicité : Quel est notre souvenir commun le plus émouvant ?", type = "quiz", mediaUrl = "Notre premier voyage en bord de mer au clair de lune.")
-                    Toast.makeText(context, "Quiz de couple envoyé 🧠", Toast.LENGTH_SHORT).show()
+                    showQuizComposer = true
                 },
                 onSendTicTacToe = {
                     showAttachmentSheet = false
@@ -982,12 +976,12 @@ fun ChatScreen(
                 },
                 onSendDilemma = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "Tu Préfères ? ⚖️", type = "dilemma", mediaUrl = "Un voyage surprise à Venise en gondole 🛶|Un chalet isolé au coin du feu sous la neige ❄️")
+                    repository.sendMessage(content = "Tu préfères ? ⚖️", type = "dilemma", mediaUrl = com.example.mikayala.util.GameContent.dilemmas.random())
                     Toast.makeText(context, "Dilemme envoyé ⚖️", Toast.LENGTH_SHORT).show()
                 },
                 onSendLoveCoupon = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "🎟️ Bon d'Amour : Joker Câlin Infini sans condition ! Valable à tout moment ❤️", type = "coupon")
+                    repository.sendMessage(content = "🎟️ Bon d'amour : " + com.example.mikayala.util.GameContent.coupons.random(), type = "coupon")
                     Toast.makeText(context, "Bon d'Amour offert 🎟️💖", Toast.LENGTH_SHORT).show()
                 },
                 onSendWheel = {
@@ -1004,6 +998,15 @@ fun ChatScreen(
                 onSend = { question, options ->
                     showPollComposer = false
                     repository.sendMessage(content = question, type = "poll", mediaUrl = options.joinToString("|"))
+                }
+            )
+        }
+        if (showQuizComposer) {
+            com.example.mikayala.ui.components.QuizComposerDialog(
+                onDismiss = { showQuizComposer = false },
+                onSend = { question, answer ->
+                    showQuizComposer = false
+                    repository.sendMessage(content = "🧠 Quiz : $question", type = "quiz", mediaUrl = answer)
                 }
             )
         }
