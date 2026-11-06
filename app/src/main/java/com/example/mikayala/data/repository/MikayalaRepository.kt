@@ -17,11 +17,12 @@ import java.io.File
 import java.io.FileInputStream
 import java.util.UUID
 
+private val localGamesJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
 class MikayalaRepository(private val context: Context) {
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     val supabaseService = SupabaseService.getInstance()
-    private val localGamesJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
     fun syncPendingPushToken() {
         repositoryScope.launch {
@@ -2327,7 +2328,14 @@ class MikayalaRepository(private val context: Context) {
     private inline fun <reified T> persistList(key: String, flow: MutableStateFlow<List<T>>) {
         val ser = kotlinx.serialization.serializer<List<T>>()
         repositoryScope.launch {
-            flow.collect { list: List<T> -> prefs.edit().putString(key, localGamesJson.encodeToString(ser, list)).apply() }
+            flow.collect { list: List<T> ->
+                try {
+                    val jsonStr = localGamesJson.encodeToString(ser, list)
+                    prefs.edit().putString(key, jsonStr).apply()
+                } catch (e: Throwable) {
+                    Log.w("MikayalaRepo", "Écriture impossible de $key : ${e.message}")
+                }
+            }
         }
     }
 
@@ -2341,7 +2349,14 @@ class MikayalaRepository(private val context: Context) {
     private inline fun <reified T> persistValue(key: String, flow: MutableStateFlow<T>) {
         val ser = kotlinx.serialization.serializer<T>()
         repositoryScope.launch {
-            flow.collect { v: T -> prefs.edit().putString(key, localGamesJson.encodeToString(ser, v)).apply() }
+            flow.collect { v: T ->
+                try {
+                    val jsonStr = localGamesJson.encodeToString(ser, v)
+                    prefs.edit().putString(key, jsonStr).apply()
+                } catch (e: Throwable) {
+                    Log.w("MikayalaRepo", "Écriture impossible de $key : ${e.message}")
+                }
+            }
         }
     }
 

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "752482758465",
+    "project_id": "mikayla-71fef",
+    "storage_bucket": "mikayla-71fef.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:752482758465:android:90e16e4641d67e89f23bc0",
+        "android_client_info": {
+          "package_name": "com.mikayla.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDfKHoGsaN--ve71KXoqSrDNcq59_TNMRc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

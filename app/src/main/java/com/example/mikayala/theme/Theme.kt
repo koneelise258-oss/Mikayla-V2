@@ -60,7 +60,9 @@ fun MikayalaTheme(
             activity?.let { act ->
                 val window = act.window
                 val systemColor = palette.background
+                @Suppress("DEPRECATION")
                 window.statusBarColor = systemColor.toArgb()
+                @Suppress("DEPRECATION")
                 window.navigationBarColor = systemColor.toArgb()
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
                 WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme

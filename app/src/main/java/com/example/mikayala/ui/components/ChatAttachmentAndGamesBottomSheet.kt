@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -195,7 +196,7 @@ fun ChatAttachmentAndGamesBottomSheet(
                         AttachmentGridItem(
                             id = "document",
                             title = "Document",
-                            icon = Icons.Rounded.InsertDriveFile,
+                            icon = Icons.AutoMirrored.Rounded.InsertDriveFile,
                             gradientColors = listOf(Color(0xFF9283C4), Color(0xFF9283C4)),
                             onClick = onSendDocument
                         ),
