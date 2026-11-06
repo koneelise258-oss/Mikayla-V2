@@ -13,12 +13,23 @@ class MikayalaApplication : Application() {
         Log.d("MikayalaStartup", "Application.onCreate started")
         super.onCreate()
         
-        // Setup global crash handler to capture errors during startup
+        // Journalisation des plantages, PUIS gestionnaire d'Android. Avant, le gestionnaire d'Android
+        // était remplacé : après une erreur sur le fil principal, l'application restait figée
+        // (écran bloqué, plus aucune réaction) au lieu de se fermer et de pouvoir redémarrer.
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            Log.e("MikayalaCrash", "CRITICAL: Uncaught exception in thread ${thread.name}")
-            Log.e("MikayalaCrash", "Type: ${throwable.javaClass.name}")
-            Log.e("MikayalaCrash", "Reason: ${throwable.message}")
-            throwable.printStackTrace()
+            Log.e("MikayalaCrash", "Exception non gérée dans ${thread.name}: ${throwable.javaClass.name}: ${throwable.message}", throwable)
+            previousHandler?.uncaughtException(thread, throwable)
+        }
+
+        // Émojis : police Noto Color Emoji embarquée, même rendu sur tous les téléphones
+        try {
+            androidx.emoji2.text.EmojiCompat.init(
+                androidx.emoji2.bundled.BundledEmojiCompatConfig(this)
+                    .setReplaceAll(true)
+            )
+        } catch (e: Throwable) {
+            Log.w("MikayalaStartup", "EmojiCompat : ${e.message}")
         }
 
         // Initialize Firebase Messaging safely with token masking and sync queue

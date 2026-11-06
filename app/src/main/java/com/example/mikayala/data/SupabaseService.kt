@@ -749,16 +749,54 @@ class SupabaseService(
         return@withContext null
     }
 
-    suspend fun updateMessageFields(messageId: String, fields: JSONObject): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * Met à jour des champs d'un message. true seulement si une ligne a réellement été modifiée.
+     * [optionalColumns] : colonnes qui peuvent manquer dans le schéma réel (retirées puis nouvel essai).
+     */
+    suspend fun updateMessageFields(
+        messageId: String,
+        fields: JSONObject,
+        optionalColumns: Set<String> = emptySet()
+    ): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || messageId.isEmpty()) return@withContext false
         try {
-            val res = executePatch("/rest/v1/messages?id=eq.$messageId", fields.toString())
-            // « [] » = aucune ligne modifiée (RLS refuse ou message absent) : ce n'est PAS un succès
-            return@withContext res != null && res.trim().let { it.isNotEmpty() && it != "[]" }
+            val body = JSONObject(fields.toString())
+            repeat(1 + optionalColumns.size) {
+                val r = executePatchResult("/rest/v1/messages?id=eq.$messageId", body.toString())
+                if (r.ok) {
+                    // « [] » = aucune ligne modifiée (RLS refuse ou message absent) : ce n'est PAS un succès
+                    return@withContext r.body?.trim()?.let { it.isNotEmpty() && it != "[]" } == true
+                }
+                val missing = Regex("Could not find the '([a-zA-Z0-9_]+)' column").find(r.error.orEmpty())?.groupValues?.get(1)
+                if (missing != null && missing in optionalColumns && body.has(missing) && body.length() > 1) {
+                    body.remove(missing)
+                } else {
+                    Log.w("SupabaseService", "updateMessageFields HTTP ${r.code}: ${r.error?.take(200)}")
+                    return@withContext false
+                }
+            }
+            false
         } catch (e: Exception) {
             Log.e("SupabaseService", "updateMessageFields error: ${e.message}")
-            return@withContext false
+            false
         }
+    }
+
+    /** Réactions actuelles du message sur le serveur (null = inconnu). */
+    suspend fun fetchMessageReactions(messageId: String): String? = withContext(Dispatchers.IO) {
+        val r = executeGetResult("/rest/v1/messages?id=eq.$messageId&select=reactions")
+        if (!r.ok || r.body == null) return@withContext null
+        try {
+            val arr = JSONArray(r.body)
+            if (arr.length() == 0) return@withContext null
+            val v = arr.getJSONObject(0).opt("reactions")
+            when (v) {
+                is JSONObject -> v.toString()
+                is String -> v.ifBlank { "{}" }
+                null, JSONObject.NULL -> "{}"
+                else -> v.toString()
+            }
+        } catch (_: Exception) { null }
     }
 
     suspend fun deleteMessage(messageId: String): Boolean = withContext(Dispatchers.IO) {
@@ -1178,59 +1216,89 @@ class SupabaseService(
     }
 
     // --- SHARED VAULT SUPABASE METHODS ---
+    /** Éléments du coffre du couple (null = erreur : ne jamais confondre avec un coffre vide). */
     suspend fun fetchVaultItems(coupleId: String, pairingCode: String = ""): JSONArray? = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty()) return@withContext null
+        val token = userAccessTokenOrNull() ?: return@withContext null
         try {
-            val res = executeGet("/rest/v1/vault_items?couple_id=eq.$coupleId&order=created_at.desc")
-            if (res != null) return@withContext JSONArray(res)
+            var r = executeGetResult("/rest/v1/vault_items?couple_id=eq.$coupleId&order=created_at.desc", token)
+            if (!r.ok && r.code == 400) {
+                // Colonne de tri absente selon le schéma réel : sans tri
+                r = executeGetResult("/rest/v1/vault_items?couple_id=eq.$coupleId", token)
+            }
+            if (r.ok && r.body != null) return@withContext JSONArray(r.body)
+            Log.w("SupabaseService", "fetchVaultItems HTTP ${r.code}: ${r.error}")
         } catch (e: Exception) {
             Log.e("SupabaseService", "fetchVaultItems error: ${e.message}")
         }
         return@withContext null
     }
 
+    /**
+     * Enregistre un élément du coffre et ne renvoie true qu'après confirmation du serveur.
+     *
+     * Avant : identifiant « v_<uuid> » (refusé si la colonne id est de type uuid), dates en millisecondes
+     * (refusées si timestamptz), colonnes supposées (date_added…) : l'insertion échouait en silence,
+     * la table vault_items restait vide, et l'application affichait quand même « Enregistré ».
+     * Désormais : identifiant UUID standard (le même sur le téléphone), dates laissées au serveur, et
+     * les colonnes absentes du schéma réel sont retirées automatiquement (erreur PGRST204).
+     */
     suspend fun insertVaultItem(
+        id: String,
         coupleId: String,
         senderId: String,
         title: String,
         type: String,
         category: String,
         caption: String,
-        mediaUrl: String = "",
-        pairingCode: String = ""
-    ): JSONObject? = withContext(Dispatchers.IO) {
-        if (!isConfigured() || coupleId.isEmpty()) return@withContext null
-        try {
-            val vId = "v_" + java.util.UUID.randomUUID().toString()
-            val now = System.currentTimeMillis()
-            val body = JSONObject().apply {
-                put("id", vId)
-                put("couple_id", coupleId)
-                put("title", title)
-                put("type", type)
-                put("media_type", type)
-                put("category", category)
-                put("caption", caption)
-                put("media_url", mediaUrl)
-                put("added_by", senderId)
-                put("date_added", now)
-                put("created_at", now)
-            }
-            val res = executePost("/rest/v1/vault_items", body.toString())
-            if (res != null && res.startsWith("[")) {
-                val array = JSONArray(res)
-                if (array.length() > 0) return@withContext array.getJSONObject(0)
-            }
-        } catch (e: Exception) {
-            Log.e("SupabaseService", "insertVaultItem error: ${e.message}")
+        mediaUrl: String = ""
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || coupleId.isEmpty() || userAccessTokenOrNull() == null) return@withContext false
+        val body = JSONObject().apply {
+            put("id", id)
+            put("couple_id", coupleId)
+            put("title", title)
+            put("type", type)
+            put("media_type", type)
+            put("category", category)
+            put("caption", caption)
+            put("media_url", mediaUrl)
+            put("added_by", senderId)
         }
-        return@withContext null
+        val optional = setOf("media_type", "category", "caption", "media_url", "added_by", "type")
+        repeat(7) {
+            val r = executePostResult("/rest/v1/vault_items", body.toString())
+            if (r.ok) return@withContext true
+            val err = r.error.orEmpty()
+            if (r.code == 409 || err.contains("23505")) return@withContext true // déjà enregistré
+            val missing = Regex("Could not find the '([a-zA-Z0-9_]+)' column").find(err)?.groupValues?.get(1)
+            if (missing != null && missing in optional && body.has(missing)) {
+                Log.i("SupabaseService", "vault_items : colonne '$missing' absente, nouvel essai sans elle")
+                body.remove(missing)
+            } else {
+                Log.e("SupabaseService", "insertVaultItem HTTP ${r.code}: ${err.take(300)}")
+                return@withContext false
+            }
+        }
+        false
     }
 
+    /** Supprime un élément du coffre ; true seulement si le serveur confirme la suppression d'une ligne. */
     suspend fun deleteVaultItem(id: String): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured()) return@withContext true
+        if (!isConfigured() || id.isEmpty()) return@withContext false
         try {
-            return@withContext executeDelete("/rest/v1/vault_items?id=eq.$id")
+            val conn = URL("$supabaseUrl/rest/v1/vault_items?id=eq.$id").openConnection() as HttpURLConnection
+            conn.requestMethod = "DELETE"
+            conn.setRequestProperty("apikey", supabaseKey)
+            conn.setRequestProperty("Authorization", "Bearer ${getAuthToken()}")
+            conn.setRequestProperty("Prefer", "return=representation")
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+            val code = conn.responseCode
+            if (code !in 200..299) return@withContext false
+            val text = readAll(conn.inputStream).orEmpty().trim()
+            // « [] » = rien supprimé (droits refusés ou déjà supprimé ailleurs)
+            return@withContext text.contains(id) || (code == 204 && text.isEmpty())
         } catch (e: Exception) {
             Log.e("SupabaseService", "deleteVaultItem error: ${e.message}")
             return@withContext false
@@ -1496,6 +1564,11 @@ class SupabaseService(
      * Retourne le corps (« [] » si aucune ligne modifiée) ou null en cas d'erreur.
      */
     private suspend fun executePatch(path: String, jsonBody: String): String? {
+        val r = executePatchResult(path, jsonBody)
+        return if (r.ok) r.body.orEmpty() else null
+    }
+
+    private suspend fun executePatchResult(path: String, jsonBody: String): HttpResult {
         val fullUrl = if (path.startsWith("http://") || path.startsWith("https://")) path else "$supabaseUrl$path"
         return try {
             val response = restHttp.request(fullUrl) {
@@ -1509,13 +1582,14 @@ class SupabaseService(
                 setBody(jsonBody)
             }
             val text = response.bodyAsText()
-            if (response.status.value in 200..299) text else {
-                Log.w("SupabaseService", "executePatch HTTP ${response.status.value} on ${path.substringBefore('?')}: ${text.take(300)}")
-                null
+            val code = response.status.value
+            if (code in 200..299) HttpResult(code, text, null) else {
+                Log.w("SupabaseService", "executePatch HTTP $code on ${path.substringBefore('?')}: ${text.take(300)}")
+                HttpResult(code, null, text.take(300))
             }
         } catch (e: Exception) {
             Log.e("SupabaseService", "executePatch failed: ${e.message}")
-            null
+            HttpResult(-1, null, e.message)
         }
     }
 

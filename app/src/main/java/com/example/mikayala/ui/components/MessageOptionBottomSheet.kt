@@ -220,8 +220,8 @@ fun MessageOptionBottomSheet(
                 subtitle = "Transférer dans l'album secret partagé",
                 iconColor = AccentRose,
                 onClick = {
+                    // La confirmation est affichée par la conversation, après réponse du serveur
                     onSaveToVault()
-                    Toast.makeText(context, "Ajouté au Coffre-Fort", Toast.LENGTH_SHORT).show()
                     onDismiss()
                 }
             )

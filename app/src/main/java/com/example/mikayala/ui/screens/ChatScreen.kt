@@ -148,15 +148,73 @@ fun ChatScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val fileName = uri.lastPathSegment ?: "Document.pdf"
-            repository.sendMessage(
-                content = "Fichier envoyé : $fileName 📄",
-                type = "document",
-                mediaUrl = uri.toString()
-            )
-            Toast.makeText(context, "Document partagé ! 📄", Toast.LENGTH_SHORT).show()
+            // Vrai envoi du fichier dans le stockage privé du couple (avant : seule l'adresse LOCALE
+            // « content://… » partait, illisible sur le téléphone du partenaire)
+            val fileName = try {
+                context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            } catch (_: Exception) { null } ?: uri.lastPathSegment ?: "Document"
+            repository.sendDocumentMedia(uri, fileName)
+            Toast.makeText(context, "Envoi du document…", Toast.LENGTH_SHORT).show()
         }
     }
+
+    // Fichier audio réel (avant : faux morceau « Chanson de notre première danse » sans son)
+    val audioFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            repository.sendAudioFile(uri) { ok ->
+                if (!ok) Toast.makeText(context, "Fichier audio illisible", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Contact réel choisi dans le carnet (avant : faux « +33 6 12 34 56 78 »)
+    val contactLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data ?: return@rememberLauncherForActivityResult
+        try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(
+                    android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
+                ),
+                null, null, null
+            )?.use { c ->
+                if (c.moveToFirst()) {
+                    val name = c.getString(0).orEmpty()
+                    val number = c.getString(1).orEmpty()
+                    repository.sendMessage(content = "$name ($number)".trim(), type = "contact", mediaUrl = number)
+                }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Contact illisible", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Position réelle (avant : position FIXE à Paris envoyée quel que soit l'endroit)
+    val sendRealLocation: () -> Unit = {
+        coroutineScope.launch {
+            Toast.makeText(context, "Recherche de la position…", Toast.LENGTH_SHORT).show()
+            val loc = com.example.mikayala.util.OneShotLocation.get(context)
+            if (loc == null) {
+                Toast.makeText(context, "Position indisponible : activez la localisation", Toast.LENGTH_LONG).show()
+            } else {
+                repository.sendLocationMessage(loc.latitude, loc.longitude, "Ma position")
+            }
+        }
+    }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        if (grants.values.any { it }) sendRealLocation()
+        else Toast.makeText(context, "Autorisation de localisation refusée", Toast.LENGTH_SHORT).show()
+    }
+    var showPollComposer by remember { mutableStateOf(false) }
+    var showEventComposer by remember { mutableStateOf(false) }
 
     val rawMessages by repository.allMessages.collectAsState()
     val myUserId = remember { repository.getCurrentUserId() }
@@ -257,6 +315,11 @@ fun ChatScreen(
     // met à jour les accusés en direct). À l'ouverture de la conversation : rattrapage immédiat.
     LaunchedEffect(Unit) {
         repository.requestFullSync()
+    }
+
+    // Échec d'une action (réaction, modification, épinglage, suppression) : on le dit au lieu de faire semblant
+    LaunchedEffect(Unit) {
+        repository.actionErrors.collect { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
     }
 
     // Broadcast typing status with debounce
@@ -835,43 +898,47 @@ fun ChatScreen(
                 },
                 onSendLocation = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "Notre café romantique préféré 📍", type = "location", mediaUrl = "48.8566, 2.3522")
-                    Toast.makeText(context, "Position partagée 📍", Toast.LENGTH_SHORT).show()
+                    if (com.example.mikayala.util.OneShotLocation.hasPermission(context)) sendRealLocation()
+                    else locationPermissionLauncher.launch(arrayOf(
+                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    ))
                 },
                 onSendContact = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "Mikayala ❤️ (+33 6 12 34 56 78)", type = "contact")
-                    Toast.makeText(context, "Fiche contact partagée 👤", Toast.LENGTH_SHORT).show()
+                    try {
+                        contactLauncher.launch(android.content.Intent(
+                            android.content.Intent.ACTION_PICK,
+                            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                        ))
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Carnet d'adresses indisponible", Toast.LENGTH_SHORT).show()
+                    }
                 },
                 onSendDocument = {
                     showAttachmentSheet = false
                     try {
                         documentLauncher.launch("*/*")
                     } catch (e: Exception) {
-                        repository.sendMessage(content = "Nos_Billets_Weekend_Rome.pdf 📄 (2.4 Mo)", type = "document")
-                        Toast.makeText(context, "Document chiffré partagé 📄", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Impossible d'ouvrir le sélecteur de fichiers", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onSendAudio = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "Chanson de notre première danse 🎵", type = "audio", duration = 42)
-                    Toast.makeText(context, "Morceau audio partagé 🎧", Toast.LENGTH_SHORT).show()
+                    try { audioFileLauncher.launch("audio/*") } catch (e: Exception) {
+                        Toast.makeText(context, "Impossible d'ouvrir le sélecteur audio", Toast.LENGTH_SHORT).show()
+                    }
                 },
                 onSendPoll = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "Ce soir pour notre date ? 🍽️", type = "poll", mediaUrl = "Italien aux chandelles 🍝|Sushi fait maison 🍣|Soirée Burgers & Plaid 🍔")
-                    Toast.makeText(context, "Sondage de couple lancé 📊", Toast.LENGTH_SHORT).show()
+                    showPollComposer = true
                 },
                 onSendEvent = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "Escapade Weekend Spa & Jacuzzi 🧖‍♀️ (Ce Samedi à 18h)", type = "event")
-                    Toast.makeText(context, "Événement de couple planifié 📅", Toast.LENGTH_SHORT).show()
+                    showEventComposer = true
                 },
-                onSendAiImage = {
-                    showAttachmentSheet = false
-                    repository.sendMessage(content = "Portrait d'art magique de nous deux sous les étoiles ✨🎨", type = "ai_image")
-                    Toast.makeText(context, "Image d'IA générée ✨", Toast.LENGTH_SHORT).show()
-                },
+                // « Image IA » retirée : aucune génération d'image n'existe (seul un texte était envoyé)
+                onSendAiImage = null,
                 // Chat Games
                 onSendScratchCard = {
                     showAttachmentSheet = false
@@ -917,6 +984,25 @@ fun ChatScreen(
             )
         }
 
+        if (showPollComposer) {
+            com.example.mikayala.ui.components.PollComposerDialog(
+                onDismiss = { showPollComposer = false },
+                onSend = { question, options ->
+                    showPollComposer = false
+                    repository.sendMessage(content = question, type = "poll", mediaUrl = options.joinToString("|"))
+                }
+            )
+        }
+        if (showEventComposer) {
+            com.example.mikayala.ui.components.EventComposerDialog(
+                onDismiss = { showEventComposer = false },
+                onSend = { title, whenText ->
+                    showEventComposer = false
+                    repository.sendMessage(content = if (whenText.isBlank()) title else "$title ($whenText)", type = "event")
+                }
+            )
+        }
+
         // Option Bottom Sheet Modal
         selectedMessageForOptions?.let { message ->
             MessageOptionBottomSheet(
@@ -934,7 +1020,16 @@ fun ChatScreen(
                 },
                 onToggleStar = { repository.toggleStarred(message.id) },
                 onTogglePin = { repository.togglePinned(message.id) },
-                onSaveToVault = { repository.saveMessageToVault(message) },
+                onSaveToVault = {
+                    coroutineScope.launch {
+                        val ok = repository.saveMessageToVault(message)
+                        Toast.makeText(
+                            context,
+                            if (ok) "Ajouté au coffre" else "Non ajouté au coffre : vérifiez la connexion",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
                 onDeleteForMe = { repository.deleteMessage(message.id, false) },
                 onDeleteForEveryone = { repository.deleteMessage(message.id, true) },
                 onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) }
@@ -1456,8 +1551,26 @@ private fun MessageBubble(
             }
 
             "poll" -> {
-                val options = message.mediaUrl?.split("|") ?: listOf("Option 1", "Option 2")
-                var selectedOptionIndex by remember { mutableStateOf<Int?>(null) }
+                // Votes partagés (avant : choix local, perdu et invisible pour le partenaire)
+                val pollScope = rememberCoroutineScope()
+                val pollContext = LocalContext.current
+                val options = com.example.mikayala.util.ChatGames.base(message.mediaUrl).split("|").filter { it.isNotBlank() }
+                    .ifEmpty { listOf("Oui", "Non") }
+                val pollIsSender = repository.isMessageFromMe(message)
+                val (senderVote, partnerVote) = com.example.mikayala.util.ChatGames.dilemmaChoices(message.mediaUrl)
+                val myVote = if (pollIsSender) senderVote else partnerVote
+                val otherVote = if (pollIsSender) partnerVote else senderVote
+                val selectedOptionIndex: Int? = myVote.takeIf { it >= 0 }
+                val vote: (Int) -> Unit = { idx ->
+                    if (idx != myVote) pollScope.launch {
+                        val ok = repository.playGameMove(
+                            message.id,
+                            com.example.mikayala.util.ChatGames.dilemmaChoose(message.mediaUrl, pollIsSender, idx),
+                            "Sondage"
+                        )
+                        if (!ok) Toast.makeText(pollContext, "Vote non enregistré", Toast.LENGTH_SHORT).show()
+                    }
+                }
 
                 Surface(
                     shape = RoundedCornerShape(20.dp),
@@ -1484,7 +1597,7 @@ private fun MessageBubble(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp)
-                                    .clickable { selectedOptionIndex = idx }
+                                    .clickable { vote(idx) }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
@@ -1492,12 +1605,15 @@ private fun MessageBubble(
                                 ) {
                                     RadioButton(
                                         selected = isSelected,
-                                        onClick = { selectedOptionIndex = idx },
+                                        onClick = { vote(idx) },
                                         colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFFD600)),
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(text = opt, fontSize = 12.sp, color = TextPrimary)
+                                    Text(text = opt, fontSize = 12.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+                                    if (otherVote == idx) {
+                                        Text(text = "Partenaire ✓", fontSize = 10.sp, color = TextSecondary)
+                                    }
                                 }
                             }
                         }
