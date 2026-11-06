@@ -43,10 +43,10 @@ class MediaAndTypesTest {
     }
 
     @Test
-    fun tagIsInvisibleSoOldAppsShowNormalText() {
+    fun onlyTheSeparatorsAreInvisible() {
         val stored = MessageTypeTag.encode("wheel", "Roue de l'amour")
         val visible = stored.filter { it != '\u2063' }
-        assertEquals("mk:wheelRoue de l'amour", visible) // seul « mk:wheel » serait visible, sans séparateurs
+        assertEquals("mk:wheelRoue de l'amour", visible) // une ancienne app afficherait « mk:wheel »
         assertTrue(stored.endsWith("Roue de l'amour"))
     }
 

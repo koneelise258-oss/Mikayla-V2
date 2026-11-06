@@ -131,3 +131,111 @@ le défilement automatique ne saute plus en bas quand on charge d'anciens messag
 A→B et B→A ; fermeture complète puis réouverture des deux côtés (couple conservé, messages tous présents) ;
 envoi en mode avion puis retour réseau ; coupure réseau pendant un envoi ; réponse depuis la notification app
 fermée ; chargement des anciens messages.
+
+---
+
+## Phase 2 — Notifications, médias, présence et accusés
+
+CI : run `42134681141` — APK ✅, 99 tests unitaires ✅ (dont 8 nouveaux : `MediaAndTypesTest`),
+tests de la fonction `send-fcm` : 16/16 ✅ (dont 7 nouveaux).
+
+### 2.1 Notifications Firebase
+
+**C15 — Aucune notification quand l'application est fermée**
+- Cause profonde : pour un message reçu app fermée, Android démarre le processus et appelle
+  `onMessageReceived` immédiatement. La session Supabase n'étant pas encore rechargée,
+  `getCurrentSessionUid()` valait `null` et la règle « aucune notification sans session active » **ignorait**
+  le message. Les notifications n'apparaissaient donc que si l'app tournait déjà.
+- Solution : attente courte (5 s max) du rechargement de la session avant toute décision
+  (`MyFirebaseMessagingService.kt`). L'accusé « reçu » envoyé depuis la notification ne concerne plus que
+  ce message.
+- Doublons : pas de notification si la conversation est **visible** (`util/AppForeground.kt`) ; un message
+  n'est notifié qu'une fois même s'il est renvoyé après une coupure (l'envoi idempotent ne renotifie que
+  le premier succès).
+
+**C16 — `send-fcm` en erreur 500 (« client_email / private_key / project_id »)**
+- Cause probable : le secret `FCM_SERVICE_ACCOUNT_JSON` du projet Supabase est mal formé (guillemets en
+  trop, `\n` littéraux dans la clé, JSON encodé, collage partiel). Le code ne peut pas le vérifier d'ici.
+- Solution dans le code : `normalizeServiceAccount()` accepte ces formats et, en secours, trois secrets
+  séparés `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`, `FCM_PROJECT_ID`. Aucune valeur secrète n'est journalisée.
+- **Dépendances externes (non faisables d'ici)** :
+  1. vérifier/recoller le secret (fichier JSON du compte de service Firebase, projet `gen-lang-client-0988385912`) ;
+  2. déployer : `supabase functions deploy send-fcm` (dossier complet : `index.ts` + `payload.ts`) ;
+  3. vérifier dans les journaux de la fonction qu'il n'y a plus de 500. Rien n'indique que la version du dépôt
+     soit déployée (procédure de comparaison : requête 15 de `AUDIT_SUPABASE_REQUETES.sql`).
+  4. vérifier qu'aucun déclencheur/webhook en base n'envoie AUSSI une notification à l'insertion d'un
+     message (requêtes 10–12) : ce serait une source de doublons.
+- Autorisations Android : les deux téléphones (Android 7 et 10) n'ont pas d'autorisation de notification à
+  l'exécution ; sur Android 13+ la demande existe et la page Notifications signale un blocage avec un lien
+  vers les réglages.
+- État : IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS ; fonction **non déployée** (BLOQUÉ sans accès Supabase).
+
+### 2.2 Présence et dernière connexion
+
+**C17 — « En ligne » affiché à tort**
+- Causes : (1) sans activité connue, le statut était « En ligne » par défaut ; (2) une activité de moins de
+  2 min était présentée comme « En ligne » ; (3) la présence temps réel restait publiée tant que le processus
+  vivait, même app en arrière-plan ; (4) le canal de présence était recréé toutes les 4 s (phase 1, C13).
+- Solution : « En ligne » vient **uniquement** de la présence temps réel ; l'horodatage donne
+  « Vu à l'instant / il y a N min / aujourd'hui à… » ; aucune activité ⇒ « Hors ligne ». Passage en
+  arrière-plan : présence retirée et heure exacte de dernière connexion enregistrée ; retour : présence
+  republiée. Présence non publiée si « Dernière connexion : personne ».
+- Fichiers : `MikayalaRepository.kt` (`formatLastSeen`, `onAppBackground/onAppForeground`),
+  `SupabaseService.kt` (`retrackPresence`, `presenceTrackingEnabled`), `MainActivity.kt`.
+
+### 2.3 Accusés de réception
+
+**C18 — Accusés globaux et « lu » sans lecture**
+- Causes : `mark_messages_delivered/read(target_couple_id)` marquent **tous** les messages du couple ; une
+  notification pour un message marquait tout « reçu » ; la conversation restée ouverte en arrière-plan
+  marquait « lu » ; les replis REST modifiaient aussi les messages de l'expéditeur lui-même et ne passaient
+  jamais un message « envoyé » directement à « lu » ; un appel serveur partait à chaque passage, même sans
+  rien à marquer.
+- Solution :
+  - nouvelles fonctions proposées `mark_messages_delivered_ids` / `mark_messages_read_ids`
+    (`supabase/migrations_proposees/20261106090000_accuses_par_message.sql`, **non appliquée**) ; l'app les
+    utilise si elles existent, sinon garde les anciennes (aucune régression) ;
+  - l'app n'envoie que les identifiants des messages du partenaire réellement présents (reçu) ou affichés
+    écran visible (lu) ; rien n'est envoyé s'il n'y a rien à marquer ; état local mis à jour ;
+  - replis REST limités aux messages reçus (`sender_id=neq.moi`) avec `delivered_at` / `read_at` ;
+  - fusion : un accusé ne recule jamais (phase 1).
+- Accusés de lecture désactivés : « reçu » est toujours confirmé, « lu » jamais.
+- Dépendance Supabase : appliquer la migration pour un état exact message par message.
+
+### 2.4 Photos, vidéos, vocaux
+
+**C19 — Jeux, documents, positions arrivaient comme du simple texte**
+- Cause : à l'envoi, tout type autre que photo/vocal/vidéo était converti en `text`
+  (`postMessageEntity`, introduit par le commit `49ab8dd`). Chez le partenaire, un morpion, une roue ou une
+  carte à gratter n'était qu'un texte : **les jeux du chat ne pouvaient pas se jouer à deux**.
+- Solution : envoi du vrai type ; si la base le refuse (contrainte), renvoi avec le type de base et une
+  étiquette invisible en tête du contenu (`util/MessageTypeTag.kt`), relue et retirée à la réception.
+  Tests : `MediaAndTypesTest`. Les deux téléphones doivent avoir le nouvel APK (une ancienne version
+  afficherait « mk:type » devant ces messages).
+- Recommandation Supabase : autoriser les types réels dans `messages.message_type` (requête :
+  `select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid = 'public.messages'::regclass;`).
+
+**C20 — Photo/vidéo perdue après un échec d'envoi**
+- Cause : les octets n'étaient qu'en mémoire ; après un échec, le message restait « échec » sans aucun moyen
+  de le renvoyer.
+- Solution : copie locale (`files/outgoing_media`) : aperçu immédiat chez l'expéditeur, renvoi automatique
+  par la synchronisation (nouvel upload puis message), essais espacés (15 s → 10 min, remis à zéro au retour
+  d'Internet), copie supprimée après succès. Vocaux : déjà copiés localement, même mécanisme.
+
+**C21 — Anciens médias illisibles après 7 jours**
+- Cause : le lien signé enregistré dans le message (valable 7 jours) était réutilisé indéfiniment.
+- Solution : date d'expiration lue dans le jeton du lien (`util/SignedUrls.kt`, décodage compatible
+  Android 7) ; lien expiré ou à moins d'1 h ⇒ nouveau lien ; un seul calcul à la fois par fichier.
+
+**C22 — Envoi de gros fichiers** : upload en flux de taille connue (plus de double copie en mémoire),
+délai de réponse porté à 120 s.
+
+- Politiques Storage : inchangées ici ; la partie C de la migration `20261105090000` (écritures réservées
+  aux membres du couple) reste à appliquer **après** installation du nouvel APK sur les deux téléphones.
+- État 2.4 : IMPLÉMENTÉ MAIS NON TESTÉ SUR DEUX APPAREILS.
+
+### Tests sur téléphones à faire (phase 2)
+Notification app ouverte / en arrière-plan / fermée / écran verrouillé ; conversation ouverte (pas de
+notification) ; présence quand l'autre ferme l'app ; « Vu il y a… » ; accusés ✓ / ✓✓ / lu message par message ;
+photo, vidéo, vocal dans les deux sens ; envoi en mode avion puis retour réseau ; médias de plus de 7 jours ;
+morpion et roue reçus comme des jeux chez le partenaire.
