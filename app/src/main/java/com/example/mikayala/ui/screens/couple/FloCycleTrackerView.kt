@@ -455,7 +455,7 @@ fun FloCycleTrackerView(
                             Text(text = "💡", fontSize = 18.sp)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Conseils d'Attention pour Mikey",
+                                text = "Conseils pour prendre soin l'un de l'autre", // (prénom « Mikey » écrit en dur retiré)
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary

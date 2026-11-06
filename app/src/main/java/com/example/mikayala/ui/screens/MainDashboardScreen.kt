@@ -175,6 +175,9 @@ fun MainDashboardScreen(
         return
     }
 
+    val imeVisible = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+    val navBarVisible = !imeVisible && (selectedTab != 0 || showNavBarInChat)
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = MatteSlateBackground,
@@ -201,6 +204,7 @@ fun MainDashboardScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center,
                                 modifier = Modifier
+                                    .weight(1f, fill = false) // un surnom long ne repousse plus les boutons hors écran
                                     .clip(RoundedCornerShape(12.dp))
                                     .clickable { showPartnerProfileSheet = true }
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -235,7 +239,9 @@ fun MainDashboardScreen(
                                             text = userSettings.partnerNickname,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = TextPrimary
+                                            color = TextPrimary,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -277,7 +283,8 @@ fun MainDashboardScreen(
                                             text = statusText,
                                             fontSize = 11.sp,
                                             color = textColor,
-                                            maxLines = 1
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -430,47 +437,19 @@ fun MainDashboardScreen(
                 }
             },
             bottomBar = {
+                // Barre masquée pendant la saisie (clavier ouvert) : sinon elle restait au-dessus du
+                // clavier et réduisait d'autant la conversation.
                 AnimatedVisibility(
-                    visible = selectedTab != 0 || showNavBarInChat,
-                    enter = slideInVertically { it } + fadeIn(tween(250)),
-                    exit = slideOutVertically { it } + fadeOut(tween(250))
+                    visible = navBarVisible,
+                    enter = slideInVertically { it } + fadeIn(tween(200)),
+                    exit = slideOutVertically { it } + fadeOut(tween(150))
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (selectedTab == 0) {
-                            Surface(
-                                shape = CircleShape,
-                                color = CardDarkElevated,
-                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
-                                shadowElevation = 1.dp,
-                                modifier = Modifier
-                                    .padding(bottom = 6.dp)
-                                    .clip(CircleShape)
-                                    .clickable { showNavBarInChat = false }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Masquer",
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Plein écran Chat 💬",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextSecondary
-                                    )
-                                }
-                            }
-                        }
-
+                        // (La pastille « Plein écran Chat » ajoutée au-dessus de la barre est retirée : elle
+                        // portait la barre à ~100 dp. Le plein écran reste dans le menu ⋮.)
                         GlassmorphicFloatingNavBar(
                             items = listOf(
                                 GlassNavBarItem(0, "Discussions", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Rounded.Chat, badgeCount = if (selectedTab == 0) 0 else unreadCount),
@@ -480,10 +459,9 @@ fun MainDashboardScreen(
                                 GlassNavBarItem(4, "Paramètres", Icons.Rounded.Settings, Icons.Rounded.Settings)
                             ),
                             selectedIndex = selectedTab,
-                            onItemSelected = {
-                                selectedTab = it
-                                if (it != 0) showNavBarInChat = false
-                            }
+                            // Avant : changer d'onglet masquait la barre pour la conversation ; en revenant
+                            // aux Discussions, on se retrouvait sans barre de navigation.
+                            onItemSelected = { selectedTab = it }
                         )
                     }
                 }
@@ -493,6 +471,8 @@ fun MainDashboardScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    // Barre masquée : le contenu ne doit pas passer sous les boutons système (Android 7/10)
+                    .then(if (navBarVisible) Modifier else Modifier.navigationBarsPadding())
             ) {
                 AnimatedContent(
                     targetState = selectedTab,

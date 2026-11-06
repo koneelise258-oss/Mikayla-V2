@@ -283,9 +283,23 @@ fun ChatScreen(
     // Défilement vers le bas seulement quand un NOUVEAU message arrive en fin de liste
     // (pas quand des messages plus anciens sont chargés en haut).
     val lastMessageId = messages.lastOrNull()?.id
+    // Ouverture : positionnement immédiat sur le dernier message (avant : défilement animé depuis le
+    // tout premier message à chaque ouverture). Ensuite : animation douce pour chaque nouveau message.
+    var initialScrollDone by remember { mutableStateOf(false) }
     LaunchedEffect(lastMessageId) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1 + if (hasOlderHeader) 1 else 0)
+            val target = messages.size - 1 + if (hasOlderHeader) 1 else 0
+            if (!initialScrollDone) {
+                listState.scrollToItem(target)
+                initialScrollDone = true
+            } else {
+                // Ne pas arracher la lecture d'anciens messages : on ne descend que si l'on était déjà
+                // en bas, ou si le nouveau message vient de moi.
+                val info = listState.layoutInfo
+                val nearBottom = (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 4
+                val mine = messages.lastOrNull()?.let { repository.isMessageFromMe(it) } == true
+                if (nearBottom || mine) listState.animateScrollToItem(target)
+            }
         }
     }
 
@@ -1160,6 +1174,10 @@ private fun MessageBubble(
     onToggleReaction: (String) -> Unit,
     onViewOnceClicked: () -> Unit
 ) {
+    // Largeur des bulles proportionnelle à l'écran (avant : 300 dp fixes, soit toute la largeur d'un
+    // petit téléphone et des bulles minuscules sur tablette)
+    val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val bubbleMaxWidth = remember(screenWidthDp) { (screenWidthDp * 0.78f).coerceIn(200f, 440f).dp }
     val context = LocalContext.current
     val isSender = repository.isMessageFromMe(message)
 
@@ -1268,7 +1286,10 @@ private fun MessageBubble(
                     modifier = Modifier.padding(bottom = 6.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        // Défilante : 8 émojis + « + » dépassaient la largeur d'un petit écran
+                        modifier = Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
@@ -1335,7 +1356,7 @@ private fun MessageBubble(
                         color = MatteCardElevated,
                         border = BorderStroke(1.dp, BorderSubtleWhite),
                         modifier = Modifier
-                            .widthIn(max = 280.dp)
+                            .widthIn(max = bubbleMaxWidth)
                             .padding(bottom = 2.dp)
                     ) {
                         Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -1404,7 +1425,7 @@ private fun MessageBubble(
                         shape = RoundedCornerShape(20.dp),
                         color = if (isSender) ChatBubbleSender else ChatBubbleReceiver,
                         border = BorderStroke(1.dp, MatteSquircleBorder),
-                        modifier = Modifier.widthIn(min = 220.dp, max = 310.dp)
+                        modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                     ) {
                         Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                             VoicePlayerWaveform(
@@ -1469,7 +1490,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(18.dp),
                     color = CardDarkElevated,
                     border = BorderStroke(1.dp, Color(0xFF00C853).copy(alpha = 0.4f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1497,7 +1518,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(18.dp),
                     color = CardDarkElevated,
                     border = BorderStroke(1.dp, Color(0xFF00BCD4).copy(alpha = 0.4f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -1526,7 +1547,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(18.dp),
                     color = CardDarkElevated,
                     border = BorderStroke(1.dp, Color(0xFF7E57C2).copy(alpha = 0.4f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -1576,7 +1597,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(20.dp),
                     color = CardDarkElevated,
                     border = BorderStroke(1.dp, Color(0xFFFFD600).copy(alpha = 0.4f)),
-                    modifier = Modifier.widthIn(min = 240.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(240.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1645,7 +1666,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(20.dp),
                     color = CardDarkElevated,
                     border = BorderStroke(1.dp, VibrantCyan.copy(alpha = 0.5f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1666,7 +1687,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(18.dp),
                     color = CardModalSurface,
                     border = BorderStroke(1.dp, AccentGold.copy(alpha = 0.6f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
@@ -1706,7 +1727,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(18.dp),
                     color = CardModalSurface,
                     border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.6f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1727,7 +1748,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(18.dp),
                     color = CardModalSurface,
                     border = BorderStroke(1.dp, AccentViolet.copy(alpha = 0.6f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1838,7 +1859,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(18.dp),
                     color = CardModalSurface,
                     border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.5f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1879,7 +1900,7 @@ private fun MessageBubble(
                     shape = RoundedCornerShape(18.dp),
                     color = CardModalSurface,
                     border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.6f)),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
+                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
@@ -1929,7 +1950,7 @@ private fun MessageBubble(
                             width = 1.dp,
                             color = if (userSettings.bubbleStyle == "frosted_glass") Color.White.copy(alpha = 0.4f) else Color.Transparent
                         ),
-                        modifier = Modifier.widthIn(min = 80.dp, max = 300.dp)
+                        modifier = Modifier.widthIn(min = minOf(80.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                     ) {
                         Column(
                             modifier = if (isSender) {
@@ -2002,7 +2023,8 @@ private fun MessageBubble(
                 shadowElevation = 12.dp,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(420.dp)
+                    .fillMaxHeight(0.75f)
+                    .heightIn(max = 460.dp)
             ) {
                 Column(
                     modifier = Modifier.fillMaxSize()
