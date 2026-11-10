@@ -26,8 +26,7 @@ enum class VoiceNoteState {
 /**
  * Cycle de vie complet de l'enregistrement de notes vocales (Mission 03).
  * Pause/reprise : API 24+ = MediaRecorder.pause()/resume() natif ;
- * API < 24 = segments temporaires assembles via AudioSegmentsMerger
- * (setOutputFile n'ajoute JAMAIS a un M4A existant : l'ancien repli corrompu est supprime).
+ * API < 24 = segments temporaires assembles via AudioSegmentsMerger.
  * Anti-fuite (Mission 04 B4) : instance active suivie statiquement.
  */
 class VoiceNoteManager(private val context: Context) {
@@ -54,8 +53,6 @@ class VoiceNoteManager(private val context: Context) {
     private var audioFocusRequest: AudioFocusRequest? = null
 
     private var mediaRecorder: MediaRecorder? = null
-
-    // Fichier FINAL (fusion des segments sur API < 24, fichier direct sur API 24+)
     private var currentFile: File? = null
 
     // Segments temporaires (API < 24) : une partie par periode entre pause et reprise
@@ -232,7 +229,7 @@ class VoiceNoteManager(private val context: Context) {
             while (isActive && (_recordingState.value == VoiceNoteState.RECORDING || _recordingState.value == VoiceNoteState.LOCKED)) {
                 val now = System.currentTimeMillis()
                 val currentTotalMs = accumulatedDurationMs + (now - currentSessionStartTimeMs)
-                _durationSeconds.value = (currentCurrentPlaceholder / 1000).toInt()
+                _durationSeconds.value = (currentTotalMs / 1000).toInt()
 
                 val rawAmp = try {
                     mediaRecorder?.maxAmplitude ?: 0
@@ -271,7 +268,6 @@ class VoiceNoteManager(private val context: Context) {
         pollingJob?.cancel()
         pollingJob = null
 
-        // Pause REELLE (API 24+)
         if (!usingSegments) {
             return try {
                 mediaRecorder?.pause()
@@ -286,7 +282,6 @@ class VoiceNoteManager(private val context: Context) {
             }
         }
 
-        // Repli API < 24 : finaliser CE segment (lisible, pret pour la fusion)
         return try {
             try {
                 mediaRecorder?.stop()
@@ -307,7 +302,7 @@ class VoiceNoteManager(private val context: Context) {
         }
     }
 
-    @ScommittedPlaceholder
+    @Synchronized
     fun resumeRecording(): Boolean {
         if (_recordingState.value != VoiceNoteState.PAUSED) {
             return false
