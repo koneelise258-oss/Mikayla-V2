@@ -51,7 +51,7 @@ fun ChatAttachmentAndGamesBottomSheet(
     onSendTruthOrDare: () -> Unit,
     onSendQuiz: () -> Unit,
     onSendTicTacToe: () -> Unit,
-    onSendConnectFour: () -> Unit,
+    onSendConnectFour: (() -> Unit)? = null,
     onSendDilemma: () -> Unit,
     onSendLoveCoupon: () -> Unit,
     onSendWheel: () -> Unit
@@ -239,6 +239,7 @@ fun ChatAttachmentAndGamesBottomSheet(
                     AttachmentGrid(items = mediaItems)
                 } else {
                     // Chat Games (Games that require the chat to play!)
+                    // Puissance 4 : affiché seulement si le chat fournit l'action (câblage ChatScreen en cours)
                     val gameItems = listOf(
                         AttachmentGridItem(
                             id = "scratch_card",
@@ -273,14 +274,6 @@ fun ChatAttachmentAndGamesBottomSheet(
                             onClick = onSendTicTacToe
                         ),
                         AttachmentGridItem(
-                            id = "connect_four",
-                            title = "Puissance 4",
-                            icon = Icons.Rounded.Circle,
-                            gradientColors = listOf(Color(0xFFD8544F), Color(0xFFE9B44C)),
-                            badge = "Stratégie",
-                            onClick = onSendConnectFour
-                        ),
-                        AttachmentGridItem(
                             id = "dilemma",
                             title = "Tu Préfères ?",
                             icon = Icons.Rounded.Balance,
@@ -303,6 +296,17 @@ fun ChatAttachmentAndGamesBottomSheet(
                             badge = "Tourner 🎡",
                             onClick = onSendWheel
                         )
+                    ) + listOfNotNull(
+                        onSendConnectFour?.let { action ->
+                            AttachmentGridItem(
+                                id = "connect_four",
+                                title = "Puissance 4",
+                                icon = Icons.Rounded.Circle,
+                                gradientColors = listOf(Color(0xFFD8544F), Color(0xFFE9B44C)),
+                                badge = "Stratégie",
+                                onClick = action
+                            )
+                        }
                     )
 
                     Column {
