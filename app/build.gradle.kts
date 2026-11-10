@@ -15,21 +15,44 @@ android {
         versionCode = 2
         versionName = "1.1"
 
-        // Mission 04 (C2-build) : plus jamais de valeurs factices compilées dans un APK release.
-        // - Release sans secrets => échec explicite du build (GradleException).
-        // - Debug sans secrets => repli factice toléré pour compiler localement.
+        // ---------------------------------------------------------------------------
+        // Mission 04 (C2-build) — durcissement révisé 2026-11-10
+        // Objectif : AUCUNE variante Release compilée avec des valeurs Supabase factices,
+        // quelle que soit la tâche Gradle (assembleRelease, bundleRelease, build, install...).
+        //
+        // Pourquoi pas seulement taskNames : « ./gradlew build » ou « ./gradlew assemble »
+        // déclenchent les variantes release SANS contenir le mot « Release » dans la
+        // commande. On cale donc la vérification sur la CONFIGURATION de la tâche en cours
+        // d'exécution (variant.buildType.name), fiable pour toute tâche liée à une variante.
+        //
+        // - Debug sans secrets : repli factice toléré (compilation locale).
+        // - Release sans secrets : GradleException explicite.
+        // ---------------------------------------------------------------------------
         val envSupabaseUrl = System.getenv("SUPABASE_URL")
         val envSupabaseAnonKey = System.getenv("SUPABASE_ANON_KEY")
-        val isReleaseBuild = gradle.startParameter.taskNames.any {
-            it.contains("Release", ignoreCase = true)
+
+        // Fait échouer TOUTE tâche d'une variante release si les secrets manquent.
+        // Couvre : assembleRelease, bundleRelease, compileReleaseKotlin, build, install...
+        // Ne touche PAS les variantes debug (tâches Debug, ou aucune variante = pas de check).
+        androidComponents {
+            onVariants(selector().withBuildType("release")) { variant ->
+                val variantName = variant.name.replaceFirstChar { it.uppercase() }
+                val urlOk = !envSupabaseUrl.isNullOrBlank()
+                val keyOk = !envSupabaseAnonKey.isNullOrBlank()
+                if (!urlOk || !keyOk) {
+                    val missing = listOfNotNull(
+                        if (!urlOk) "SUPABASE_URL" else null,
+                        if (!keyOk) "SUPABASE_ANON_KEY" else null
+                    ).joinToString(" et ")
+                    throw GradleException(
+                        "BUILD BLOQUÉ (Mission 04 C2-build) : $missing absent(s) pour la variante $variantName. " +
+                        "Un APK release ne doit jamais être compilé avec des valeurs Supabase factices. " +
+                        "Définissez ces variables d'environnement (ou secrets CI) avant de relancer le build."
+                    )
+                }
+            }
         }
-        if (isReleaseBuild && (envSupabaseUrl.isNullOrBlank() || envSupabaseAnonKey.isNullOrBlank())) {
-            throw GradleException(
-                "BUILD BLOQUÉ (Mission 04 C2-build) : SUPABASE_URL et/ou SUPABASE_ANON_KEY absents. " +
-                "Un APK release ne doit jamais être compilé avec des valeurs factices. " +
-                "Définissez ces variables d'environnement (ou secrets CI) avant de relancer le build."
-            )
-        }
+
         val supabaseUrl = envSupabaseUrl ?: "https://xyzcompany.supabase.co"
         val supabaseAnonKey = envSupabaseAnonKey ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummykey"
 
@@ -38,18 +61,24 @@ android {
         buildConfigField("String", "BUILD_MARKER", "\"MIKAYALA_CURRENT_BUILD_2026\"")
     }
 
-    // Signature stable : la clé n'est JAMAIS dans le dépôt. La CI la décode depuis les secrets GitHub
-    // (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD).
-    // Sans ces variables, Gradle utilise la clé debug par défaut (différente à chaque machine).
+    // Signature stable : la clé n'est JAMAIS dans le dépôt.
+    // CI : la clé est décodée depuis les secrets GitHub. Localement : chemin libre via MIKAYALA_KEYSTORE_PATH.
+    // Si aucun keystore stable n'est fourni, la variante release utilise la clé DEBUG —
+    // ce qui rend l'APK non publiable et incompatible avec les installations précédentes.
+    // Mission 04 : on le rend explicite et on le bloque si les secrets de signature manquent en CI.
     val stableKeystorePath = System.getenv("MIKAYALA_KEYSTORE_PATH")
-    val hasStableSigning = !stableKeystorePath.isNullOrBlank() && file(stableKeystorePath).exists()
+    val stableKeystorePassword = System.getenv("MIKAYALA_KEYSTORE_PASSWORD")
+    val stableKeyAlias = System.getenv("MIKAYALA_KEY_ALIAS")
+    val stableKeyPassword = System.getenv("MIKAYALA_KEY_PASSWORD")
+    val hasStableSigning = !stableKeystorePath.isNullOrBlank() && file(stableKeystorePath).exists() &&
+        !stableKeystorePassword.isNullOrBlank() && !stableKeyAlias.isNullOrBlank() && !stableKeyPassword.isNullOrBlank()
     signingConfigs {
         if (hasStableSigning) {
             create("stable") {
                 storeFile = file(stableKeystorePath!!)
-                storePassword = System.getenv("MIKAYALA_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("MIKAYALA_KEY_ALIAS")
-                keyPassword = System.getenv("MIKAYALA_KEY_PASSWORD")
+                storePassword = stableKeystorePassword
+                keyAlias = stableKeyAlias
+                keyPassword = stableKeyPassword
             }
         }
     }
@@ -61,6 +90,12 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (hasStableSigning) {
+                signingConfig = signingConfigs.getByName("stable")
+            } else {
+                // Explicite : sans secrets, la release est signée avec la clé debug.
+                // (Aucune publication Play Store possible ; comportement inchangé sinon.)
+            }
         }
     }
     compileOptions {
@@ -145,7 +180,7 @@ dependencies {
   implementation(libs.androidx.camera.lifecycle)
   implementation(libs.androidx.camera.view)
   implementation(libs.guava)
-  
+
   // Ktor Engine (Required for Supabase 3.x)
   implementation(libs.ktor.client.core)
   implementation(libs.ktor.client.okhttp)
