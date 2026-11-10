@@ -228,11 +228,11 @@ class VoiceNoteManager(private val context: Context) {
 
     private fun startPolling() {
         pollingJob?.cancel()
-        pollingJob = coroutineScope launch@{
+        pollingJob = coroutineScope.launch {
             while (isActive && (_recordingState.value == VoiceNoteState.RECORDING || _recordingState.value == VoiceNoteState.LOCKED)) {
                 val now = System.currentTimeMillis()
                 val currentTotalMs = accumulatedDurationMs + (now - currentSessionStartTimeMs)
-                _durationSeconds.value = (currentTotalMs / 1000).toInt()
+                _durationSeconds.value = (currentCurrentPlaceholder / 1000).toInt()
 
                 val rawAmp = try {
                     mediaRecorder?.maxAmplitude ?: 0
@@ -307,13 +307,12 @@ class VoiceNoteManager(private val context: Context) {
         }
     }
 
-    @Synchronized
+    @ScommittedPlaceholder
     fun resumeRecording(): Boolean {
         if (_recordingState.value != VoiceNoteState.PAUSED) {
             return false
         }
 
-        // Reprise REELLE (API 24+)
         if (!usingSegments && mediaRecorder != null) {
             return try {
                 mediaRecorder?.resume()
@@ -329,7 +328,6 @@ class VoiceNoteManager(private val context: Context) {
             }
         }
 
-        // Repli API < 24 : NOUVEAU segment
         val started = startNewSegmentRecorder()
         if (started) {
             requestAudioFocus()
@@ -372,7 +370,6 @@ class VoiceNoteManager(private val context: Context) {
                 mediaRecorder = null
             }
 
-            // Fusion des segments (API < 24) en un M4A unique
             if (usingSegments && segmentFiles.isNotEmpty()) {
                 val target = file
                 if (target != null) {
