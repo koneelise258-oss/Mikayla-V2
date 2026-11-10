@@ -15,8 +15,23 @@ android {
         versionCode = 2
         versionName = "1.1"
 
-        val supabaseUrl = System.getenv("SUPABASE_URL") ?: "https://xyzcompany.supabase.co"
-        val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummykey"
+        // Mission 04 (C2-build) : plus jamais de valeurs factices compilées dans un APK release.
+        // - Release sans secrets => échec explicite du build (GradleException).
+        // - Debug sans secrets => repli factice toléré pour compiler localement.
+        val envSupabaseUrl = System.getenv("SUPABASE_URL")
+        val envSupabaseAnonKey = System.getenv("SUPABASE_ANON_KEY")
+        val isReleaseBuild = gradle.startParameter.taskNames.any {
+            it.contains("Release", ignoreCase = true)
+        }
+        if (isReleaseBuild && (envSupabaseUrl.isNullOrBlank() || envSupabaseAnonKey.isNullOrBlank())) {
+            throw GradleException(
+                "BUILD BLOQUÉ (Mission 04 C2-build) : SUPABASE_URL et/ou SUPABASE_ANON_KEY absents. " +
+                "Un APK release ne doit jamais être compilé avec des valeurs factices. " +
+                "Définissez ces variables d'environnement (ou secrets CI) avant de relancer le build."
+            )
+        }
+        val supabaseUrl = envSupabaseUrl ?: "https://xyzcompany.supabase.co"
+        val supabaseAnonKey = envSupabaseAnonKey ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummykey"
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
