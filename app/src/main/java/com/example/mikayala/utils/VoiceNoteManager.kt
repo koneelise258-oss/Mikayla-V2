@@ -24,39 +24,26 @@ enum class VoiceNoteState {
 }
 
 /**
- * Manager gérant le cycle de vie complet de l'enregistrement de notes vocales
- * avec échantillonnage d'amplitudes en temps réel (Waveform WhatsApp),
- * contrôle des états (Hold, Locked, Paused, Idle), gestion du focus audio
- * et persistance des fichiers temporaires.
- *
- * Pause / reprise RÉELLES (Mission 03 C3) :
- * - Android 7+ (API 24) : MediaRecorder.pause()/resume() natif — le fichier
- *   continue d'exister, aucune perte audio, la durée ne compte pas le temps en pause.
- * - Android 6 et moins : repli finalisation puis nouvelle session append.
- *
- * Anti-fuite (Mission 04 B4) : l'instance active est suivie statiquement ;
- * [cancelAnyActiveRecording] permet à MainActivity (ON_STOP) de couper le micro
- * même si l'écran de chat a été quitté sans libération.
+ * Cycle de vie complet de l'enregistrement de notes vocales (Mission 03).
+ * Pause/reprise : API 24+ = MediaRecorder.pause()/resume() natif ;
+ * API < 24 = segments temporaires assembles via AudioSegmentsMerger
+ * (setOutputFile n'ajoute JAMAIS a un M4A existant : l'ancien repli corrompu est supprime).
+ * Anti-fuite (Mission 04 B4) : instance active suivie statiquement.
  */
 class VoiceNoteManager(private val context: Context) {
 
     companion object {
         private const val TAG = "VoiceNoteManager"
-        private const val MIN_API_NATIVE_PAUSE = Build.VERSION_CODES.N // API 24
+        private const val MIN_API_NATIVE_PAUSE = Build.VERSION_CODES.N
 
-        // Mission 04 (B4) : instance actuellement en captation, pour coupure de secours.
         @Volatile
         private var activeRecordingInstance: VoiceNoteManager? = null
 
-        /**
-         * Coupe tout enregistrement en cours, où qu'il ait été démarré dans l'app.
-         * Appelé par MainActivity.onStop() : le micro ne reste JAMAIS ouvert
-         * en arrière-plan, et le fichier temporaire est supprimé (captation non envoyée).
-         */
+        /** Coupe tout enregistrement en cours (appele par MainActivity.ON_STOP). */
         fun cancelAnyActiveRecording() {
             val instance = activeRecordingInstance
             if (instance != null && instance.recordingState.value != VoiceNoteState.IDLE) {
-                Log.w(TAG, "Enregistrement actif coupé (application en arrière-plan / écran quitté)")
+                Log.w(TAG, "Enregistrement actif coupe (application en arriere-plan)")
                 instance.cancelRecording()
             }
             activeRecordingInstance = null
@@ -67,9 +54,14 @@ class VoiceNoteManager(private val context: Context) {
     private var audioFocusRequest: AudioFocusRequest? = null
 
     private var mediaRecorder: MediaRecorder? = null
+
+    // Fichier FINAL (fusion des segments sur API < 24, fichier direct sur API 24+)
     private var currentFile: File? = null
 
-    // Gestion précise du temps de capture (en millisecondes)
+    // Segments temporaires (API < 24) : une partie par periode entre pause et reprise
+    private val segmentFiles = mutableListOf<File>()
+    private var usingSegments = false
+
     private var currentSessionStartTimeMs: Long = 0L
     private var accumulatedDurationMs: Long = 0L
 
@@ -79,7 +71,6 @@ class VoiceNoteManager(private val context: Context) {
     private val _durationSeconds = MutableStateFlow(0)
     val durationSeconds: StateFlow<Int> = _durationSeconds.asStateFlow()
 
-    // Amplitudes normalisées (0.08f .. 1.0f) pour la waveform temps réel
     private val _liveAmplitudes = MutableStateFlow<List<Float>>(emptyList())
     val liveAmplitudes: StateFlow<List<Float>> = _liveAmplitudes.asStateFlow()
 
@@ -161,11 +152,44 @@ class VoiceNoteManager(private val context: Context) {
         cleanup()
         requestAudioFocus()
 
-        val tempFile = File(context.cacheDir, "voice_note_${System.currentTimeMillis()}.m4a")
-        if (tempFile.exists()) {
-            tempFile.delete()
+        usingSegments = Build.VERSION.SDK_INT < MIN_API_NATIVE_PAUSE
+        if (!usingSegments) {
+            val tempFile = File(context.cacheDir, "voice_note_${System.currentTimeMillis()}.m4a")
+            if (tempFile.exists()) tempFile.delete()
+            currentFile = tempFile
+        } else {
+            currentFile = File(context.cacheDir, "voice_note_${System.currentTimeMillis()}.m4a")
+            segmentFiles.clear()
         }
-        currentFile = tempFile
+
+        val started = startNewSegmentRecorder()
+        if (!started) {
+            cleanup()
+            abandonAudioFocus()
+            return false
+        }
+
+        currentSessionStartTimeMs = System.currentTimeMillis()
+        accumulatedDurationMs = 0L
+        _durationSeconds.value = 0
+        _liveAmplitudes.value = List(18) { 0.12f }
+        _recordingState.value = VoiceNoteState.RECORDING
+        activeRecordingInstance = this
+        startPolling()
+        Log.d(TAG, "Voice recording started (segments=$usingSegments)")
+        return true
+    }
+
+    /**
+     * Ouvre un recorder : fichier final unique (API 24+) ou NOUVEAU segment
+     * temporaire (API < 24). Jamais setOutputFile sur un M4A deja ecrit.
+     */
+    private fun startNewSegmentRecorder(): Boolean {
+        val targetFile: File = if (usingSegments) {
+            File(context.cacheDir, "voice_note_seg_${System.currentTimeMillis()}_${segmentFiles.size}.m4a")
+        } else {
+            currentFile ?: return false
+        }
 
         var recorder: MediaRecorder? = null
         return try {
@@ -175,53 +199,36 @@ class VoiceNoteManager(private val context: Context) {
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }
-
-            recorder.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioEncodingBitRate(128000)
-                setAudioSamplingRate(44100)
-                setOutputFile(tempFile.absolutePath)
-
-                setOnErrorListener { _, what, extra ->
-                    Log.e(TAG, "MediaRecorder error: what=$what, extra=$extra")
-                    cancelRecording()
-                }
-
-                prepare()
-                start()
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioEncodingBitRate(128000)
+            recorder.setAudioSamplingRate(44100)
+            recorder.setOutputFile(targetFile.absolutePath)
+            recorder.setOnErrorListener { _, what, extra ->
+                Log.e(TAG, "MediaRecorder error: what=$what, extra=$extra")
+                cancelRecording()
             }
-
+            recorder.prepare()
+            recorder.start()
             mediaRecorder = recorder
-            currentSessionStartTimeMs = System.currentTimeMillis()
-            accumulatedDurationMs = 0L
-            _durationSeconds.value = 0
-            _liveAmplitudes.value = List(18) { 0.12f }
-            _recordingState.value = VoiceNoteState.RECORDING
-            activeRecordingInstance = this
-
-            startPolling()
-            Log.d(TAG, "Voice recording started -> ${tempFile.absolutePath}")
+            if (usingSegments) segmentFiles.add(targetFile)
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start recording: ${e.message}", e)
+            Log.e(TAG, "Failed to start recorder segment: ${e.message}", e)
             try {
                 recorder?.reset()
                 recorder?.release()
             } catch (ignored: Exception) {}
             mediaRecorder = null
-            _recordingState.value = VoiceNoteState.IDLE
-            currentFile?.delete()
-            currentFile = null
-            abandonAudioFocus()
+            if (usingSegments) targetFile.delete()
             false
         }
     }
 
     private fun startPolling() {
         pollingJob?.cancel()
-        pollingJob = coroutineScope.launch {
+        pollingJob = coroutineScope launch@{
             while (isActive && (_recordingState.value == VoiceNoteState.RECORDING || _recordingState.value == VoiceNoteState.LOCKED)) {
                 val now = System.currentTimeMillis()
                 val currentTotalMs = accumulatedDurationMs + (now - currentSessionStartTimeMs)
@@ -233,7 +240,6 @@ class VoiceNoteManager(private val context: Context) {
                     0
                 }
 
-                // Normalisation 0..32767 -> 0.08..1.0f avec courbe de réponse dynamique
                 val normalized = (rawAmp / 32767f).coerceIn(0f, 1f)
                 val boosted = (normalized.toDouble().pow(0.55).toFloat()).coerceIn(0.08f, 1.0f)
 
@@ -261,36 +267,26 @@ class VoiceNoteManager(private val context: Context) {
             return false
         }
 
-        // Figer le chrono
-        val now = System.currentTimeMillis()
-        accumulatedDurationMs += (now - currentSessionStartTimeMs)
+        accumulatedDurationMs += System.currentTimeMillis() - currentSessionStartTimeMs
         pollingJob?.cancel()
         pollingJob = null
 
-        // --- Pause RÉELLE (API 24+, téléphones Android 7 et 10) ---
-        if (Build.VERSION.SDK_INT >= MIN_API_NATIVE_PAUSE) {
+        // Pause REELLE (API 24+)
+        if (!usingSegments) {
             return try {
                 mediaRecorder?.pause()
                 _recordingState.value = VoiceNoteState.PAUSED
                 _durationSeconds.value = (accumulatedDurationMs / 1000).toInt().coerceAtLeast(1)
-                Log.d(TAG, "Voice recording PAUSED (native pause) at ${_durationSeconds.value} s — file kept open")
+                Log.d(TAG, "Voice recording PAUSED (native) at ${_durationSeconds.value} s")
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "Native pause failed: ${e.message}", e)
-                pauseByFinalization()
+                _recordingState.value = VoiceNoteState.RECORDING
+                false
             }
         }
 
-        // --- Repli Android <= 6 : finalisation du fichier pour prévisualisation ---
-        return pauseByFinalization()
-    }
-
-    /**
-     * Repli historique (API < 24) : on finalise le fichier (header moov écrit) pour
-     * permettre la prévisualisation immédiate. La « reprise » ouvre une nouvelle
-     * session append dans le même fichier (voir startAppendSession).
-     */
-    private fun pauseByFinalization(): Boolean {
+        // Repli API < 24 : finaliser CE segment (lisible, pret pour la fusion)
         return try {
             try {
                 mediaRecorder?.stop()
@@ -300,14 +296,13 @@ class VoiceNoteManager(private val context: Context) {
                 mediaRecorder?.release()
             } catch (ignored: Exception) {}
             mediaRecorder = null
-
             _recordingState.value = VoiceNoteState.PAUSED
             _durationSeconds.value = (accumulatedDurationMs / 1000).toInt().coerceAtLeast(1)
             abandonAudioFocus()
-            Log.d(TAG, "Voice recording paused (fallback finalize) for preview at ${_durationSeconds.value} s")
+            Log.d(TAG, "Voice recording paused (segment finalized, count=${segmentFiles.size})")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "pauseRecording (fallback) failed: ${e.message}", e)
+            Log.e(TAG, "Segment pause failed: ${e.message}", e)
             false
         }
     }
@@ -318,15 +313,15 @@ class VoiceNoteManager(private val context: Context) {
             return false
         }
 
-        // --- Reprise RÉELLE (API 24+) : le recorder n'a jamais été arrêté ---
-        if (Build.VERSION.SDK_INT >= MIN_API_NATIVE_PAUSE && mediaRecorder != null) {
+        // Reprise REELLE (API 24+)
+        if (!usingSegments && mediaRecorder != null) {
             return try {
                 mediaRecorder?.resume()
                 currentSessionStartTimeMs = System.currentTimeMillis()
                 requestAudioFocus()
-                _recordingState.value = VoiceNoteState.LOCKED // reprise en mode mains libres
+                _recordingState.value = VoiceNoteState.LOCKED
                 startPolling()
-                Log.d(TAG, "Voice recording RESUMED (native resume) — same file, no audio loss")
+                Log.d(TAG, "Voice recording RESUMED (native) — same file, no audio loss")
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "Native resume failed: ${e.message}", e)
@@ -334,50 +329,16 @@ class VoiceNoteManager(private val context: Context) {
             }
         }
 
-        // Repli Android <= 6 : reprise = nouvelle session append dans le même fichier
-        return startAppendSession()
-    }
-
-    /**
-     * Repli Android <= 6 uniquement : recommence à écrire dans le même fichier via un
-     * nouveau MediaRecorder. Si l'append échoue (codec/firmware), on repart d'un
-     * nouveau fichier et on abandonne l'ancien segment (perte documentée).
-     */
-    private fun startAppendSession(): Boolean {
-        val file = currentFile ?: return false
-        var recorder: MediaRecorder? = null
-        return try {
-            recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                MediaRecorder(context)
-            } else {
-                @Suppress("DEPRECATION")
-                MediaRecorder()
-            }
-            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
-            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            recorder.setAudioEncodingBitRate(128000)
-            recorder.setAudioSamplingRate(44100)
-            recorder.setOutputFile(file.absolutePath)
-            recorder.prepare()
-            recorder.start()
-
-            mediaRecorder = recorder
+        // Repli API < 24 : NOUVEAU segment
+        val started = startNewSegmentRecorder()
+        if (started) {
             requestAudioFocus()
             currentSessionStartTimeMs = System.currentTimeMillis()
             _recordingState.value = VoiceNoteState.LOCKED
             startPolling()
-            Log.d(TAG, "Voice recording resumed (append session, API < 24 fallback) -> ${file.absolutePath}")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Append resume failed: ${e.message}", e)
-            try {
-                recorder?.reset()
-                recorder?.release()
-            } catch (ignored: Exception) {}
-            mediaRecorder = null
-            false
+            Log.d(TAG, "Voice recording RESUMED in new segment #${segmentFiles.size}")
         }
+        return started
     }
 
     @Synchronized
@@ -389,19 +350,17 @@ class VoiceNoteManager(private val context: Context) {
         pollingJob = null
         val file = currentFile
 
-        val now = System.currentTimeMillis()
         val totalMs = if (state == VoiceNoteState.PAUSED) {
             accumulatedDurationMs
         } else {
-            accumulatedDurationMs + (now - currentSessionStartTimeMs)
+            accumulatedDurationMs + (System.currentTimeMillis() - currentSessionStartTimeMs)
         }
         val totalDuration = ((totalMs + 500) / 1000).toInt().coerceAtLeast(1)
 
         return try {
             if (mediaRecorder != null) {
                 try {
-                    if (state == VoiceNoteState.PAUSED && Build.VERSION.SDK_INT >= MIN_API_NATIVE_PAUSE) {
-                        // Le recorder est encore en pause native : le réveiller pour un stop propre
+                    if (state == VoiceNoteState.PAUSED && !usingSegments) {
                         try { mediaRecorder?.resume() } catch (ignored: Exception) {}
                     }
                     mediaRecorder?.stop()
@@ -412,6 +371,31 @@ class VoiceNoteManager(private val context: Context) {
                 } catch (ignored: Exception) {}
                 mediaRecorder = null
             }
+
+            // Fusion des segments (API < 24) en un M4A unique
+            if (usingSegments && segmentFiles.isNotEmpty()) {
+                val target = file
+                if (target != null) {
+                    val ok = AudioSegmentsMerger.mergeM4aSegments(segmentFiles, target)
+                    segmentFiles.forEach { it.delete() }
+                    segmentFiles.clear()
+                    if (!ok) {
+                        Log.e(TAG, "Segment merge FAILED — voice note not produced")
+                        target.delete()
+                        currentFile = null
+                        _recordingState.value = VoiceNoteState.IDLE
+                        _durationSeconds.value = 0
+                        _liveAmplitudes.value = emptyList()
+                        abandonAudioFocus()
+                        if (activeRecordingInstance == this) activeRecordingInstance = null
+                        return Pair(null, 0)
+                    }
+                } else {
+                    segmentFiles.forEach { it.delete() }
+                    segmentFiles.clear()
+                }
+            }
+
             _recordingState.value = VoiceNoteState.IDLE
             _durationSeconds.value = 0
             _liveAmplitudes.value = emptyList()
@@ -419,7 +403,7 @@ class VoiceNoteManager(private val context: Context) {
             if (activeRecordingInstance == this) activeRecordingInstance = null
 
             if (file != null && file.exists() && file.length() > 0) {
-                Log.d(TAG, "Voice recording finished successfully: ${file.absolutePath}, duration=$totalDuration s, size=${file.length()} bytes")
+                Log.d(TAG, "Voice recording finished: duration=$totalDuration s, size=${file.length()} bytes, segments=$usingSegments")
                 currentFile = null
                 Pair(file, totalDuration)
             } else {
@@ -457,9 +441,9 @@ class VoiceNoteManager(private val context: Context) {
         _recordingState.value = VoiceNoteState.IDLE
         _durationSeconds.value = 0
         _liveAmplitudes.value = emptyList()
-        currentFile?.let {
-            if (it.exists()) it.delete()
-        }
+        segmentFiles.forEach { it.delete() }
+        segmentFiles.clear()
+        currentFile?.let { if (it.exists()) it.delete() }
         currentFile = null
         if (activeRecordingInstance == this) activeRecordingInstance = null
         abandonAudioFocus()
