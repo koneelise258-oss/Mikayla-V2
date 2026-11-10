@@ -1,24 +1,26 @@
-# Jeux de couple — état et câblage (Mission 06 F5)
+# Jeux de couple — état et câblage (Mission 06 F5) — RÉVISÉ
 
-> Branche : `mission-06-jeux` · Mis à jour : 2026-11-10
+> Branche : `mission-06-jeux` · Révision : 2026-11-10
 
-## 1. Ce qui est commité et prêt
+## 0. Corrections de cette révision
+
+| Affirmation antérieure | Vérité | Correction |
+|---|---|---|
+| « 10 tests unitaires » | `ConnectFourTest.kt` contient **9 méthodes @Test** | Corrigé. Un 10e test (victoire diagonale descendante) reste à écrire — couverture des directions : 3/4 (H, V, diagonale montante) |
+| « Synchronisation par media_url = jeu synchronisé » | Vrai mais insuffisant sans analyse | Analyse complète en §3 |
+
+## 1. Ce qui est commité
 
 | Élément | Fichier | État |
 |---|---|---|
-| Moteur Puissance 4 (règles, gravité, victoires 4 directions, coups interdits) | `util/ConnectFour.kt` | ✅ commité + relu |
-| 10 tests unitaires du moteur | `test/.../ConnectFourTest.kt` | ✅ commités (à exécuter en CI) |
-| Plateau jouable Compose (bulle de chat, sync Realtime) | `ui/components/ConnectFourBoard.kt` | ✅ commité |
-| Entrée « Puissance 4 » dans le trombone (optionnelle, comme Images d'IA) | `ui/components/ChatAttachmentAndGamesBottomSheet.kt` | ✅ commitée — apparaît dès que ChatScreen fournit `onSendConnectFour` |
+| Moteur Puissance 4 (règles, gravité, victoires, coups interdits) | `util/ConnectFour.kt` | ✅ commité + relu |
+| 9 tests unitaires | `test/.../ConnectFourTest.kt` | ✅ commités — non exécutés (pas de SDK ici) |
+| Plateau jouable Compose (bulle) | `ui/components/ConnectFourBoard.kt` | ✅ commité |
+| Entrée menu optionnelle | `ChatAttachmentAndGamesBottomSheet.kt` | ✅ — visible dès que ChatScreen fournit `onSendConnectFour` |
 
-## 2. Câblage restant dans ChatScreen.kt (2 insertions, code fourni)
+## 2. Câblage restant dans ChatScreen.kt (144 Ko, hors limite ~30 Ko des outils)
 
-`ChatScreen.kt` fait 144 Ko : trop volumineux pour une réécriture via l'outil de commit en une passe.
-Les deux modifications exactes (à appliquer dans Android Studio, ou par l'agent quand un éditeur
-de gros fichiers sera disponible) :
-
-### 2a. Dans l'appel à `ChatAttachmentAndGamesBottomSheet` (après `onSendTicTacToe = { ... },`)
-
+### 2a. Lancement (après onSendTicTacToe)
 ```kotlin
 onSendConnectFour = {
     showAttachmentSheet = false
@@ -31,11 +33,9 @@ onSendConnectFour = {
 },
 ```
 
-### 2b. Dans le `when (message.type)` de la bulle (après la branche `"tictactoe" -> { ... }`)
-
+### 2b. Affichage (branche "connect_four" du when(message.type), après "tictactoe")
 ```kotlin
 "connect_four" -> {
-    // Puissance 4 RÉEL à deux : même mécanisme que le morpion
     val gameScope = rememberCoroutineScope()
     val gameContext = LocalContext.current
     com.example.mikayala.ui.components.ConnectFourBoard(
@@ -44,6 +44,10 @@ onSendConnectFour = {
         mySymbol = if (isSender) 'R' else 'J',
         onPlayColumn = { newState ->
             gameScope.launch {
+                // Garde anti-collision (voir §3.2) : vérifier l'état frais avant d'écrire
+                val fresh = repository.allMessages.value.firstOrNull { it.id == message.id }
+                val freshState = fresh?.mediaUrl ?: message.mediaUrl ?: ""
+                if (freshState != (message.mediaUrl ?: "")) return@launch // le partenaire vient de jouer
                 val ok = repository.playGameMove(message.id, newState, "Puissance 4")
                 if (!ok) android.widget.Toast.makeText(
                     gameContext, "Coup non enregistré : vérifiez la connexion",
@@ -55,10 +59,7 @@ onSendConnectFour = {
 }
 ```
 
-### 2c. Rejouer (optionnel, après une victoire)
-
-Le bouton « Rejouer » du morpion envoie un NOUVEAU message `type = "tictactoe"`. Équivalent :
-
+### 2c. Rejouer (nouveau message, comme le morpion)
 ```kotlin
 repository.sendMessage(
     content = "Revanche au Puissance 4 ! 🔴🟡",
@@ -67,27 +68,52 @@ repository.sendMessage(
 )
 ```
 
-## 3. Contrat Supabase (aucune modification backend requise)
+## 3. ANALYSE DE SYNCHRONISATION (vérifiée dans le code)
 
-Le Puissance 4 réutilise **exactement** le mécanisme du morpion déjà en production :
-- État = chaîne de 42 caractères dans `messages.media_url`
-- Coup = `playGameMove(messageId, newState)` → UPDATE de `media_url`
-- Propagation = Realtime sur la table `messages`
+Mécanisme réel vérifié dans `MikayalaRepository.playGameMove` :
 
-⚠️ Condition héritée du morpion (documentée dans `CHAT_ET_JEUX_ETAT.md`) : la politique RLS
-UPDATE de `messages` doit autoriser **chaque membre du couple** à mettre à jour `media_url`.
-Sinon le coup est refusé (« Non enregistré »). À faire vérifier par ChatGPT (requête 13 des
-audits) — aucune migration exécutée par l'agent Android.
+1. Mise à jour **optimiste** locale (`_messages.update`) ;
+2. `supabaseService.updateMessageFields(messageId, {media_url})` → UPDATE Supabase ;
+   si refus (réseau/RLS) → **rollback local** + retour false (« Coup non enregistré ») ;
+3. FCM `game_turn` au partenaire (« À toi de jouer ») ;
+4. Realtime sur `messages` propage l'UPDATE au partenaire ;
+5. L'état vit dans `media_url` → reconstruit au rechargement (sync + cache local).
 
-## 4. Améliorations apportées aux jeux existants
+### 3.1 Fiabilité — vérifications positives
+- ✅ Rollback si le serveur refuse → pas d'état fantôme durable.
+- ✅ Rechargement après redémarrage : toujours reconstruit.
+- ✅ Règles moteur locales : coups interdits refusés (pas son tour, colonne pleine, partie finie).
 
-- **Feuille de jeux** : badges et couleurs d'entrée unifiés sur la palette vert+violet
-  (`AccentViolet` au lieu du rose pour l'onglet Jeux et les badges).
-- Le paramètre `onSendAiImage` était déjà neutralisé (aucune IA réelle) : conservé en
-  optionnel non affiché.
+### 3.2 Faille identifiée — coups quasi simultanés
+Deux UPDATE simultanés sur `media_url` = **dernier écrit gagne** (pas de versionnage).
+Scénario : A et B jouent en même temps après une notification en retard ; le coup de A
+écrase celui de B sans erreur pour personne. Sévérité : réelle mais rare (tours alternés,
+fenêtre courte).
 
-## 5. Idées suivantes (priorisées, mécanisme identique = coût faible)
+**Mitigation client** (intégrée au câblage 2b ci-dessus) : avant d'écrire, revérifier
+l'état frais du message ; s'il a changé, refuser le coup — l'UI se rafraîchit via Realtime.
 
-1. **Bataille navale** (7×7, « touché/coulé » synchronisé) — le plus captivant à deux, tours.
-2. **Quiz de couple à score cumulé** (table dédiée pour le score, SQL à proposer à ChatGPT).
-3. **Jeu de mémoire** (paires de photos du couple retournées tour à tour).
+**Solution complète (serveur) — PROPOSITION POUR CHATGPT, NON EXÉCUTÉE :**
+```sql
+-- Versionnage atomique des coups de jeu (proposition, à valider par le propriétaire)
+-- ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS game_version int NOT NULL DEFAULT 0;
+-- UPDATE ... SET media_url = :new, game_version = game_version + 1
+--   WHERE id = :id AND game_version = :expected;
+```
+
+### 3.3 RLS — condition documentée (hors périmètre d'exécution)
+La politique UPDATE de `messages` doit autoriser chaque membre du couple à mettre à jour
+`media_url` (sinon « Non enregistré »). Requête 13 des audits — à faire vérifier par ChatGPT.
+
+## 4. Améliorations des jeux existants
+- Feuille de jeux : badges/onglet unifiés sur la palette (AccentViolet).
+- `onSendAiImage` : optionnel non affiché (aucune IA réelle — pas de faux bouton).
+
+## 5. Idées suivantes
+1. Bataille navale (7×7, tours). 2. Quiz à score cumulé (contrat SQL à proposer). 3. Jeu de mémoire.
+
+## 6. Statut de la branche
+- ✅ Moteur + plateau + entrée menu (optionnelle) commités et relus.
+- ✅ Analyse de synchronisation réelle effectuée (playGameMove → updateMessageFields → Realtime + FCM).
+- ⚠️ Jeu NON câblé dans ChatScreen (2 insertions fournies) — l'entrée n'apparaît pas tant que le câblage n'est pas fait (paramètre optionnel = pas de faux bouton).
+- ⏳ 10e test (diagonale descendante) à ajouter ; tests à exécuter en CI.
