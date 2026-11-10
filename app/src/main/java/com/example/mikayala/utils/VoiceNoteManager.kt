@@ -30,16 +30,37 @@ enum class VoiceNoteState {
  * et persistance des fichiers temporaires.
  *
  * Pause / reprise RÉELLES (Mission 03 C3) :
- * - Android 7+ (API 24) : MediaRecorder.pause()/resume() natif — le fichier continue
- *   d'exister, aucune perte audio, la durée ne compte pas le temps en pause.
- * - Android 6 et moins : pause()/resume() n'existe pas ; repli sur la finalisation
- *   du fichier puis nouvelle session append dans le même fichier (voir startAppendSession).
+ * - Android 7+ (API 24) : MediaRecorder.pause()/resume() natif — le fichier
+ *   continue d'exister, aucune perte audio, la durée ne compte pas le temps en pause.
+ * - Android 6 et moins : repli finalisation puis nouvelle session append.
+ *
+ * Anti-fuite (Mission 04 B4) : l'instance active est suivie statiquement ;
+ * [cancelAnyActiveRecording] permet à MainActivity (ON_STOP) de couper le micro
+ * même si l'écran de chat a été quitté sans libération.
  */
 class VoiceNoteManager(private val context: Context) {
 
     companion object {
         private const val TAG = "VoiceNoteManager"
         private const val MIN_API_NATIVE_PAUSE = Build.VERSION_CODES.N // API 24
+
+        // Mission 04 (B4) : instance actuellement en captation, pour coupure de secours.
+        @Volatile
+        private var activeRecordingInstance: VoiceNoteManager? = null
+
+        /**
+         * Coupe tout enregistrement en cours, où qu'il ait été démarré dans l'app.
+         * Appelé par MainActivity.onStop() : le micro ne reste JAMAIS ouvert
+         * en arrière-plan, et le fichier temporaire est supprimé (captation non envoyée).
+         */
+        fun cancelAnyActiveRecording() {
+            val instance = activeRecordingInstance
+            if (instance != null && instance.recordingState.value != VoiceNoteState.IDLE) {
+                Log.w(TAG, "Enregistrement actif coupé (application en arrière-plan / écran quitté)")
+                instance.cancelRecording()
+            }
+            activeRecordingInstance = null
+        }
     }
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -178,6 +199,7 @@ class VoiceNoteManager(private val context: Context) {
             _durationSeconds.value = 0
             _liveAmplitudes.value = List(18) { 0.12f }
             _recordingState.value = VoiceNoteState.RECORDING
+            activeRecordingInstance = this
 
             startPolling()
             Log.d(TAG, "Voice recording started -> ${tempFile.absolutePath}")
@@ -255,7 +277,6 @@ class VoiceNoteManager(private val context: Context) {
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "Native pause failed: ${e.message}", e)
-                // Échec de la pause native : repli sur la finalisation (ancien comportement)
                 pauseByFinalization()
             }
         }
@@ -395,6 +416,7 @@ class VoiceNoteManager(private val context: Context) {
             _durationSeconds.value = 0
             _liveAmplitudes.value = emptyList()
             abandonAudioFocus()
+            if (activeRecordingInstance == this) activeRecordingInstance = null
 
             if (file != null && file.exists() && file.length() > 0) {
                 Log.d(TAG, "Voice recording finished successfully: ${file.absolutePath}, duration=$totalDuration s, size=${file.length()} bytes")
@@ -439,6 +461,7 @@ class VoiceNoteManager(private val context: Context) {
             if (it.exists()) it.delete()
         }
         currentFile = null
+        if (activeRecordingInstance == this) activeRecordingInstance = null
         abandonAudioFocus()
     }
 
