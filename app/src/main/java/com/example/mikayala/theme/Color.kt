@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.Color
 // ==============================================================================
 // SYSTÈME DE DESIGN « SOFT » — couleurs sémantiques, mode clair ET mode sombre
 // ------------------------------------------------------------------------------
-// Une seule identité : crème / blanc doux / gris chaud / anthracite, accents pastel.
+// Identité du couple : vert (elle) + violet (lui), sur des fonds neutres doux.
 // Les écrans utilisent des noms sémantiques (fond, surface, texte, accent…) : les valeurs
 // changent selon le thème actif (Paramètres > Apparence), sans toucher aux écrans.
 // Les anciens noms (DeepNight, CardDark, VibrantCyan…) sont conservés comme alias pour
@@ -32,12 +32,12 @@ data class MikayalaPalette(
     // Lignes
     val border: Color,
     val borderStrong: Color,
-    // Accents pastel
-    val accent: Color,            // rose poudré : action principale
+    // Accents
+    val accent: Color,            // vert : action principale
     val accentSoft: Color,        // fond léger derrière un accent
-    val lavender: Color,
-    val sky: Color,               // bleu doux : liens, informations
-    val sand: Color,              // sable doré : mises en valeur
+    val lavender: Color,          // violet : sélections, mises en valeur
+    val sky: Color,               // bleu-vert doux : liens, informations
+    val sand: Color,              // doré : mises en valeur secondaires
     val warning: Color,
     val success: Color,
     val danger: Color,
@@ -51,53 +51,53 @@ data class MikayalaPalette(
 
 val SoftLight = MikayalaPalette(
     isDark = false,
-    background = Color(0xFFFAF7F2),
+    background = Color(0xFFFAFAF7),
     surface = Color(0xFFFFFFFF),
-    surfaceElevated = Color(0xFFF3EEE8),
-    surfaceSunken = Color(0xFFF1ECE6),
+    surfaceElevated = Color(0xFFF1F2ED),
+    surfaceSunken = Color(0xFFEFF0EB),
     modal = Color(0xFFFFFFFF),
-    textPrimary = Color(0xFF2B2A2E),
-    textSecondary = Color(0xFF6B6661),
-    textMuted = Color(0xFF9A948D),
-    border = Color(0xFFE8E1D9),
-    borderStrong = Color(0xFFD6CCC1),
-    accent = Color(0xFFC97B86),
-    accentSoft = Color(0xFFF6E3E5),
-    lavender = Color(0xFF9283C4),
-    sky = Color(0xFF6E97BF),
+    textPrimary = Color(0xFF292B2A),
+    textSecondary = Color(0xFF646A67),
+    textMuted = Color(0xFF969C99),
+    border = Color(0xFFE4E6E1),
+    borderStrong = Color(0xFFD1D4CF),
+    accent = Color(0xFF2E9E6B),          // vert principal
+    accentSoft = Color(0xFFE2F3E9),     // fond vert très léger
+    lavender = Color(0xFF7C5CD9),       // violet principal
+    sky = Color(0xFF4E9A8E),            // bleu-vert doux
     sand = Color(0xFFB8925A),
     warning = Color(0xFFC9963E),
-    success = Color(0xFF6FA287),
+    success = Color(0xFF2E9E6B),
     danger = Color(0xFFC4605C),
-    bubbleOutgoing = Color(0xFFF4DEE0),
+    bubbleOutgoing = Color(0xFFD8F0E0),  // bulle envoyée : vert menthe
     bubbleIncoming = Color(0xFFFFFFFF),
-    onBubbleOutgoing = Color(0xFF2B2A2E),
-    pressed = Color(0x0F2B2A2E),
+    onBubbleOutgoing = Color(0xFF1F3A2C),
+    pressed = Color(0x0F292B2A),
 )
 
 val SoftDark = MikayalaPalette(
     isDark = true,
-    background = Color(0xFF1B1A1E),
-    surface = Color(0xFF242328),
-    surfaceElevated = Color(0xFF2D2B31),
-    surfaceSunken = Color(0xFF17161A),
-    modal = Color(0xFF26252A),
-    textPrimary = Color(0xFFEEEAE5),
-    textSecondary = Color(0xFFADA7A1),
-    textMuted = Color(0xFF7F7A75),
-    border = Color(0xFF34323A),
-    borderStrong = Color(0xFF45424B),
-    accent = Color(0xFFC77683), // rose poudré profond : texte clair lisible dessus
-    accentSoft = Color(0xFF3A2C30),
-    lavender = Color(0xFFBDB0EA),
-    sky = Color(0xFF9DC2E4),
+    background = Color(0xFF15171A),
+    surface = Color(0xFF1E2124),
+    surfaceElevated = Color(0xFF262A2E),
+    surfaceSunken = Color(0xFF121416),
+    modal = Color(0xFF202326),
+    textPrimary = Color(0xFFEAEDEB),
+    textSecondary = Color(0xFFA8B0AB),
+    textMuted = Color(0xFF7A807D),
+    border = Color(0xFF2F343A),
+    borderStrong = Color(0xFF41474E),
+    accent = Color(0xFF4CAF7D),          // vert doux (texte clair lisible dessus)
+    accentSoft = Color(0xFF1F3A2C),
+    lavender = Color(0xFFB3A0F0),       // violet clair
+    sky = Color(0xFF6FC2B2),
     sand = Color(0xFFE2C796),
     warning = Color(0xFFE3B866),
     success = Color(0xFF8EC2A5),
     danger = Color(0xFFE58A85),
-    bubbleOutgoing = Color(0xFF4A3539),
-    bubbleIncoming = Color(0xFF2A292E),
-    onBubbleOutgoing = Color(0xFFF5EEEC),
+    bubbleOutgoing = Color(0xFF1F4A38),  // bulle envoyée : vert profond
+    bubbleIncoming = Color(0xFF26292C),
+    onBubbleOutgoing = Color(0xFFEAEDEB),
     pressed = Color(0x14FFFFFF),
 )
 
@@ -126,9 +126,9 @@ val MatteSquircle: Color @Composable @ReadOnlyComposable get() = p.surfaceElevat
 val MatteSquircleBorder: Color @Composable @ReadOnlyComposable get() = p.border
 val MatteSquircleHighlight: Color @Composable @ReadOnlyComposable get() = p.pressed
 val MatteInset: Color @Composable @ReadOnlyComposable get() = p.surfaceSunken
-// Accents : plus de dégradés fluo, des pastels sobres
+// Accents : plus de rose, vert + violet
 val CyanBlueGradientStart: Color @Composable @ReadOnlyComposable get() = p.accent
-val CyanBlueGradientEnd: Color @Composable @ReadOnlyComposable get() = p.accent
+val CyanBlueGradientEnd: Color @Composable @ReadOnlyComposable get() = p.lavender
 val VibrantBlue: Color @Composable @ReadOnlyComposable get() = p.sky
 val VibrantCyan: Color @Composable @ReadOnlyComposable get() = p.accent
 val AccentRose: Color @Composable @ReadOnlyComposable get() = p.accent
@@ -148,7 +148,7 @@ val BorderSubtleWhite: Color @Composable @ReadOnlyComposable get() = p.border
 val BorderHighlight: Color @Composable @ReadOnlyComposable get() = p.borderStrong
 // Statuts
 val StatusBlue: Color @Composable @ReadOnlyComposable get() = p.sky
-val StatusGrey: Color @Composable @ReadOnlyComposable get() = p.textMuted
+val StatusGrey: Color @Composable @ReadOnlyComorable get() = p.textMuted
 val StatusSent: Color @Composable @ReadOnlyComposable get() = p.textMuted
 val OnlinePresenceGreen: Color @Composable @ReadOnlyComposable get() = p.success
 // Messagerie
