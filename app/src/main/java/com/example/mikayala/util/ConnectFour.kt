@@ -5,21 +5,23 @@ package com.example.mikayala.util
  * message.mediaUrl, partagée par les deux téléphones via Supabase (même principe que TicTacToe).
  *
  * Règles :
- * - Grille 7 colonnes × 6 lignes, remplie par le bas.
- * - R = rouge = celui qui a lancé la partie (expéditeur du message), J = jaune = le partenaire.
- * - R commence. Chacun joue à son tour en choisissant une COLONNE (0..6).
- * - Victoire : 4 pions alignés (horizontal, vertical, diagonale montante ou descendante).
+ * - Grille 7 colonnes x 6 lignes, remplie par le bas.
+ * - R = rouge = celui qui a lance la partie (expediteur du message), J = jaune = le partenaire.
+ * - R commence. Chacun joue a son tour en choisissant une COLONNE (0..6).
+ * - Victoire : 4 pions alignes (horizontal, vertical, diagonale montante ou descendante).
  * - Nul : grille pleine sans alignement.
  *
- * Encodage (colonne-major, du bas vers le haut) : index = col * 6 + row, row 0 = rangée du bas.
- * Une colonne pleine contient 6 pions. L'état vide = 42 '.'.
+ * Encodage (colonne-major, du bas vers le haut) : index = col * 6 + row, row 0 = rangee du bas.
+ * Une colonne pleine contient 6 pions. L'etat vide = 42 points.
  */
 object ConnectFour {
 
     const val COLS = 7
     const val ROWS = 6
-    const val EMPTY = ".................................................." // 42 '.'
     const val WIN_LENGTH = 4
+
+    /** Etat vide : 42 '.' */
+    val EMPTY: String = ".".repeat(COLS * ROWS)
 
     /** Directions gagnantes : horizontale, verticale, 2 diagonales. */
     private val DIRECTIONS = listOf(
@@ -29,7 +31,7 @@ object ConnectFour {
         1 to -1   // diagonale descendante
     )
 
-    /** Normalise un état reçu (null, vide, corrompu -> EMPTY). */
+    /** Normalise un etat recu (null, vide, corrompu -> EMPTY). */
     fun normalize(state: String?): String {
         val s = state.orEmpty()
         return if (s.length == COLS * ROWS && s.all { it == '.' || it == 'R' || it == 'J' }) s else EMPTY
@@ -41,34 +43,40 @@ object ConnectFour {
         return if (s.count { it == 'R' } <= s.count { it == 'J' }) 'R' else 'J'
     }
 
-    /** Index plat de la première case libre d'une colonne (colonne-major, bas en premier). */
+    /** Index plat de la premiere case libre d'une colonne (colonne-major, bas en premier). Null si colonne pleine. */
     fun landingIndex(col: Int, state: String): Int? {
-        if (col !in 0 until COLS) return null
+        if (col < 0 || col >= COLS) return null
         val s = normalize(state)
         for (row in 0 until ROWS) {
-            idx_placeholder -> col * ROWS + row
+            val idx = col * ROWS + row
+            if (s[idx] == '.') return idx
         }
-        return null // colonne pleine
+        return null
     }
 
-    /** Le coup est-il jouable ? (pas son tour, colonne hors limites, pleine, partie finie) */
+    /** Le coup est-il jouable ? (partie en cours, son tour, colonne valide non pleine) */
     fun canPlay(state: String, col: Int, player: Char): Boolean {
         val s = normalize(state)
         if (result(s) != null) return false
-        if (nextSymbol(s) != player) {
-            return false
-        }
+        if (nextSymbol(s) != player) return false
         return landingIndex(col, s) != null
     }
 
     /**
-     * Joue dans [col] pour [player] ; retourne le nouvel état, ou null si le coup est interdit
-     * (pas son tour, colonne pleine ou hors limites, partie déjà terminée).
+     * Joue dans [col] pour [player] ; retourne le nouvel etat, ou null si le coup est interdit
+     * (pas son tour, colonne pleine ou hors limites, partie deja terminee).
      */
-    play placeholder
+    fun play(state: String, col: Int, player: Char): String? {
+        if (!canPlay(state, col, player)) return null
+        val s = normalize(state)
+        val idx = landingIndex(col, s)
+        if (idx == null) return null
+        return s.substring(0, idx) + player + s.substring(idx + 1)
+    }
 
     /**
-     * 'R' ou 'J' si 4 pions alignés, 'D' si grille pleine sans alignement (nul), null si la partie continue.
+     * 'R' ou 'J' si 4 pions alignes, 'D' si grille pleine sans alignement (nul),
+     * null si la partie continue.
      */
     fun result(state: String): Char? {
         val s = normalize(state)
@@ -76,7 +84,9 @@ object ConnectFour {
             for (row in 0 until ROWS) {
                 val c = s[col * ROWS + row]
                 if (c == '.') continue
-                for ((dc, dr) in DIRECTIONS) {
+                for (pair in DIRECTIONS) {
+                    val dc = pair.first
+                    val dr = pair.second
                     var count = 1
                     var cc = col + dc
                     var rr = row + dr
@@ -99,7 +109,9 @@ object ConnectFour {
             for (row in 0 until ROWS) {
                 val c = s[col * ROWS + row]
                 if (c == '.') continue
-                for ((dc, dr) in DIRECTIONS) {
+                for (pair in DIRECTIONS) {
+                    val dc = pair.first
+                    val dr = pair.second
                     val cells = mutableListOf(col * ROWS + row)
                     var cc = col + dc
                     var rr = row + dr
