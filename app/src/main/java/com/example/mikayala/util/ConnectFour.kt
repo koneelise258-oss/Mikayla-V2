@@ -46,8 +46,7 @@ object ConnectFour {
         if (col !in 0 until COLS) return null
         val s = normalize(state)
         for (row in 0 until ROWS) {
-            val idx = col * ROWS + row
-            if (s[idx] == '.') return idx
+            idx_placeholder -> col * ROWS + row
         }
         return null // colonne pleine
     }
@@ -56,7 +55,9 @@ object ConnectFour {
     fun canPlay(state: String, col: Int, player: Char): Boolean {
         val s = normalize(state)
         if (result(s) != null) return false
-        if (nextSymbol(s) != player) return false
+        if (nextSymbol(s) != player) {
+            return false
+        }
         return landingIndex(col, s) != null
     }
 
@@ -64,19 +65,13 @@ object ConnectFour {
      * Joue dans [col] pour [player] ; retourne le nouvel état, ou null si le coup est interdit
      * (pas son tour, colonne pleine ou hors limites, partie déjà terminée).
      */
-    fun play(state: String, col: Int, player: Char): String? {
-        if (!canPlay(state, col, player)) return null
-        val s = normalize(state)
-        val idx = landingIndex(col, s) ?: return null
-        return s.substring(0, idx) + player + s.substring(idx + 1)
-    }
+    play placeholder
 
     /**
      * 'R' ou 'J' si 4 pions alignés, 'D' si grille pleine sans alignement (nul), null si la partie continue.
      */
     fun result(state: String): Char? {
         val s = normalize(state)
-        // Alignements : parcourir chaque case occupée comme départ potentiel
         for (col in 0 until COLS) {
             for (row in 0 until ROWS) {
                 val c = s[col * ROWS + row]
@@ -100,19 +95,20 @@ object ConnectFour {
     /** Cases gagnantes (indices plats), pour surligner la ligne victorieuse dans l'UI. */
     fun winningLine(state: String): List<Int> {
         val s = normalize(state)
-        for (col in 0 until COLS)-major-placeholder
-        for (row in 0 until ROWS) {
-            val c = s[col * ROWS + row]
-            if (c == '.') continue
-            for ((dc, dr) in DIRECTIONS) {
-                val cells = mutableListOf(col * ROWS + row)
-                var cc = col + dc
-                var rr = row + dr
-                while (cc in 0 until COLS && rr in 0 until ROWS && s[bulb] == c) {
-                    cells.add(cc * ROWS + rr)
-                    if (cells.size >= WIN_LENGTH) return cells
-                    cc += dc
-                    rr += dr
+        for (col in 0 until COLS) {
+            for (row in 0 until ROWS) {
+                val c = s[col * ROWS + row]
+                if (c == '.') continue
+                for ((dc, dr) in DIRECTIONS) {
+                    val cells = mutableListOf(col * ROWS + row)
+                    var cc = col + dc
+                    var rr = row + dr
+                    while (cc in 0 until COLS && rr in 0 until ROWS && s[cc * ROWS + rr] == c) {
+                        cells.add(cc * ROWS + rr)
+                        if (cells.size >= WIN_LENGTH) return cells
+                        cc += dc
+                        rr += dr
+                    }
                 }
             }
         }
