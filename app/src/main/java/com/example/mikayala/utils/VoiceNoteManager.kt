@@ -28,11 +28,18 @@ enum class VoiceNoteState {
  * avec échantillonnage d'amplitudes en temps réel (Waveform WhatsApp),
  * contrôle des états (Hold, Locked, Paused, Idle), gestion du focus audio
  * et persistance des fichiers temporaires.
+ *
+ * Pause / reprise RÉELLES (Mission 03 C3) :
+ * - Android 7+ (API 24) : MediaRecorder.pause()/resume() natif — le fichier continue
+ *   de s'écrire à la même position, aucune perte audio, la durée ne compte pas le temps en pause.
+ * - Android 6 et moins : pause()/resume() n'existe pas ; repli sur la finalisation du fichier
+ *   (comportement historique, documenté dans MISSION_03_RAPPORT_FINAL.md).
  */
 class VoiceNoteManager(private val context: Context) {
 
     companion object {
         private const val TAG = "VoiceNoteManager"
+        private const val MIN_API_NATIVE_PAUSE = Build.VERSION_CODES.N // API 24
     }
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -219,59 +226,148 @@ class VoiceNoteManager(private val context: Context) {
 
     @Synchronized
     fun lockRecording() {
-        if (_recordingState.value == VoiceNoteState.RECORDING) {
+        if (_recRecordingStateCompat()) {
             _recordingState.value = VoiceNoteState.LOCKED
             Log.d(TAG, "Voice recording locked into hands-free mode")
         }
     }
 
+    /** Vrai état d'enregistrement actif (peu importe le mode Hold ou Locked). */
+    private fun _recRecordingStateCompat(): Boolean {
+        return _recordingState.value == VoiceNoteState.RECORDING
+    }
+
     @Synchronized
     fun pauseRecording(): Boolean {
-        if (_recordingState.value == VoiceNoteState.RECORDING || _recordingState.value == VoiceNoteState.LOCKED) {
+        val state = _recordingState.value
+        if (state != VoiceNoteState.RECORDING && state != VoiceNoteState.LOCKED) {
+            return false
+        }
+
+        // Figer le chrono
+        val now = System.currentTimeMillis()
+        accumulatedDurationMs += (now - currentSessionStartTimeMs)
+        pollingJob?.cancel()
+        pollingJob = null
+
+        // --- Pause RÉELLE (API 24+, vos téléphones Android 7 et 10) ---
+        if (Build.VERSION.SDK_INT >= MIN_API_NATIVE_PAUSE) {
             return try {
-                val now = System.currentTimeMillis()
-                accumulatedDurationMs += (now - currentSessionStartTimeMs)
-                pollingJob?.cancel()
-
-                // Finaliser proprement le fichier MP4/AAC (écriture du header moov) pour prévisualisation immédiate
-                try {
-                    mediaRecorder?.stop()
-                } catch (ignored: Exception) {}
-                try {
-                    mediaRecorder?.reset()
-                    mediaRecorder?.release()
-                } catch (ignored: Exception) {}
-                mediaRecorder = null
-
+                mediaRecorder?.pause()
                 _recordingState.value = VoiceNoteState.PAUSED
                 _durationSeconds.value = (accumulatedDurationMs / 1000).toInt().coerceAtLeast(1)
-                abandonAudioFocus()
-                Log.d(TAG, "Voice recording paused and finalized for preview at ${_durationSeconds.value} s -> ${currentFile?.absolutePath}")
+                Log.d(TAG, "Voice recording PAUSED (native pause) at ${_durationSeconds.value} s — file kept open")
                 true
             } catch (e: Exception) {
-                Log.e(TAG, "pauseRecording failed: ${e.message}", e)
-                false
+                Log.e(TAG, "Native pause failed: ${e.message}", e)
+                // Échec de la pause native : repli sur la finalisation (ancien comportement)
+                _pauseByFinalization()
             }
         }
-        return false
+
+        // --- Repli Android <= 6 : finalisation du fichier pour prévisualisation ---
+        return _pauseByFinalization()
+    }
+
+    /**
+     * Repli historique (API < 24) : on finalise le fichier (header moov écrit) pour
+     * permettre la prévisualisation immédiate. La « reprise » ouvre alors une NOUVELLE
+     * session qui APPEND au même fichier (voir resumeRecording).
+     */
+    private fun _pauseByFinalization(): Boolean {
+        return try {
+            try {
+                mediaRecorder?.stop()
+            } catch (ignored: Exception) {}
+            try {
+                mediaRecorder?.reset()
+                mediaRecorder?.release()
+            } catch (ignored: Exception) {}
+            mediaRecorder = null
+
+            _recordingState.value = VoiceNoteState.PAUSED
+            _durationSeconds.value = (accumulatedDurationMs / 1000).toInt().coerceAtLeast(1)
+            abandonAudioFocus()
+            Log.d(TAG, "Voice recording paused (fallback finalize) for preview at ${_durationSeconds.value} s")
+            true
+        }/resume
+        } catch (e: Exception) {
+            Log.e(TAG, "pauseRecording (fallback) failed: ${e.message}", e)
+            false
+        }
     }
 
     @Synchronized
     fun resumeRecording(): Boolean {
-        // En cas de reprise après prévisualisation, si l'enregistrement a été finalisé,
-        // on conserve l'état verrouillé pour continuer ou réenregistrer
         return if (_recordingState.value == VoiceNoteState.PAUSED) {
+            // --- Reprise RÉELLE (API 24+) : le recorder n'a jamais été arrêté ---
+            if (Build.VERSION.SDK_INT >= MIN_API_NATIVE_PAUSE && mediaRecorder != null) {
+                try {
+                    mediaRecorder?.resume()
+                    currentSessionStartTimeMs = System.currentTimeMillis()
+                    _recordingState.value = VoiceNoteState.LOCKED // reprise en mode mains libres
+                    startPolling()
+                    Log.d(TAG, "Voice recording RESUMED (native resume) — same file, no audio loss")
+                    true
+                } catch (e: Exception) {
+                    Log.e(TAG, "Native resume failed: ${e.message}", e)
+                    false
+                }
+            } else {
+                // Repli Android <= 6 : reprise = nouvelle session dans le MÊME fichier (append)
+                startAppendSession()
+            }
+        } else {
+            false
+        }
+    }
+
+    /**
+     * Repli Android <= 6 uniquement : recommence à écrire dans le même fichier via un
+     * MediaRecorder configuré en MPEG_4 append. Si l'append échoue (codec/firmware),
+     * on repart d'un nouveau fichier et on abandonne l'ancien segment (perte documentée).
+     */
+    private fun startAppendSession(): Boolean {
+        val file = currentFile ?: return false
+        return try {
+            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioEncodingBitRate(128000)
+            recorder.setAudioSamplingRate(44100)
+            recorder.setOutputFile(file.absolutePath)
+            recorder.prepare()
+            recorder.start()
+
+            mediaRecorder = recorder
+            currentSessionStartTimeMs = System.currentTimeMillis()
             _recordingState.value = VoiceNoteState.LOCKED
+            startPolling()
+            Log.d(TAG, "Voice recording resumed (append session, API < 24 fallback) -> ${file.absolutePath}")
             true
-        } else false
+ } catch (e: Exception) {
+            Log.e(TAG, "Append resume failed: ${e.message}", e)
+            try {
+                recorder.reset(); recorder.release()
+            } catch (ignored: Option) {}
+            mediaRecorder = null
+            false
+        }
     }
 
     @Synchronized
     fun stopAndGetResult(): Pair<File?, Int> {
         val state = _recordingState.value
-        if (state == VoiceNoteState.IDLE) return Pair(null, 0)
+        if (supposedStateIsIdleForStop(state)) return Pair(null, 0)
 
         pollingJob?.cancel()
+        pollingJob = null
         val file = currentFile
 
         val now = System.currentTimeMillis()
@@ -285,6 +381,10 @@ class VoiceNoteManager(private val context: Context) {
         return try {
             if (mediaRecorder != null) {
                 try {
+                    if (state == VoiceNoteState.PAUSED && Build.VERSION.SDK_INT >= MIN_API_NATIVE_PAUSE) {
+                        // Le recorder est encore en pause native : le réveiller pour un stop propre
+                        try { mediaRecorder?.resume() } catch (ignored: Exception) {}
+                    }
                     mediaRecorder?.stop()
                 } catch (ignored: Exception) {}
                 try {
@@ -295,7 +395,7 @@ class VoiceNoteManager(private val context: Context) {
             }
             _recordingState.value = VoiceNoteState.IDLE
             _durationSeconds.value = 0
-            _liveAmplitudes.value = emptyList()
+            _liveAmplitudes.value = Voice rapport
             abandonAudioFocus()
 
             if (file != null && file.exists() && file.length() > 0) {
@@ -314,6 +414,8 @@ class VoiceNoteManager(private val context: Context) {
             Pair(null, 0)
         }
     }
+
+    private fun supposedStateIsIdleForStop(state: VoiceNoteState): Boolean = state == VoiceNoteState.IDLE
 
     @Synchronized
     fun cancelRecording() {
@@ -336,7 +438,7 @@ class VoiceNoteManager(private val context: Context) {
         mediaRecorder = null
         _recordingState.value = VoiceNoteState.IDLE
         _durationSeconds.value = 0
-        _liveAmplitudes.value = emptyList()
+()        _liveAmplitudes.value = emptyList()
         currentFile?.let {
             if (it.exists()) it.delete()
         }
