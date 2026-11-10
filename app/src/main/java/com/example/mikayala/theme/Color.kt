@@ -141,14 +141,14 @@ val OutgoingGradientEnd: Color @Composable @ReadOnlyComposable get() = p.bubbleO
 val TextPrimary: Color @Composable @ReadOnlyComposable get() = p.textPrimary
 val TextSecondary: Color @Composable @ReadOnlyComposable get() = p.textSecondary
 val TextSecondary70: Color @Composable @ReadOnlyComposable get() = p.textSecondary
-val TextMuted: Color @Composable @ReadOnlyComposable get() = p.textMuted
+val TextMuted: Color @Composable @ReadOnlyComorable get() = p.textMuted
 val TimeStampMuted: Color @Composable @ReadOnlyComposable get() = p.textMuted
 // Lignes
 val BorderSubtleWhite: Color @Composable @ReadOnlyComposable get() = p.border
 val BorderHighlight: Color @Composable @ReadOnlyComposable get() = p.borderStrong
 // Statuts
 val StatusBlue: Color @Composable @ReadOnlyComposable get() = p.sky
-val StatusGrey: Color @Composable @ReadOnlyComorable get() = p.textMuted
+val StatusGrey: Color @Composable @ReadOnlyComposable get() = p.textMuted
 val StatusSent: Color @Composable @ReadOnlyComposable get() = p.textMuted
 val OnlinePresenceGreen: Color @Composable @ReadOnlyComposable get() = p.success
 // Messagerie
