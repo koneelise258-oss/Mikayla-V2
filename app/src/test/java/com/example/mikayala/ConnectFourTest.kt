@@ -69,17 +69,19 @@ class ConnectFourTest {
 
     @Test
     fun victoireDiagonaleMontanteR() {
+        // R construit la diagonale (0,0), (1,1), (2,2), (3,3) en alternance stricte avec J
         var s = ConnectFour.EMPTY
-        s = ConnectFour.play(s, 0, 'R')!!
-        s = ConnectFour.play(s, 1, 'J')!!
-        s = ConnectFour.play(s, 1, 'R')!!
-        s = ConnectFour.play(s, 2, 'J')!!
-        s = ConnectFour.play(s, 2, 'J')!!
-        s = ConnectFour.play(s, 2, 'R')!!
-        s = ConnectFour.play(s, 3, 'J')!!
-        s = ConnectFour.play(s, 3, 'J')!!
-        s = ConnectFour.play(s, 3, 'J')!!
-        s = ConnectFour.play(s, 3, 'R')!!
+        s = ConnectFour.play(s, 0, 'R')!!  // R (0,0)
+        s = ConnectFour.play(s, 1, 'J')!!  // J (1,0)
+        s = ConnectFour.play(s, 1, 'R')!!  // R (1,1)
+        s = ConnectFour.play(s, 2, 'J')!!  // J (2,0)
+        s = ConnectFour.play(s, 3, 'R')!!  // R (3,0)
+        s = ConnectFour.play(s, 2, 'J')!!  // J (2,1)
+        s = ConnectFour.play(s, 2, 'R')!!  // R (2,2)
+        s = ConnectFour.play(s, 3, 'J')!!  // J (3,1)
+        s = ConnectFour.play(s, 4, 'R')!!  // R (4,0)
+        s = ConnectFour.play(s, 3, 'J')!!  // J (3,2)
+        s = ConnectFour.play(s, 3, 'R')!!  // R (3,3) -> diagonale complete
         assertEquals('R', ConnectFour.result(s))
     }
 
