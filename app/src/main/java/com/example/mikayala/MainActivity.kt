@@ -110,6 +110,8 @@ class MainActivity : ComponentActivity() {
                     val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                         when (event) {
                             androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                                // Mission 04 (B4) : le micro ne doit JAMAIS rester ouvert en arrière-plan.
+                                com.example.mikayala.utils.VoiceNoteManager.cancelAnyActiveRecording()
                                 backgroundSince[0] = System.currentTimeMillis()
                                 com.example.mikayala.util.AppForeground.isResumed = false
                                 repository.onAppBackground()
@@ -148,7 +150,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text(
-                                            "Désolé, Mikayala n'a pas pu démarrer ⚠️",
+                                            "Désolé, Mikayla n'a pas pu démarrer ⚠️",
                                             color = Color.White,
                                             fontSize = 20.sp,
                                             textAlign = TextAlign.Center,
