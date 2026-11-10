@@ -51,6 +51,7 @@ fun ChatAttachmentAndGamesBottomSheet(
     onSendTruthOrDare: () -> Unit,
     onSendQuiz: () -> Unit,
     onSendTicTacToe: () -> Unit,
+    onSendConnectFour: () -> Unit,
     onSendDilemma: () -> Unit,
     onSendLoveCoupon: () -> Unit,
     onSendWheel: () -> Unit
@@ -137,7 +138,7 @@ fun ChatAttachmentAndGamesBottomSheet(
                             Icon(
                                 imageVector = Icons.Rounded.SportsEsports,
                                 contentDescription = null,
-                                tint = if (selectedTab == 1) AccentRose else TextSecondary,
+                                tint = if (selectedTab == 1) AccentViolet else TextSecondary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -272,6 +273,14 @@ fun ChatAttachmentAndGamesBottomSheet(
                             onClick = onSendTicTacToe
                         ),
                         AttachmentGridItem(
+                            id = "connect_four",
+                            title = "Puissance 4",
+                            icon = Icons.Rounded.Circle,
+                            gradientColors = listOf(Color(0xFFD8544F), Color(0xFFE9B44C)),
+                            badge = "Stratégie",
+                            onClick = onSendConnectFour
+                        ),
+                        AttachmentGridItem(
                             id = "dilemma",
                             title = "Tu Préfères ?",
                             icon = Icons.Rounded.Balance,
@@ -373,7 +382,7 @@ private fun AttachmentSquircleButton(item: AttachmentGridItem) {
             if (item.badge != null) {
                 Surface(
                     shape = CircleShape,
-                    color = AccentRose,
+                    color = AccentViolet,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .offset(x = 4.dp, y = (-4).dp)
