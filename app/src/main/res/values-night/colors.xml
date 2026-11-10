@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Mode sombre du téléphone : fond de lancement anthracite (identique à la palette SoftDark) -->
-    <color name="mikayala_splash_background">#FF1B1A1E</color>
+    <!-- Mode sombre du téléphone : fond de lancement (identique à la palette SoftDark) -->
+    <color name="mikayala_splash_background">#FF15171A</color>
 </resources>
