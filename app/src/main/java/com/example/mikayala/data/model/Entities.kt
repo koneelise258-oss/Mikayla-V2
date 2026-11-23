@@ -44,6 +44,7 @@ data class CoupleSummaryItem(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class LoveMilestoneEntity(
     val id: String,
     val title: String,
@@ -74,6 +75,7 @@ data class CoupleBucketItemEntity(
 )
 
 @Immutable
+@kotlinx.serialization.Serializable
 data class LoveCapsuleEntity(
     val id: String,
     val title: String,
@@ -212,8 +214,8 @@ data class UserSettingsEntity(
     val pinCode: String = "",
     val fakePinCode: String = "",
     val lockTimeoutSeconds: Int = 0, // 0 = Immédiat, 60 = 1 min, 300 = 5 min, -1 = Désactivé
-    val screenBlurOnSwitch: Boolean = true,
-    val antiScreenshotEnabled: Boolean = true,
+    val screenBlurOnSwitch: Boolean = false,
+    val antiScreenshotEnabled: Boolean = false,
     val lastSeenPrivacy: String = "couple_only", // "everyone", "couple_only", "nobody"
     val readReceiptsEnabled: Boolean = true,
     val disappearingMessagesDays: Int = 0, // 0 = désactivé, 1 = 24h, 7 = 7j, 90 = 90j
@@ -240,7 +242,23 @@ data class UserSettingsEntity(
     val connectionMode: ConnectionMode = ConnectionMode.ONLINE,
     val isDarkMode: Boolean = true,
     /** Thème : suit le réglage clair/sombre du téléphone (prioritaire sur isDarkMode). */
-    val followSystemTheme: Boolean = false
+    val followSystemTheme: Boolean = false,
+    /** Serveur actif : "firebase" (principal) ou "supabase" (secondaire). */
+    val backendProvider: String = "firebase",
+    /** Harmonie de couleurs : "violet_emerald" (défaut), "emerald_violet", "amethyst_mint", "forest_plum", "rose_soft". */
+    val accentTheme: String = "violet_emerald",
+    /** Arrondi des bulles de discussion en dp (10..26). */
+    val bubbleCornerRadiusDp: Int = 18,
+    /** Afficher la queue style WhatsApp sur les bulles. */
+    val showBubbleTails: Boolean = true,
+    /** Motif du fond de discussion : "whatsapp_doodle", "hearts", "botanical", "none". */
+    val chatWallpaperPattern: String = "whatsapp_doodle",
+    /** Style de barre de navigation : "whatsapp_pill", "floating_glass", "compact". */
+    val navBarStyle: String = "whatsapp_pill",
+    /** Densité de l'interface : "comfortable", "compact". */
+    val uiDensity: String = "comfortable",
+    /** Afficher le compteur de jours d'amour dans l'en-tête. */
+    val showLoveDaysInHeader: Boolean = true
 )
 
 @Immutable

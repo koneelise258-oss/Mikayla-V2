@@ -280,13 +280,14 @@ fun OnboardingScreen(
                                 coroutineScope.launch {
                                     val success = repository.createCoupleSpaceInSupabase(newCode, createName.ifEmpty { "Partenaire 1" })
                                     isCreatingSpace = false
+                                    val backendLabel = if (repository.isFirebaseMode()) "Firebase" else "Supabase"
                                     if (success) {
                                         generatedCode = newCode
                                         isWaitingPartner = true
                                         repository.updateProfile(createName.ifEmpty { "Partenaire 1" }, "En ligne", "", avatarPresets[selectedAvatarIndex])
-                                        Toast.makeText(context, "Espace Supabase créé avec succès", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Espace $backendLabel créé avec succès", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "Erreur Supabase : impossible de créer l'espace. Vérifiez les logs.", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Erreur $backendLabel : impossible de créer l'espace.", Toast.LENGTH_LONG).show()
                                     }
                                 }
                             },
@@ -307,7 +308,7 @@ fun OnboardingScreen(
                             onOpenScanner = { showCameraScanner = true },
                             onSubmit = {
                                 if (joinCode.length < 4) {
-                                    joinErrorMessage = "Code invalide. Veuillez saisir un code à 6 caractères."
+                                    joinErrorMessage = "Code invalide. Veuillez saisir un code complet."
                                     return@JoinSpaceView
                                 }
                                 isJoiningLoading = true
@@ -315,9 +316,10 @@ fun OnboardingScreen(
                                 coroutineScope.launch {
                                     val joined = repository.joinCoupleSpaceInSupabase(joinCode, joinName.ifEmpty { "Partenaire 2" })
                                     isJoiningLoading = false
+                                    val backendLabel = if (repository.isFirebaseMode()) "Firebase" else "Supabase"
                                     if (joined) {
-                                        repository.updatePartnerProfile(joinName.ifEmpty { "Partenaire" }, "En ligne", "💖")
-                                        Toast.makeText(context, "Espace rejoint via Supabase", Toast.LENGTH_SHORT).show()
+                                        repository.updatePartnerProfile(joinName.ifEmpty { "Partenaire" }, "En ligne", "")
+                                        Toast.makeText(context, "Espace rejoint via $backendLabel", Toast.LENGTH_SHORT).show()
                                         onCompleteOnboarding()
                                     } else {
                                         joinErrorMessage = "Impossible de se connecter à l'espace avec ce code."
@@ -346,10 +348,11 @@ fun OnboardingScreen(
                                     val linked = repository.joinCoupleSpaceInSupabase(linkCode, if (selectedPartnerOwner == "partner1") "Partenaire 1" else "Partenaire 2")
                                     isLinkingLoading = false
                                     linkSuccess = linked
+                                    val backendLabel = if (repository.isFirebaseMode()) "Firebase" else "Supabase"
                                     if (linked) {
-                                        Toast.makeText(context, "Tablette synchronisée via Supabase", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Tablette synchronisée via $backendLabel", Toast.LENGTH_LONG).show()
                                     } else {
-                                        linkError = "Échec de la liaison avec le serveur Supabase."
+                                        linkError = "Échec de la liaison avec le serveur $backendLabel."
                                     }
                                 }
                             },
@@ -364,17 +367,25 @@ fun OnboardingScreen(
                             isSuccess = recoverySuccess,
                             errorMessage = recoveryError,
                             onSubmit = {
-                                if (recoveryKey.length < 6) {
-                                    recoveryError = "Clé de secours non reconnue. Saisissez au moins 6 caractères."
+                                val cleanedKey = recoveryKey.trim()
+                                if (cleanedKey.length < 4) {
+                                    recoveryError = "Code non reconnu. Saisissez au moins 4 caractères."
                                     return@RecoveryView
                                 }
                                 isRecoveryLoading = true
                                 recoveryError = null
                                 coroutineScope.launch {
-                                    delay(1800)
+                                    val foundByUid = repository.findExistingCoupleSpace()
+                                    val foundByCode = if (!foundByUid) {
+                                        repository.checkPartnerConnectedInSupabase(cleanedKey) != null
+                                    } else true
                                     isRecoveryLoading = false
-                                    recoverySuccess = true
-                                    Toast.makeText(context, "Espace restauré intégralement", Toast.LENGTH_LONG).show()
+                                    if (foundByUid || foundByCode) {
+                                        recoverySuccess = true
+                                        Toast.makeText(context, "Espace restauré intégralement", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        recoveryError = "Aucun espace trouvé pour ce compte ou ce code."
+                                    }
                                 }
                             },
                             onComplete = onCompleteOnboarding
@@ -386,7 +397,7 @@ fun OnboardingScreen(
             if (BuildConfig.DEBUG) {
                 Text(
                     text = "BUILD CURRENT-2026 • v1.1 • DEBUG",
-                    color = Color.White.copy(alpha = 0.45f),
+                    color = TextMuted,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
@@ -641,8 +652,8 @@ fun CreateSpaceView(
                     unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                     focusedBorderColor = VibrantCyan,
                     unfocusedBorderColor = BorderSubtleWhite,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -840,8 +851,8 @@ fun JoinSpaceView(
                 unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentRose,
                 unfocusedBorderColor = BorderSubtleWhite,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -862,8 +873,8 @@ fun JoinSpaceView(
                 unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentRose,
                 unfocusedBorderColor = BorderSubtleWhite,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -1048,8 +1059,8 @@ fun LinkTabletView(
                 unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = AccentViolet,
                 unfocusedBorderColor = BorderSubtleWhite,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -1167,8 +1178,8 @@ fun RecoveryView(
                 unfocusedContainerColor = com.example.mikayala.theme.MikayalaColors.surface,
                 focusedBorderColor = WarningGold,
                 unfocusedBorderColor = BorderSubtleWhite,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary
             ),
             modifier = Modifier.fillMaxWidth()
         )

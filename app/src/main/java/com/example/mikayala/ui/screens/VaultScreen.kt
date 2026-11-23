@@ -3,8 +3,8 @@ package com.example.mikayala.ui.screens
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -12,8 +12,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,15 +19,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
 import com.example.mikayala.data.model.VaultItemEntity
 import com.example.mikayala.data.repository.MikayalaRepository
 import com.example.mikayala.theme.*
-import java.text.SimpleDateFormat
+import com.example.mikayala.ui.icons.AppleSvgIcons
 import java.util.*
 
 @Composable
@@ -61,13 +62,21 @@ fun VaultScreen(
         }
     }
 
+    val palette = MikayalaColors
+
     // Full screen / Dialog Preview
     selectedItemForPreview?.let { item ->
+        var previewUrl by remember(item.id, item.mediaUrl) { mutableStateOf<String?>(null) }
+        LaunchedEffect(item.id, item.mediaUrl) {
+            if (item.type == "photo" && item.mediaUrl.isNotBlank()) {
+                previewUrl = repository.resolveVaultMediaUrl(item.mediaUrl)
+            }
+        }
         Dialog(onDismissRequest = { selectedItemForPreview = null }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderHighlight),
+                color = palette.modal,
+                border = BorderStroke(0.5.dp, palette.borderStrong),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -79,21 +88,31 @@ fun VaultScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(180.dp)
+                            .height(210.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .background(CardElevated),
+                            .background(palette.surfaceElevated),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = when (item.type) {
-                                "photo" -> "📸"
-                                "video" -> "🎬"
-                                "audio" -> "🎙️"
-                                "letter" -> "💌"
-                                else -> "📝"
-                            },
-                            fontSize = 64.sp
-                        )
+                        val resolved = previewUrl
+                        if (resolved != null) {
+                            AsyncImage(
+                                model = resolved,
+                                contentDescription = item.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Text(
+                                text = when (item.type) {
+                                    "photo" -> "📸"
+                                    "video" -> "🎬"
+                                    "audio" -> "🎙️"
+                                    "letter" -> "💌"
+                                    else -> "📝"
+                                },
+                                fontSize = 64.sp
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -102,7 +121,7 @@ fun VaultScreen(
                         text = item.title,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = palette.textPrimary
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -110,7 +129,7 @@ fun VaultScreen(
                     Text(
                         text = item.caption,
                         fontSize = 13.sp,
-                        color = TextSecondary,
+                        color = palette.textSecondary,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
 
@@ -132,18 +151,20 @@ fun VaultScreen(
                                     }
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0x33C4605C)),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.danger.copy(alpha = 0.16f)),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Supprimer 🗑️", color = Color(0xFFC4605C))
+                            Icon(AppleSvgIcons.Trash, contentDescription = null, tint = palette.danger, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Supprimer", color = palette.danger)
                         }
 
                         Button(
                             onClick = { selectedItemForPreview = null },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Fermer", color = TextPrimary)
+                            Text("Fermer", color = Color.White)
                         }
                     }
                 }
@@ -155,7 +176,7 @@ fun VaultScreen(
     if (showAddDialog) {
         var newTitle by remember { mutableStateOf("") }
         var newCaption by remember { mutableStateOf("") }
-        // Photo facultative : sans photo, l'élément est une note (avant, tout était enregistré comme « photo » sans image)
+        var selectedTextType by remember { mutableStateOf("note") }
         var pickedPhoto by remember { mutableStateOf<android.net.Uri?>(null) }
         var saving by remember { mutableStateOf(false) }
         val vaultScope = rememberCoroutineScope()
@@ -166,8 +187,8 @@ fun VaultScreen(
         Dialog(onDismissRequest = { showAddDialog = false }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
+                color = palette.modal,
+                border = BorderStroke(0.5.dp, palette.borderStrong),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -176,7 +197,7 @@ fun VaultScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(text = "Nouveau souvenir", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Nouveau souvenir", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = palette.textPrimary)
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -202,8 +223,37 @@ fun VaultScreen(
                             )
                         } else {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, tint = AccentRose, modifier = Modifier.size(32.dp))
+                                Icon(AppleSvgIcons.Camera, contentDescription = null, tint = palette.accent, modifier = Modifier.size(30.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text("Ajouter une photo (facultatif)", fontSize = 13.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+
+                    if (pickedPhoto == null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("note" to "📝 Note", "letter" to "💌 Lettre d'amour").forEach { (typeKey, label) ->
+                                val selected = selectedTextType == typeKey
+                                Surface(
+                                    onClick = { selectedTextType = typeKey },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (selected) palette.secondarySoft else palette.surfaceSunken,
+                                    border = BorderStroke(1.dp, if (selected) palette.secondary else palette.border),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (selected) palette.secondary else TextSecondary,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 8.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -216,9 +266,9 @@ fun VaultScreen(
                         label = { Text("Titre du souvenir") },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentRose,
-                            unfocusedBorderColor = BorderSubtleWhite,
-                            cursorColor = AccentRose
+                            focusedBorderColor = palette.accent,
+                            unfocusedBorderColor = palette.border,
+                            cursorColor = palette.accent
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -231,9 +281,9 @@ fun VaultScreen(
                         onValueChange = { newCaption = it },
                         label = { Text("Note d'amour / Légende") },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentRose,
-                            unfocusedBorderColor = BorderSubtleWhite,
-                            cursorColor = AccentRose
+                            focusedBorderColor = palette.accent,
+                            unfocusedBorderColor = palette.border,
+                            cursorColor = palette.accent
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth(),
@@ -249,8 +299,7 @@ fun VaultScreen(
                             if (photo == null) {
                                 saving = true
                                 vaultScope.launch {
-                                    // Confirmation seulement après l'enregistrement réel sur le serveur
-                                    val ok = repository.addVaultItem(newTitle, "note", selectedCategory, newCaption)
+                                    val ok = repository.addVaultItem(newTitle, selectedTextType, selectedCategory, newCaption)
                                     saving = false
                                     if (ok) {
                                         showAddDialog = false
@@ -273,11 +322,14 @@ fun VaultScreen(
                                 }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
                         shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("vault_save_button")
                     ) {
-                        Text(if (saving) "Envoi…" else "Enregistrer", fontWeight = FontWeight.Bold)
+                        Text(if (saving) "Envoi…" else "Enregistrer", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
@@ -287,14 +339,14 @@ fun VaultScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepNight)
-            .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
-            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
+            .background(palette.background)
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = Spacing.maxContentWidth)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Search Bar & Add Button
+        // iOS 18 Pill Search Bar & Add Button
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -302,16 +354,20 @@ fun VaultScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Rechercher dans le coffre...", color = TextMuted, fontSize = 13.sp) },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = TextSecondary) },
+                placeholder = { Text("Rechercher dans le coffre...", color = palette.textMuted, fontSize = 13.sp) },
+                leadingIcon = { Icon(AppleSvgIcons.Search, contentDescription = null, tint = palette.textSecondary, modifier = Modifier.size(18.dp)) },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = AccentViolet,
-                    unfocusedBorderColor = BorderSubtleWhite,
-                    cursorColor = AccentRose
+                    focusedBorderColor = palette.accent,
+                    unfocusedBorderColor = palette.border,
+                    focusedContainerColor = palette.surfaceSunken,
+                    unfocusedContainerColor = palette.surfaceSunken,
+                    cursorColor = palette.accent
                 ),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.weight(1f)
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("vault_search_input")
             )
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -321,44 +377,59 @@ fun VaultScreen(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(AccentRose, AccentViolet)))
+                    .background(Brush.linearGradient(listOf(palette.accent, palette.secondary)))
+                    .testTag("vault_add_button")
             ) {
-                Icon(Icons.Rounded.Add, contentDescription = "Ajouter", tint = TextPrimary)
+                Icon(AppleSvgIcons.Plus, contentDescription = "Ajouter", tint = Color.White, modifier = Modifier.size(22.dp))
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Categories selector tabs
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // iOS 18 Segmented Categories Track
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = palette.surfaceSunken,
+            border = BorderStroke(0.5.dp, palette.border),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            categories.forEach { (catKey, catLabel) ->
-                val isSelected = selectedCategory == catKey
-                Surface(
-                    onClick = { selectedCategory = catKey },
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isSelected) AccentRose else CardDark,
-                    border = if (isSelected) null else androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Box(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                categories.forEach { (catKey, catLabel) ->
+                    val isSelected = selectedCategory == catKey
+                    val cleanLabel = catLabel.substringBefore(" ")
+                    Surface(
+                        onClick = { selectedCategory = catKey },
+                        shape = RoundedCornerShape(11.dp),
+                        color = if (isSelected) palette.surfaceElevated else Color.Transparent,
+                        border = if (isSelected) BorderStroke(0.5.dp, palette.borderStrong) else null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 36.dp)
+                            .testTag("vault_cat_$catKey")
                     ) {
-                        Text(
-                            text = catLabel,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) Color.White else TextSecondary
-                        )
+                        Box(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = cleanLabel,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (isSelected) palette.textPrimary else palette.textSecondary,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Vault Grid
         if (filteredItems.isEmpty()) {
@@ -369,14 +440,14 @@ fun VaultScreen(
                 contentAlignment = Alignment.Center
             ) {
                 com.example.mikayala.ui.components.SoftEmptyState(
-                    icon = Icons.Rounded.Lock,
+                    icon = AppleSvgIcons.Lock,
                     title = "Rien ici pour l'instant",
                     message = "Les souvenirs que vous ajoutez au coffre dans cette catégorie apparaîtront ici, pour vous deux."
                 )
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 160.dp), // 2 colonnes sur téléphone, plus sur tablette
+                columns = GridCells.Adaptive(minSize = 160.dp),
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -400,11 +471,12 @@ private fun VaultGridItem(
     onClick: () -> Unit,
     resolveMedia: suspend (String) -> String? = { null }
 ) {
+    val palette = MikayalaColors
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
-        color = CardDark,
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
+        color = palette.surface,
+        border = BorderStroke(0.5.dp, palette.border),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -417,7 +489,7 @@ private fun VaultGridItem(
                     .fillMaxWidth()
                     .height(95.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(CardElevated),
+                    .background(palette.surfaceElevated),
                 contentAlignment = Alignment.Center
             ) {
                 // Vraie photo si l'élément en contient une, sinon pictogramme du type

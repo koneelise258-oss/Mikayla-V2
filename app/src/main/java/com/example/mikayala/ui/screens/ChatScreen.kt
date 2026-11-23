@@ -3,6 +3,7 @@ package com.example.mikayala.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
@@ -17,6 +18,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import android.widget.Toast
 import androidx.compose.animation.*
@@ -24,11 +28,19 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextDecoration
 import com.example.mikayala.util.ChatGames
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
+import com.example.mikayala.util.ChatTextHelpers
+import com.example.mikayala.util.GroupedReaction
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,27 +49,28 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.Reply
-import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.example.mikayala.data.model.MessageEntity
 import com.example.mikayala.data.repository.MikayalaRepository
 import com.example.mikayala.utils.VoiceNoteManager
@@ -67,16 +80,16 @@ import com.example.mikayala.ui.components.ChatAttachmentAndGamesBottomSheet
 import com.example.mikayala.ui.components.MessageOptionBottomSheet
 import com.example.mikayala.ui.components.EmojiPicker
 import com.example.mikayala.ui.components.MessageStatusIndicator
-import com.example.mikayala.ui.components.NeumorphicSquircleButton
 import com.example.mikayala.ui.components.VoicePlayerWaveform
 import com.example.mikayala.ui.components.VoiceNoteRecorder
+import com.example.mikayala.ui.icons.AppleSvgIcons
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -229,9 +242,19 @@ fun ChatScreen(
     }
 
     var searchQuery by remember { mutableStateOf("") }
+    var activeFilterChip by remember { mutableStateOf("all") }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var searchCursorIdx by remember { mutableIntStateOf(0) }
 
-    val messages = remember(baseMessages, searchMode, searchQuery) {
-        when (searchMode) {
+    LaunchedEffect(highlightedMessageId) {
+        if (highlightedMessageId != null) {
+            delay(1400)
+            highlightedMessageId = null
+        }
+    }
+
+    val messages = remember(baseMessages, searchMode, searchQuery, activeFilterChip) {
+        val afterSearch = when (searchMode) {
             "starred" -> baseMessages.filter { it.isStarred }
             "search" -> {
                 if (searchQuery.isBlank()) {
@@ -245,6 +268,18 @@ fun ChatScreen(
             }
             else -> baseMessages
         }
+        when (if (searchMode == "starred") "starred" else activeFilterChip) {
+            "unread" -> afterSearch.filter { !repository.isMessageFromMe(it) && it.status != "read" }
+            "media" -> afterSearch.filter { it.type in setOf("image", "photo", "video", "audio", "voice", "document") }
+            "links" -> afterSearch.filter { ChatTextHelpers.containsLink(it.content) }
+            "starred" -> afterSearch.filter { it.isStarred }
+            "games" -> afterSearch.filter { it.type in setOf("scratch_card", "truth_or_dare", "quiz", "tictactoe", "dilemma", "coupon", "wheel", "roue", "poll") }
+            else -> afterSearch
+        }
+    }
+
+    LaunchedEffect(searchQuery, messages.size) {
+        searchCursorIdx = if (messages.isEmpty()) 0 else messages.lastIndex
     }
 
     val isPartnerTyping by repository.isPartnerTyping.collectAsState()
@@ -254,7 +289,7 @@ fun ChatScreen(
     // Pagination : bouton « Messages précédents » en haut de la conversation
     val hasOlderMessages by repository.hasOlderMessages.collectAsState()
     var loadingOlder by remember { mutableStateOf(false) }
-    val hasOlderHeader = hasOlderMessages && searchMode == null && messages.isNotEmpty()
+    val hasOlderHeader = hasOlderMessages && searchMode == null && activeFilterChip == "all" && messages.isNotEmpty()
 
     var selectedMessageIds by remember { mutableStateOf(setOf<String>()) }
     var textInput by remember { mutableStateOf("") }
@@ -354,23 +389,52 @@ fun ChatScreen(
         repository.sendRecordingBroadcast(isRecording)
     }
 
-    // Pinned Message banner
-    val pinnedMessage = messages.lastOrNull { it.isPinned }
+    // Pinned Messages banner (supports cycling through multiple pinned messages)
+    val pinnedMessages = remember(messages) { messages.filter { it.isPinned } }
+    var pinnedCycleIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(pinnedMessages.size) {
+        if (pinnedMessages.isNotEmpty()) {
+            pinnedCycleIndex = pinnedCycleIndex.coerceIn(0, pinnedMessages.lastIndex)
+        } else {
+            pinnedCycleIndex = 0
+        }
+    }
+    val pinnedMessage = pinnedMessages.getOrNull(pinnedMessages.size - 1 - pinnedCycleIndex)
 
-    val wallpaperBrush = remember(userSettings.chatTheme) {
-        when (userSettings.chatTheme) {
-            "sunset" -> Brush.verticalGradient(listOf(Color(0xFF2D0B38), Color(0xFF140727), Color(0xFF0F172A)))
-            "rose_gold" -> Brush.verticalGradient(listOf(Color(0xFF2A0A3D), Color(0xFF1C0A2A), Color(0xFF090D16)))
-            "cyber_cyan" -> Brush.verticalGradient(listOf(Color(0xFF052331), Color(0xFF071924), Color(0xFF070B12)))
-            "matte_black" -> Brush.verticalGradient(listOf(Color(0xFF030507), Color(0xFF080C12), Color(0xFF05070A)))
-            else -> Brush.verticalGradient(listOf(Color(0xFF0B0F19), Color(0xFF080C14), Color(0xFF05070A)))
+    val unreadWhileScrolledUp = remember(baseMessages) {
+        baseMessages.count { !repository.isMessageFromMe(it) && it.status != "read" }
+    }
+
+    val jumpToMessageById: (String) -> Unit = { targetId ->
+        val idx = messages.indexOfFirst { it.id == targetId }
+        if (idx != -1) {
+            val scrollIdx = idx + if (hasOlderHeader) 1 else 0
+            coroutineScope.launch {
+                listState.animateScrollToItem(scrollIdx)
+                highlightedMessageId = targetId
+            }
+        } else {
+            Toast.makeText(context, "Message hors du filtre actuel", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val palette = MikayalaColors
+    val wallpaperBrush = remember(userSettings.chatTheme, palette) {
+        SoftChatStyles.wallpaper(userSettings.chatTheme, palette)
+    }
+
+    val showScrollToBottom by remember(messages.size) {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount > 4 && lastVisible < info.totalItemsCount - 3
         }
     }
 
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Draw the background with blur and opacity customizations (guarded for Android 12+ API 31+)
+        // Fond personnalisable + motifs WhatsApp / cœurs / feuilles
         val isBlurSupported = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && userSettings.wallpaperBlur > 0f
         if (userSettings.chatTheme == "custom_image" && userSettings.customWallpaperUri.isNotEmpty()) {
             val blurModifier = if (isBlurSupported) {
@@ -400,15 +464,74 @@ fun ChatScreen(
                     .then(blurModifier)
                     .background(wallpaperBrush)
             )
+            if (userSettings.chatWallpaperPattern != "none") {
+                ChatWallpaperPatternOverlay(
+                    pattern = userSettings.chatWallpaperPattern,
+                    primaryColor = palette.accent,
+                    secondaryColor = palette.secondary,
+                    isDark = palette.isDark,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
+            // iOS 18 / WhatsApp Filter Chips Row
+            val filterItems = listOf(
+                "all" to "Tous",
+                "unread" to "Non lus",
+                "media" to "Médias",
+                "links" to "Liens",
+                "starred" to "Favoris",
+                "games" to "Jeux"
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                filterItems.forEach { (key, label) ->
+                    val selected = (if (searchMode == "starred") "starred" else activeFilterChip) == key
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (selected) palette.secondarySoft else palette.surface.copy(alpha = 0.85f),
+                        border = BorderStroke(
+                            0.75.dp,
+                            if (selected) palette.secondary else palette.border
+                        ),
+                        modifier = Modifier
+                            .heightIn(min = 34.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable {
+                                if (searchMode == "starred" && key != "starred") onCloseSearch()
+                                activeFilterChip = key
+                            }
+                            .testTag("chat_filter_$key")
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (selected) palette.secondary else palette.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
             // Multi-Select Bar Header Banner
             AnimatedVisibility(visible = selectedMessageIds.isNotEmpty()) {
                 Surface(
-                    color = CardDarkElevated,
-                    border = BorderStroke(1.dp, VibrantCyan.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(12.dp),
+                    color = palette.surfaceElevated,
+                    border = BorderStroke(0.5.dp, palette.accent.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -423,53 +546,50 @@ fun ChatScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = { selectedMessageIds = emptySet() },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(34.dp)
                             ) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Annuler", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                                Icon(AppleSvgIcons.Close, contentDescription = "Annuler", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "${selectedMessageIds.size} sélectionné(s)",
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                fontWeight = FontWeight.SemiBold,
+                                color = palette.textPrimary
                             )
                         }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            // Copy text
                             IconButton(onClick = {
                                 val combinedText = messages
                                     .filter { it.id in selectedMessageIds }
                                     .joinToString("\n") { it.content }
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 clipboard.setPrimaryClip(ClipData.newPlainText("Copied Messages", combinedText))
-                                Toast.makeText(context, "Messages copiés 📋", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Messages copiés", Toast.LENGTH_SHORT).show()
                                 selectedMessageIds = emptySet()
                             }) {
-                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copier", tint = VibrantCyan, modifier = Modifier.size(20.dp))
+                                Icon(AppleSvgIcons.Copy, contentDescription = "Copier", tint = palette.secondary, modifier = Modifier.size(20.dp))
                             }
 
-                            // Star selected
                             IconButton(onClick = {
                                 selectedMessageIds.forEach { id ->
                                     repository.toggleStarred(id)
                                 }
-                                Toast.makeText(context, "Favoris mis à jour ⭐", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Favoris mis à jour", Toast.LENGTH_SHORT).show()
                                 selectedMessageIds = emptySet()
                             }) {
-                                Icon(Icons.Rounded.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(20.dp))
+                                Icon(AppleSvgIcons.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(20.dp))
                             }
 
-                            // Delete selected
                             IconButton(onClick = {
                                 selectedMessageIds.forEach { id ->
                                     repository.deleteMessage(id, false)
                                 }
-                                Toast.makeText(context, "Messages supprimés 🗑️", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Messages supprimés", Toast.LENGTH_SHORT).show()
                                 selectedMessageIds = emptySet()
                             }) {
-                                Icon(Icons.Rounded.Delete, contentDescription = "Supprimer", tint = AccentRose, modifier = Modifier.size(20.dp))
+                                Icon(AppleSvgIcons.Trash, contentDescription = "Supprimer", tint = palette.danger, modifier = Modifier.size(20.dp))
                             }
                         }
                     }
@@ -479,9 +599,9 @@ fun ChatScreen(
             // Search or Starred Filter Banner
             AnimatedVisibility(visible = searchMode != null) {
                 Surface(
-                    color = CardDarkElevated,
-                    border = BorderStroke(1.dp, if (searchMode == "starred") AccentGold.copy(alpha = 0.5f) else VibrantCyan.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(12.dp),
+                    color = palette.surfaceElevated,
+                    border = BorderStroke(0.5.dp, if (searchMode == "starred") AccentGold.copy(alpha = 0.5f) else palette.secondary.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -496,17 +616,17 @@ fun ChatScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Star,
+                                    imageVector = AppleSvgIcons.Star,
                                     contentDescription = "Favoris",
                                     tint = AccentGold,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Messages favoris ⭐ (${messages.size})",
+                                    text = "Messages favoris (${messages.size})",
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = palette.textPrimary
                                 )
                             }
                             IconButton(
@@ -514,82 +634,103 @@ fun ChatScreen(
                                     searchQuery = ""
                                     onCloseSearch()
                                 },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Close,
+                                    imageVector = AppleSvgIcons.Close,
                                     contentDescription = "Fermer",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = palette.textSecondary,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
                     } else {
-                        // search mode
+                        // search mode with live count & prev/next match jump
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Search,
+                                imageVector = AppleSvgIcons.Search,
                                 contentDescription = "Rechercher",
-                                tint = VibrantCyan,
-                                modifier = Modifier.size(20.dp)
+                                tint = palette.secondary,
+                                modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             BasicTextField(
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it },
                                 singleLine = true,
+                                cursorBrush = SolidColor(palette.secondary),
                                 textStyle = androidx.compose.ui.text.TextStyle(
-                                    color = TextPrimary,
+                                    color = palette.textPrimary,
                                     fontSize = 14.sp
                                 ),
                                 modifier = Modifier.weight(1f),
                                 decorationBox = { innerTextField ->
                                     if (searchQuery.isEmpty()) {
                                         Text(
-                                            text = "Rechercher dans la conversation...",
+                                            text = "Rechercher un mot ou lien…",
                                             fontSize = 13.sp,
-                                            color = TextSecondary
+                                            color = palette.textMuted
                                         )
                                     }
                                     innerTextField()
                                 }
                             )
                             if (searchQuery.isNotEmpty()) {
+                                Text(
+                                    text = if (messages.isEmpty()) "0" else "${searchCursorIdx + 1}/${messages.size}",
+                                    fontSize = 11.sp,
+                                    color = palette.textSecondary,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+                                if (messages.size > 1) {
+                                    IconButton(
+                                        onClick = {
+                                            searchCursorIdx = (searchCursorIdx - 1 + messages.size) % messages.size
+                                            jumpToMessageById(messages[searchCursorIdx].id)
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Résultat précédent", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            searchCursorIdx = (searchCursorIdx + 1) % messages.size
+                                            jumpToMessageById(messages[searchCursorIdx].id)
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Résultat suivant", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
+                                    }
+                                }
                                 IconButton(
                                     onClick = { searchQuery = "" },
                                     modifier = Modifier.size(26.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Close,
+                                        imageVector = AppleSvgIcons.Close,
                                         contentDescription = "Effacer",
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(16.dp)
+                                        tint = palette.textSecondary,
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "${messages.size}",
-                                fontSize = 11.sp,
-                                color = TextSecondary,
-                                fontWeight = FontWeight.SemiBold
-                            )
                             IconButton(
                                 onClick = {
                                     searchQuery = ""
                                     onCloseSearch()
                                 },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
                                     contentDescription = "Fermer la recherche",
-                                    tint = AccentRose,
+                                    tint = palette.accent,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -598,22 +739,24 @@ fun ChatScreen(
                 }
             }
 
-            // Pinned Banner
+            // Pinned Banner (Supports multiple pinned messages + accurate scroll jump)
             AnimatedVisibility(visible = pinnedMessage != null && selectedMessageIds.isEmpty()) {
                 pinnedMessage?.let { pin ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = CardModalSurface,
-                        border = BorderStroke(1.dp, AccentViolet.copy(alpha = 0.4f)),
+                        color = palette.surfaceElevated.copy(alpha = 0.96f),
+                        border = BorderStroke(0.5.dp, palette.accent.copy(alpha = 0.45f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
                             .clickable {
-                                val idx = messages.indexOfFirst { it.id == pin.id }
-                                if (idx != -1) {
-                                    coroutineScope.launch { listState.animateScrollToItem(idx) }
+                                jumpToMessageById(pin.id)
+                                if (pinnedMessages.size > 1) {
+                                    pinnedCycleIndex = (pinnedCycleIndex + 1) % pinnedMessages.size
                                 }
                             }
+                            .testTag("pinned_message_banner")
                     ) {
                         Row(
                             modifier = Modifier
@@ -622,35 +765,40 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.PushPin,
+                                imageVector = AppleSvgIcons.Pin,
                                 contentDescription = "Épinglé",
-                                tint = AccentRose,
-                                modifier = Modifier.size(16.dp)
+                                tint = palette.accent,
+                                modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
+                                val pinHeader = if (pinnedMessages.size > 1) {
+                                    "Message épinglé (${pinnedCycleIndex + 1}/${pinnedMessages.size})"
+                                } else {
+                                    "Message épinglé"
+                                }
                                 Text(
-                                    text = "Message épinglé",
+                                    text = pinHeader,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AccentRose
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = palette.accent
                                 )
                                 Text(
-                                    text = pin.content,
+                                    text = pin.content.ifBlank { "Média épinglé" },
                                     fontSize = 12.sp,
-                                    color = TextPrimary,
+                                    color = palette.textPrimary,
                                     maxLines = 1
                                 )
                             }
                             IconButton(
                                 onClick = { repository.togglePinned(pin.id) },
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Close,
+                                    imageVector = AppleSvgIcons.Close,
                                     contentDescription = "Détacher",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(14.dp)
+                                    tint = palette.textSecondary,
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
@@ -658,101 +806,269 @@ fun ChatScreen(
                 }
             }
 
-            // Message List
-            LazyColumn(
-                state = listState,
+            // Message List + Empty State + Floating Scroll-to-Bottom FAB
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(top = 10.dp, bottom = 10.dp)
             ) {
-                if (hasOlderHeader) {
-                    item(key = "older_messages_header") {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            TextButton(
-                                enabled = !loadingOlder,
-                                onClick = {
-                                    loadingOlder = true
-                                    coroutineScope.launch {
-                                        val n = repository.loadOlderMessages()
-                                        loadingOlder = false
-                                        if (n < 0) Toast.makeText(context, "Impossible de charger les anciens messages (réseau)", Toast.LENGTH_SHORT).show()
+                if (messages.isEmpty()) {
+                    val hasFilterActive = searchMode != null || activeFilterChip != "all" || searchQuery.isNotBlank()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(22.dp),
+                            color = palette.surface.copy(alpha = 0.92f),
+                            border = BorderStroke(0.5.dp, palette.border),
+                            modifier = Modifier.widthIn(max = 320.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(22.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                        .background(palette.accentSoft),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (hasFilterActive) AppleSvgIcons.Search else AppleSvgIcons.HeartFilled,
+                                        contentDescription = null,
+                                        tint = palette.accent,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Text(
+                                    text = if (hasFilterActive) "Aucun message trouvé" else "Votre espace privé",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = palette.textPrimary
+                                )
+                                Text(
+                                    text = if (hasFilterActive) {
+                                        "Aucun échange ne correspond à ce filtre ou cette recherche."
+                                    } else {
+                                        "Envoyez un mot doux, un vocal ou lancez un jeu pour commencer."
+                                    },
+                                    fontSize = 13.sp,
+                                    color = palette.textSecondary,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                if (hasFilterActive) {
+                                    TextButton(
+                                        onClick = {
+                                            activeFilterChip = "all"
+                                            searchQuery = ""
+                                            onCloseSearch()
+                                        }
+                                    ) {
+                                        Text("Tout afficher", color = palette.secondary, fontWeight = FontWeight.SemiBold)
+                                    }
+                                } else {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                                    ) {
+                                        listOf("Coucou ❤️", "Tu me manques ✨", "Bonne journée 🌿").forEach { starter ->
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = palette.secondarySoft,
+                                                border = BorderStroke(0.5.dp, palette.secondary.copy(alpha = 0.45f)),
+                                                modifier = Modifier
+                                                    .clip(CircleShape)
+                                                    .clickable {
+                                                        repository.sendMessage(content = starter, type = "text")
+                                                    }
+                                            ) {
+                                                Text(
+                                                    text = starter,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = palette.secondary,
+                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
-                            ) {
-                                Text(if (loadingOlder) "Chargement…" else "Afficher les messages précédents")
                             }
                         }
                     }
-                }
-                itemsIndexed(messages, key = { _, item -> item.id }) { index, message ->
-                    val currentDay = remember(message.createdAt) { getDayHeaderText(message.createdAt) }
-                    val previousDay = if (index > 0) {
-                        remember(messages[index - 1].createdAt) { getDayHeaderText(messages[index - 1].createdAt) }
-                    } else null
-
-                    if (previousDay != currentDay) {
-                        DateHeaderItem(dayText = currentDay)
-                    }
-
-                    val isSelected = message.id in selectedMessageIds
-
-                    MessageBubble(
-                        message = message,
-                        repository = repository,
-                        currentUserId = repository.getCurrentUserId(),
-                        timeFormatted = timeFormat.format(Date(message.createdAt)),
-                        userSettings = userSettings,
-                        isSelected = isSelected,
-                        isMultiSelectActive = selectedMessageIds.isNotEmpty(),
-                        onToggleSelect = {
-                            selectedMessageIds = if (isSelected) {
-                                selectedMessageIds - message.id
-                            } else {
-                                selectedMessageIds + message.id
-                            }
-                        },
-                        onLongPress = {
-                            if (selectedMessageIds.isEmpty()) {
-                                selectedMessageForOptions = message
-                            } else {
-                                selectedMessageIds = if (isSelected) {
-                                    selectedMessageIds - message.id
-                                } else {
-                                    selectedMessageIds + message.id
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (userSettings.uiDensity == "compact") 4.dp else 7.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 14.dp)
+                    ) {
+                        if (hasOlderHeader) {
+                            item(key = "older_messages_header") {
+                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                    TextButton(
+                                        enabled = !loadingOlder,
+                                        onClick = {
+                                            loadingOlder = true
+                                            coroutineScope.launch {
+                                                val n = repository.loadOlderMessages()
+                                                loadingOlder = false
+                                                if (n < 0) Toast.makeText(context, "Impossible de charger les anciens messages (réseau)", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    ) {
+                                        Text(if (loadingOlder) "Chargement…" else "Afficher les messages précédents", color = palette.secondary)
+                                    }
                                 }
                             }
-                        },
-                        onReply = { replyToMessage = message },
-                        onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) },
-                        onViewOnceClicked = {
-                            repository.markViewOnceAsViewed(message.id)
                         }
-                    )
+                        itemsIndexed(messages, key = { _, item -> item.id }) { index, message ->
+                            val currentDay = remember(message.createdAt) { getDayHeaderText(message.createdAt) }
+                            val prev = messages.getOrNull(index - 1)
+                            val previousDay = if (prev != null) {
+                                remember(prev.createdAt) { getDayHeaderText(prev.createdAt) }
+                            } else null
+
+                            if (previousDay != currentDay) {
+                                DateHeaderItem(dayText = currentDay)
+                            }
+
+                            val isGroupedWithPrev = prev != null && previousDay == currentDay &&
+                                ChatTextHelpers.isGroupedWithPrevious(
+                                    previousSenderId = prev.senderId,
+                                    previousCreatedAt = prev.createdAt,
+                                    previousDeleted = prev.isDeletedForEveryone,
+                                    currentSenderId = message.senderId,
+                                    currentCreatedAt = message.createdAt,
+                                    currentDeleted = message.isDeletedForEveryone
+                                )
+
+                            val isSelected = message.id in selectedMessageIds
+
+                            MessageBubble(
+                                message = message,
+                                repository = repository,
+                                currentUserId = myUserId,
+                                timeFormatted = timeFormat.format(Date(message.createdAt)),
+                                userSettings = userSettings,
+                                searchHighlightQuery = if (searchMode == "search") searchQuery else "",
+                                isHighlighted = highlightedMessageId == message.id,
+                                isGroupedWithPrev = isGroupedWithPrev,
+                                isSelected = isSelected,
+                                isMultiSelectActive = selectedMessageIds.isNotEmpty(),
+                                onJumpToMessage = jumpToMessageById,
+                                onToggleSelect = {
+                                    selectedMessageIds = if (isSelected) {
+                                        selectedMessageIds - message.id
+                                    } else {
+                                        selectedMessageIds + message.id
+                                    }
+                                },
+                                onLongPress = {
+                                    if (selectedMessageIds.isEmpty()) {
+                                        selectedMessageForOptions = message
+                                    } else {
+                                        selectedMessageIds = if (isSelected) {
+                                            selectedMessageIds - message.id
+                                        } else {
+                                            selectedMessageIds + message.id
+                                        }
+                                    }
+                                },
+                                onReply = { replyToMessage = message },
+                                onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) },
+                                onViewOnceClicked = {
+                                    repository.markViewOnceAsViewed(message.id)
+                                }
+                            )
+                        }
+
+                        // Partner presence indicators in chat
+                        if (isPartnerTyping || isPartnerRecording) {
+                            item(key = "partner_typing_indicator") {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(palette.secondary)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    val partnerDisplayName = userSettings.partnerNickname.ifBlank { "Votre partenaire" }
+                                    Text(
+                                        text = if (isPartnerRecording) "$partnerDisplayName enregistre un audio…" else "$partnerDisplayName est en train d'écrire…",
+                                        fontSize = 12.sp,
+                                        color = palette.accent
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // Partner presence indicators in chat
-                if (isPartnerTyping || isPartnerRecording) {
-                    item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                // Floating WhatsApp Scroll-to-Bottom Button + Unread Count Badge
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showScrollToBottom && messages.isNotEmpty(),
+                    enter = fadeIn(tween(150)) + scaleIn(tween(160), initialScale = 0.85f),
+                    exit = fadeOut(tween(130)) + scaleOut(tween(130), targetScale = 0.85f),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 14.dp, bottom = 10.dp)
+                ) {
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        Surface(
+                            shape = CircleShape,
+                            color = palette.surfaceElevated,
+                            border = BorderStroke(0.5.dp, palette.borderStrong),
+                            shadowElevation = 4.dp,
+                            modifier = Modifier
+                                .padding(top = 4.dp, end = 2.dp)
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    val target = messages.size - 1 + if (hasOlderHeader) 1 else 0
+                                    if (target >= 0) coroutineScope.launch { listState.animateScrollToItem(target) }
+                                }
+                                .testTag("chat_scroll_bottom_fab")
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(OnlinePresenceGreen)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            val partnerDisplayName = userSettings.partnerNickname.ifBlank { "Votre partenaire" }
-                            Text(
-                                text = if (isPartnerRecording) "$partnerDisplayName enregistre un audio... 🎙️" else "$partnerDisplayName est en train d'écrire... ✨",
-                                fontSize = 12.sp,
-                                color = AccentViolet
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = AppleSvgIcons.Down,
+                                    contentDescription = "Aller au dernier message",
+                                    tint = palette.accent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        if (unreadWhileScrolledUp > 0) {
+                            Surface(
+                                shape = CircleShape,
+                                color = palette.secondary,
+                                modifier = Modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = if (unreadWhileScrolledUp > 99) "99+" else unreadWhileScrolledUp.toString(),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -761,9 +1077,10 @@ fun ChatScreen(
             // Reply Bar Banner
             AnimatedVisibility(visible = replyToMessage != null) {
                 replyToMessage?.let { reply ->
+                    val partnerReplyName = userSettings.partnerNickname.ifBlank { "votre partenaire" }
                     Surface(
-                        color = CardDark,
-                        border = BorderStroke(1.dp, BorderHighlight),
+                        color = palette.surfaceElevated,
+                        border = BorderStroke(0.5.dp, palette.border),
                         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -780,25 +1097,25 @@ fun ChatScreen(
                                     .width(3.dp)
                                     .height(32.dp)
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(AccentRose)
+                                    .background(palette.accent)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (repository.isMessageFromMe(reply)) "Réponse à vous-même" else "Réponse à Mikayala",
+                                    text = if (repository.isMessageFromMe(reply)) "Réponse à vous-même" else "Réponse à $partnerReplyName",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AccentRose
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = palette.accent
                                 )
                                 Text(
-                                    text = reply.content,
+                                    text = reply.content.ifBlank { "Média" },
                                     fontSize = 12.sp,
-                                    color = TextSecondary,
+                                    color = palette.textSecondary,
                                     maxLines = 1
                                 )
                             }
                             IconButton(onClick = { replyToMessage = null }) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Annuler", tint = TextSecondary, modifier = Modifier.size(18.dp))
+                                Icon(AppleSvgIcons.Close, contentDescription = "Annuler", tint = palette.textSecondary, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -871,7 +1188,8 @@ fun ChatScreen(
                     showInAppCamera = true
                 },
                 onEmojiClick = { showEmojiBar = !showEmojiBar },
-                showEmojiBar = showEmojiBar
+                showEmojiBar = showEmojiBar,
+                enterIsSend = userSettings.enterIsSend
             )
 
             // Full Premium Emoji Picker Panel
@@ -1050,7 +1368,8 @@ fun ChatScreen(
                 },
                 onDeleteForMe = { repository.deleteMessage(message.id, false) },
                 onDeleteForEveryone = { repository.deleteMessage(message.id, true) },
-                onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) }
+                onToggleReaction = { emoji -> repository.toggleReaction(message.id, emoji) },
+                onSelect = { selectedMessageIds = setOf(message.id) }
             )
         }
 
@@ -1139,7 +1458,76 @@ private fun getDayHeaderText(timestamp: Long): String {
 }
 
 @Composable
+private fun ChatWallpaperPatternOverlay(
+    pattern: String,
+    primaryColor: Color,
+    secondaryColor: Color,
+    isDark: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val alphaPrimary = if (isDark) 0.055f else 0.075f
+    val alphaSecondary = if (isDark) 0.045f else 0.065f
+    Spacer(
+        modifier = modifier.drawWithCache {
+            val step = 76.dp.toPx()
+            val cols = (size.width / step).toInt() + 2
+            val rows = (size.height / step).toInt() + 2
+            val stroke = Stroke(width = 1.4.dp.toPx())
+            val thinStroke = 1.2.dp.toPx()
+            val c1 = primaryColor.copy(alpha = alphaPrimary)
+            val c2 = secondaryColor.copy(alpha = alphaSecondary)
+            onDrawBehind {
+                for (r in 0..rows) {
+                    for (c in 0..cols) {
+                        val cx = c * step + if (r % 2 == 1) step * 0.5f else 0f
+                        val cy = r * step
+                        val tint = if ((r + c) % 2 == 0) c1 else c2
+                        when (pattern) {
+                            "hearts" -> {
+                                val s = 7.dp.toPx()
+                                drawCircle(color = tint, radius = s * 0.55f, center = Offset(cx - s * 0.45f, cy - s * 0.2f), style = stroke)
+                                drawCircle(color = tint, radius = s * 0.55f, center = Offset(cx + s * 0.45f, cy - s * 0.2f), style = stroke)
+                                drawLine(tint, Offset(cx - s * 0.9f, cy + s * 0.1f), Offset(cx, cy + s * 1.1f), strokeWidth = thinStroke)
+                                drawLine(tint, Offset(cx + s * 0.9f, cy + s * 0.1f), Offset(cx, cy + s * 1.1f), strokeWidth = thinStroke)
+                            }
+                            "botanical" -> {
+                                val s = 12.dp.toPx()
+                                drawOval(
+                                    color = tint,
+                                    topLeft = Offset(cx - s * 0.4f, cy - s * 0.7f),
+                                    size = androidx.compose.ui.geometry.Size(s * 0.8f, s * 1.4f),
+                                    style = stroke
+                                )
+                                drawLine(tint, Offset(cx, cy - s * 0.6f), Offset(cx, cy + s * 0.85f), strokeWidth = thinStroke)
+                            }
+                            else -> {
+                                val s = 9.dp.toPx()
+                                when ((r + c) % 3) {
+                                    0 -> drawRoundRect(
+                                        color = tint,
+                                        topLeft = Offset(cx - s, cy - s * 0.7f),
+                                        size = androidx.compose.ui.geometry.Size(s * 2f, s * 1.4f),
+                                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.6f, s * 0.6f),
+                                        style = stroke
+                                    )
+                                    1 -> drawCircle(color = tint, radius = s * 0.75f, center = Offset(cx, cy), style = stroke)
+                                    else -> {
+                                        drawLine(tint, Offset(cx - s * 0.6f, cy), Offset(cx + s * 0.6f, cy), strokeWidth = thinStroke)
+                                        drawLine(tint, Offset(cx, cy - s * 0.6f), Offset(cx, cy + s * 0.6f), strokeWidth = thinStroke)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
 private fun DateHeaderItem(dayText: String) {
+    val c = MikayalaColors
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1148,8 +1536,8 @@ private fun DateHeaderItem(dayText: String) {
     ) {
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = Color(0x331E2A3A),
-            border = BorderStroke(1.dp, BorderSubtleWhite)
+            color = c.surfaceElevated.copy(alpha = 0.9f),
+            border = BorderStroke(1.dp, c.border)
         ) {
             Text(
                 text = dayText,
@@ -1162,6 +1550,49 @@ private fun DateHeaderItem(dayText: String) {
     }
 }
 
+@Composable
+private fun ReactionsBadgeRow(
+    reactions: List<GroupedReaction>,
+    onToggleReaction: (String) -> Unit
+) {
+    if (reactions.isEmpty()) return
+    val c = MikayalaColors
+    Row(
+        modifier = Modifier
+            .padding(top = 3.dp, bottom = 2.dp)
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        reactions.forEach { r ->
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (r.includesMe) c.accentSoft else c.surfaceElevated,
+                border = BorderStroke(0.5.dp, if (r.includesMe) c.accent else c.border),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onToggleReaction(r.emoji) }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(text = r.emoji, fontSize = 13.sp)
+                    if (r.count > 1) {
+                        Text(
+                            text = r.count.toString(),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (r.includesMe) c.accent else c.textSecondary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
@@ -1170,91 +1601,110 @@ private fun MessageBubble(
     currentUserId: String,
     timeFormatted: String,
     userSettings: com.example.mikayala.data.model.UserSettingsEntity,
+    searchHighlightQuery: String = "",
+    isHighlighted: Boolean = false,
+    isGroupedWithPrev: Boolean = false,
     isSelected: Boolean = false,
     isMultiSelectActive: Boolean = false,
+    onJumpToMessage: (String) -> Unit = {},
     onToggleSelect: () -> Unit = {},
     onLongPress: () -> Unit,
     onReply: () -> Unit,
     onToggleReaction: (String) -> Unit,
     onViewOnceClicked: () -> Unit
 ) {
-    // Largeur des bulles proportionnelle à l'écran (avant : 300 dp fixes, soit toute la largeur d'un
-    // petit téléphone et des bulles minuscules sur tablette)
     val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     val bubbleMaxWidth = remember(screenWidthDp) { (screenWidthDp * 0.78f).coerceIn(200f, 440f).dp }
-    val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
     val isSender = repository.isMessageFromMe(message)
-
-    LaunchedEffect(message.id, message.status, isSender) {
-        Log.d("ChatScreen", "[MIKAYALA_MESSAGE] messageId=${message.id} senderId=${message.senderId} currentAuthUid=$currentUserId isSender=$isSender status=${message.status} deliveredAt=${message.deliveredAt} readAt=${message.readAt}")
-    }
-
-    var dragOffsetX by remember { mutableFloatStateOf(0f) }
-    var replyTriggered by remember { mutableStateOf(false) }
-    val animatedDragOffset by animateFloatAsState(
-        targetValue = dragOffsetX,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMedium),
-        label = "swipe_reply_offset"
+    val palette = MikayalaColors
+    val cornerRadius = userSettings.bubbleCornerRadiusDp.coerceIn(8, 28).dp
+    val topOuterRadius = if (isGroupedWithPrev) (cornerRadius * 0.55f) else cornerRadius
+    val tailRadius = if (userSettings.showBubbleTails) 4.dp else cornerRadius
+    val bubbleShape = RoundedCornerShape(
+        topStart = if (isSender) cornerRadius else topOuterRadius,
+        topEnd = if (isSender) topOuterRadius else cornerRadius,
+        bottomStart = if (isSender) cornerRadius else tailRadius,
+        bottomEnd = if (isSender) tailRadius else cornerRadius
     )
+    val resolvedBubble = SoftChatStyles.bubble(userSettings.bubbleStyle, palette, isSender)
+
+    val maxDragPx = remember(density) { with(density) { 64.dp.toPx() } }
+    val triggerDragPx = remember(density) { with(density) { 40.dp.toPx() } }
+    val swipeAnim = remember(message.id) { Animatable(0f) }
+    var replyTriggered by remember { mutableStateOf(false) }
 
     var showQuickReactionPicker by remember { mutableStateOf(false) }
     var showCustomEmojiDialog by remember { mutableStateOf(false) }
-    var customEmojiInput by remember { mutableStateOf("") }
 
-    val reactionsMap = remember(message.reactions) {
-        try {
-            val json = JSONObject(message.reactions)
-            val keys = json.keys()
-            val list = mutableListOf<String>()
-            while (keys.hasNext()) {
-                list.add(json.getString(keys.next()))
-            }
-            list
-        } catch (e: Exception) {
-            emptyList()
-        }
+    val groupedReactions = remember(message.reactions, currentUserId) {
+        ChatTextHelpers.groupReactions(message.reactions, currentUserId)
     }
+
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (isHighlighted) 0.24f else if (isSelected) 0.22f else 0f,
+        animationSpec = tween(260),
+        label = "msg_highlight_alpha"
+    )
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) VibrantCyan.copy(alpha = 0.25f) else Color.Transparent)
+            .background(
+                when {
+                    isHighlighted -> palette.secondary.copy(alpha = highlightAlpha)
+                    highlightAlpha > 0f -> palette.accent.copy(alpha = highlightAlpha)
+                    else -> Color.Transparent
+                }
+            )
             .pointerInput(message.id) {
                 detectHorizontalDragGestures(
                     onDragStart = { replyTriggered = false },
-                    onDragEnd = { dragOffsetX = 0f },
-                    onDragCancel = { dragOffsetX = 0f },
+                    onDragEnd = {
+                        coroutineScope.launch {
+                            swipeAnim.animateTo(
+                                0f,
+                                spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+                            )
+                        }
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch { swipeAnim.animateTo(0f, tween(160)) }
+                    },
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
-                        // Strictly restrict drag to positive values (swiping to the right only)
-                        val newOffset = (dragOffsetX + dragAmount).coerceIn(0f, 90f)
-                        dragOffsetX = newOffset
-                        if (newOffset > 40f && !replyTriggered) {
+                        val target = (swipeAnim.value + dragAmount).coerceIn(0f, maxDragPx)
+                        coroutineScope.launch { swipeAnim.snapTo(target) }
+                        if (target > triggerDragPx && !replyTriggered) {
                             replyTriggered = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onReply()
-                            Toast.makeText(context, "Répondre au message 💬", Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
             }
     ) {
-        // Swipe-to-reply icon indicator (Appears on the left when swiping right)
-        if (animatedDragOffset > 5f) {
-            val replyScale by animateFloatAsState(
-                targetValue = (animatedDragOffset / 40f).coerceIn(0f, 1.2f),
-                label = "reply_icon_scale"
-            )
+        // Swipe-to-reply GPU-only indicator
+        if (swipeAnim.value > 4f) {
+            val progress = (swipeAnim.value / triggerDragPx).coerceIn(0f, 1.15f)
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .padding(start = 12.dp)
-                    .scale(replyScale)
+                    .graphicsLayer {
+                        scaleX = progress
+                        scaleY = progress
+                        alpha = progress.coerceIn(0f, 1f)
+                    }
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = VibrantCyan,
-                    shadowElevation = 4.dp,
+                    color = palette.secondary,
+                    shadowElevation = 3.dp,
                     modifier = Modifier.size(32.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -1269,76 +1719,73 @@ private fun MessageBubble(
             }
         }
 
-        // Main message container offset horizontally
-        Column(
-            modifier = Modifier
-                .offset(x = animatedDragOffset.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
-        ) {
-            // Quick Emoji Reaction Bar (Revealed on single tap)
-            androidx.compose.animation.AnimatedVisibility(
-                visible = showQuickReactionPicker,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+        // Non-layout-shifting floating Quick Reaction Popup (zero LazyColumn jump!)
+        if (showQuickReactionPicker) {
+            Popup(
+                alignment = if (isSender) Alignment.TopEnd else Alignment.TopStart,
+                offset = IntOffset(0, with(density) { (-48).dp.roundToPx() }),
+                onDismissRequest = { showQuickReactionPicker = false },
+                properties = PopupProperties(focusable = true)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = CardDarkElevated,
-                    border = BorderStroke(1.dp, BorderSubtleWhite),
-                    shadowElevation = 8.dp,
-                    modifier = Modifier.padding(bottom = 6.dp)
+                    shape = RoundedCornerShape(24.dp),
+                    color = palette.modal,
+                    border = BorderStroke(0.5.dp, palette.borderStrong),
+                    shadowElevation = 10.dp
                 ) {
                     Row(
-                        // Défilante : 8 émojis + « + » dépassaient la largeur d'un petit écran
                         modifier = Modifier
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        val quickEmojis = listOf("❤️", "🔥", "🥰", "😂", "😮", "👍", "🙏", "✨")
-                        quickEmojis.forEach { emoji ->
-                            Surface(
-                                shape = CircleShape,
-                                color = Color.Transparent,
+                        listOf("❤️", "🔥", "🥰", "😂", "😮", "👍", "🙏", "✨").forEach { emoji ->
+                            val isSelectedEmoji = groupedReactions.any { it.emoji == emoji && it.includesMe }
+                            Box(
+                                contentAlignment = Alignment.Center,
                                 modifier = Modifier
+                                    .size(34.dp)
                                     .clip(CircleShape)
+                                    .background(if (isSelectedEmoji) palette.accentSoft else Color.Transparent)
                                     .clickable {
                                         onToggleReaction(emoji)
                                         showQuickReactionPicker = false
                                     }
-                                    .padding(4.dp)
                             ) {
-                                Text(text = emoji, fontSize = 18.sp)
+                                Text(text = emoji, fontSize = 19.sp)
                             }
                         }
-
-                        // Custom Emoji Picker Button (+)
-                        Surface(
-                            shape = CircleShape,
-                            color = VibrantCyan.copy(alpha = 0.2f),
-                            border = BorderStroke(1.dp, VibrantCyan.copy(alpha = 0.5f)),
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(28.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(palette.secondarySoft)
                                 .clickable {
                                     showQuickReactionPicker = false
                                     showCustomEmojiDialog = true
                                 }
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Add,
-                                    contentDescription = "Ajouter émoji",
-                                    tint = VibrantCyan,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                            Icon(
+                                imageVector = AppleSvgIcons.Plus,
+                                contentDescription = "Ajouter émoji",
+                                tint = palette.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
                 }
             }
+        }
 
+        // Main message container shifted strictly on GPU via graphicsLayer
+        Column(
+            modifier = Modifier
+                .graphicsLayer { translationX = swipeAnim.value }
+                .fillMaxWidth(),
+            horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
+        ) {
             // Clickable Bubble (Single tap toggles selection in multi-select mode or reactions, long press selects/options)
             Column(
                 modifier = Modifier.combinedClickable(
@@ -1353,36 +1800,40 @@ private fun MessageBubble(
                 ),
                 horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
             ) {
-                // Reply quote bubble if present
+                // Clickable Reply quote bubble if present -> jumps to original message
                 if (message.replyToContent != null) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MatteCardElevated,
-                        border = BorderStroke(1.dp, BorderSubtleWhite),
+                        color = palette.surfaceElevated.copy(alpha = 0.85f),
+                        border = BorderStroke(0.5.dp, palette.border),
                         modifier = Modifier
                             .widthIn(max = bubbleMaxWidth)
                             .padding(bottom = 2.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(enabled = !message.replyToId.isNullOrBlank()) {
+                                message.replyToId?.let { onJumpToMessage(it) }
+                            }
                     ) {
-                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
                             Box(
                                 modifier = Modifier
                                     .width(3.dp)
                                     .height(24.dp)
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(VibrantCyan)
+                                    .background(palette.secondary)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Column {
                                 Text(
                                     text = message.replyToSender ?: "Citation",
                                     fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = VibrantCyan
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = palette.secondary
                                 )
                                 Text(
                                     text = message.replyToContent,
                                     fontSize = 11.sp,
-                                    color = TextSecondary,
+                                    color = palette.textSecondary,
                                     maxLines = 1
                                 )
                             }
@@ -1397,7 +1848,8 @@ private fun MessageBubble(
                     message = message,
                     isSender = isSender,
                     timeFormatted = timeFormatted,
-                    reactionsMap = reactionsMap,
+                    groupedReactions = groupedReactions,
+                    onToggleReaction = onToggleReaction,
                     onRetryMedia = {
                         val path = message.storagePath ?: ""
                         if (path.isNotEmpty()) {
@@ -1413,7 +1865,8 @@ private fun MessageBubble(
                     message = message,
                     isSender = isSender,
                     timeFormatted = timeFormatted,
-                    reactionsMap = reactionsMap,
+                    groupedReactions = groupedReactions,
+                    onToggleReaction = onToggleReaction,
                     onRetryMedia = {
                         val path = message.storagePath ?: ""
                         if (path.isNotEmpty()) {
@@ -1426,9 +1879,9 @@ private fun MessageBubble(
             "audio", "voice" -> {
                 Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
                     Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (isSender) ChatBubbleSender else ChatBubbleReceiver,
-                        border = BorderStroke(1.dp, MatteSquircleBorder),
+                        shape = bubbleShape,
+                        color = resolvedBubble.background,
+                        border = BorderStroke(0.5.dp, if (resolvedBubble.outlined) palette.borderStrong else palette.border),
                         modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                     ) {
                         Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -1446,27 +1899,10 @@ private fun MessageBubble(
                         }
                     }
 
-                    // Persistent Emoji Reactions Row
-                    if (reactionsMap.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = CardDarkElevated,
-                            border = BorderStroke(1.dp, BorderSubtleWhite),
-                            shadowElevation = 3.dp,
-                            modifier = Modifier.padding(bottom = 2.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                reactionsMap.forEach { emoji ->
-                                    Text(text = emoji, fontSize = 14.sp)
-                                }
-                            }
-                        }
-                    }
+                    ReactionsBadgeRow(
+                        reactions = groupedReactions,
+                        onToggleReaction = onToggleReaction
+                    )
 
                     Spacer(modifier = Modifier.height(3.dp))
                     Row(
@@ -1475,7 +1911,7 @@ private fun MessageBubble(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (message.isStarred) {
-                            Icon(Icons.Rounded.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
+                            Icon(AppleSvgIcons.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
                         }
                         Text(
                             text = timeFormatted,
@@ -1491,10 +1927,25 @@ private fun MessageBubble(
 
             "location" -> {
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = CardDarkElevated,
-                    border = BorderStroke(1.dp, Color(0xFF00C853).copy(alpha = 0.4f)),
-                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
+                    shape = bubbleShape,
+                    color = palette.surfaceElevated,
+                    border = BorderStroke(1.dp, palette.secondary.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
+                        .clip(bubbleShape)
+                        .clickable {
+                            try {
+                                val coords = message.mediaUrl?.takeIf { it.contains(",") }
+                                val uri = if (coords != null) {
+                                    Uri.parse("geo:$coords?q=$coords(${Uri.encode(message.content)})")
+                                } else {
+                                    Uri.parse("geo:0,0?q=${Uri.encode(message.content)}")
+                                }
+                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "Aucune application de carte trouvée", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1502,14 +1953,14 @@ private fun MessageBubble(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF00C853).copy(alpha = 0.2f)),
+                                    .background(palette.secondarySoft),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Rounded.LocationOn, contentDescription = null, tint = Color(0xFF00C853), modifier = Modifier.size(20.dp))
+                                Icon(AppleSvgIcons.Location, contentDescription = "Position", tint = palette.secondary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
-                                Text(text = "Position partagée 📍", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00C853))
+                                Text(text = "Position partagée", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.secondary)
                                 Text(text = message.content, fontSize = 13.sp, color = TextPrimary)
                             }
                         }
@@ -1519,10 +1970,24 @@ private fun MessageBubble(
 
             "contact" -> {
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = CardDarkElevated,
-                    border = BorderStroke(1.dp, Color(0xFF00BCD4).copy(alpha = 0.4f)),
-                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
+                    shape = bubbleShape,
+                    color = palette.surfaceElevated,
+                    border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
+                        .clip(bubbleShape)
+                        .clickable {
+                            val rawNumber = (message.mediaUrl ?: message.content).filter { it.isDigit() || it == '+' }
+                            if (rawNumber.isNotBlank()) {
+                                try {
+                                    context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$rawNumber")))
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "Numéro : $rawNumber", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "Aucun numéro détecté", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -1532,14 +1997,14 @@ private fun MessageBubble(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF00BCD4).copy(alpha = 0.2f)),
+                                .background(palette.accentSoft),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Person, contentDescription = null, tint = Color(0xFF00BCD4), modifier = Modifier.size(22.dp))
+                            Icon(AppleSvgIcons.Contact, contentDescription = "Contact", tint = palette.accent, modifier = Modifier.size(21.dp))
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(text = "Fiche Contact 👤", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = "Fiche Contact • Appeler", fontSize = 11.sp, color = palette.accent)
                             Text(text = message.content, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         }
                     }
@@ -1548,10 +2013,24 @@ private fun MessageBubble(
 
             "document" -> {
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = CardDarkElevated,
-                    border = BorderStroke(1.dp, Color(0xFF7E57C2).copy(alpha = 0.4f)),
-                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
+                    shape = bubbleShape,
+                    color = palette.surfaceElevated,
+                    border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
+                        .clip(bubbleShape)
+                        .clickable {
+                            val docUrl = message.mediaUrl
+                            if (!docUrl.isNullOrBlank()) {
+                                try {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(docUrl)))
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "Impossible d'ouvrir ce fichier", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "Lien du document indisponible", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -1561,14 +2040,14 @@ private fun MessageBubble(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF7E57C2).copy(alpha = 0.2f)),
+                                .background(palette.accentSoft),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.AutoMirrored.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF7E57C2), modifier = Modifier.size(22.dp))
+                            Icon(AppleSvgIcons.Document, contentDescription = "Document", tint = palette.accent, modifier = Modifier.size(21.dp))
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(text = "Document chiffré 📄", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = "Document partagé • Ouvrir", fontSize = 11.sp, color = TextSecondary)
                             Text(text = message.content, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                         }
                     }
@@ -1651,7 +2130,8 @@ private fun MessageBubble(
                     message = message,
                     isSender = isSender,
                     timeFormatted = timeFormatted,
-                    reactionsMap = reactionsMap
+                    groupedReactions = groupedReactions,
+                    onToggleReaction = onToggleReaction
                 )
             }
 
@@ -1661,7 +2141,8 @@ private fun MessageBubble(
                     repository = repository,
                     isSender = isSender,
                     timeFormatted = timeFormatted,
-                    reactionsMap = reactionsMap
+                    groupedReactions = groupedReactions,
+                    onToggleReaction = onToggleReaction
                 )
             }
 
@@ -1971,82 +2452,81 @@ private fun MessageBubble(
             }
 
             else -> {
-                // Text Message Bubble
-                Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
-                    val bubbleColors = when (userSettings.bubbleStyle) {
-                        "neon_cyan" -> listOf(Color(0xFF00B4D8), Color(0xFF0077B6))
-                        "dark_gold" -> listOf(Color(0xFFFFB703), Color(0xFFFB8500))
-                        "emerald_luxury" -> listOf(Color(0xFF2EC4B6), Color(0xFF0E7490))
-                        "frosted_glass" -> if (userSettings.isDarkMode) listOf(Color(0x44FFFFFF), Color(0x22FFFFFF)) else listOf(Color(0x99FFFFFF), Color(0x66FFFFFF))
-                        else -> listOf(Color(0xFFE91E63), Color(0xFFAD1457)) // default "gradient_pink"
+                // Text Message Bubble with clickable URLs + Search Match Highlight + Grouped Reactions
+                val linkColor = if (isSender && !resolvedBubble.outlined) Color(0xFFBDF7DF) else palette.secondary
+                val searchBg = palette.secondary.copy(alpha = 0.35f)
+                val richText = remember(message.content, searchHighlightQuery, linkColor, searchBg) {
+                    val content = message.content
+                    val urlRanges = ChatTextHelpers.findUrlRanges(content)
+                    val searchRanges = ChatTextHelpers.findSearchRanges(content, searchHighlightQuery)
+                    buildAnnotatedString {
+                        append(content)
+                        urlRanges.forEach { range ->
+                            val rawUrl = content.substring(range.first, range.last + 1)
+                            addLink(
+                                url = LinkAnnotation.Url(
+                                    url = ChatTextHelpers.normalizeUrl(rawUrl),
+                                    styles = TextLinkStyles(
+                                        style = SpanStyle(
+                                            color = linkColor,
+                                            textDecoration = TextDecoration.Underline,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    )
+                                ),
+                                start = range.first,
+                                end = range.last + 1
+                            )
+                        }
+                        searchRanges.forEach { range ->
+                            addStyle(
+                                style = SpanStyle(
+                                    background = searchBg,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                start = range.first,
+                                end = range.last + 1
+                            )
+                        }
                     }
-
+                }
+                Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
                     Surface(
-                        shape = RoundedCornerShape(
-                            topStart = 18.dp,
-                            topEnd = 18.dp,
-                            bottomStart = if (isSender) 18.dp else 4.dp,
-                            bottomEnd = if (isSender) 4.dp else 18.dp
-                        ),
-                        color = Color.Transparent,
-                        border = BorderStroke(
-                            width = 1.dp,
-                            color = if (userSettings.bubbleStyle == "frosted_glass") Color.White.copy(alpha = 0.4f) else Color.Transparent
-                        ),
+                        shape = bubbleShape,
+                        color = resolvedBubble.background,
+                        border = if (resolvedBubble.outlined) BorderStroke(0.5.dp, palette.borderStrong) else null,
                         modifier = Modifier.widthIn(min = minOf(80.dp, bubbleMaxWidth), max = bubbleMaxWidth)
                     ) {
                         Column(
-                            modifier = if (isSender) {
-                                Modifier.background(Brush.linearGradient(bubbleColors))
-                            } else {
-                                Modifier.background(if (userSettings.isDarkMode) ChatBubbleReceiver else Color(0xFFE5E7EB))
-                            }.padding(horizontal = 14.dp, vertical = 10.dp)
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                         ) {
                             Text(
-                                text = message.content,
+                                text = richText,
                                 fontSize = 14.sp,
-                                color = if (isSender) Color.White else (if (userSettings.isDarkMode) TextPrimary else Color(0xFF1F2937)),
+                                color = resolvedBubble.text,
                                 lineHeight = 20.sp
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    ReactionsBadgeRow(
+                        reactions = groupedReactions,
+                        onToggleReaction = onToggleReaction
+                    )
 
-                    // Persistent Emoji Reactions Row (Positioned clearly below the bubble)
-                    if (reactionsMap.isNotEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = CardDarkElevated,
-                            border = BorderStroke(1.dp, BorderSubtleWhite),
-                            shadowElevation = 3.dp,
-                            modifier = Modifier.padding(bottom = 3.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                reactionsMap.forEach { emoji ->
-                                    Text(text = emoji, fontSize = 14.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    // Timestamp and Delivery Checks Status
+                    Spacer(modifier = Modifier.height(2.dp))
                     Row(
                         modifier = Modifier.padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (message.isStarred) {
-                            Icon(Icons.Rounded.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
+                            Icon(AppleSvgIcons.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
                         }
                         if (message.editedAt != null) {
-                            Text(text = "modifié", fontSize = 10.sp, color = TimeStampMuted)
+                            Text(text = "modifié", fontSize = 10.sp, color = palette.textMuted)
                         }
-                        Text(text = timeFormatted, fontSize = 11.sp, color = TimeStampMuted)
+                        Text(text = timeFormatted, fontSize = 11.sp, color = palette.textMuted)
                         if (isSender) {
                             MessageStatusIndicator(status = message.status)
                         }
@@ -2061,8 +2541,8 @@ private fun MessageBubble(
         Dialog(onDismissRequest = { showCustomEmojiDialog = false }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = CardModalSurface,
-                border = BorderStroke(1.dp, MatteSquircleBorder),
+                color = palette.modal,
+                border = BorderStroke(0.5.dp, palette.borderStrong),
                 shadowElevation = 12.dp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2079,10 +2559,10 @@ private fun MessageBubble(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Réagir avec un émoji ✨",
+                            text = "Réagir avec un émoji",
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            fontWeight = FontWeight.SemiBold,
+                            color = palette.textPrimary
                         )
                     }
                     EmojiPicker(
@@ -2105,7 +2585,8 @@ fun ImageMessageItem(
     message: MessageEntity,
     isSender: Boolean,
     timeFormatted: String,
-    reactionsMap: List<String> = emptyList(),
+    groupedReactions: List<GroupedReaction> = emptyList(),
+    onToggleReaction: (String) -> Unit = {},
     onRetryMedia: () -> Unit,
     onViewOnceOpened: () -> Unit
 ) {
@@ -2284,26 +2765,10 @@ fun ImageMessageItem(
         }
 
         // Persistent Emoji Reactions Row
-        if (reactionsMap.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(3.dp))
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = CardDarkElevated,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
-                shadowElevation = 3.dp,
-                modifier = Modifier.padding(bottom = 2.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    reactionsMap.forEach { emoji ->
-                        Text(text = emoji, fontSize = 14.sp)
-                    }
-                }
-            }
-        }
+        ReactionsBadgeRow(
+            reactions = groupedReactions,
+            onToggleReaction = onToggleReaction
+        )
 
         Spacer(modifier = Modifier.height(3.dp))
         Row(
@@ -2312,12 +2777,12 @@ fun ImageMessageItem(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (message.isStarred) {
-                Icon(Icons.Rounded.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
+                Icon(AppleSvgIcons.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
             }
             Text(
                 text = timeFormatted,
                 fontSize = 11.sp,
-                color = TimeStampMuted
+                color = MikayalaColors.textMuted
             )
             if (isSender) {
                 MessageStatusIndicator(status = message.status)
@@ -2339,7 +2804,8 @@ fun VideoMessageItem(
     message: MessageEntity,
     isSender: Boolean,
     timeFormatted: String,
-    reactionsMap: List<String> = emptyList(),
+    groupedReactions: List<GroupedReaction> = emptyList(),
+    onToggleReaction: (String) -> Unit = {},
     onRetryMedia: () -> Unit
 ) {
     var showFullScreenVideo by remember { mutableStateOf(false) }
@@ -2459,26 +2925,10 @@ fun VideoMessageItem(
         }
 
         // Persistent Emoji Reactions Row
-        if (reactionsMap.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(3.dp))
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = CardDarkElevated,
-                border = BorderStroke(1.dp, BorderSubtleWhite),
-                shadowElevation = 3.dp,
-                modifier = Modifier.padding(bottom = 2.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    reactionsMap.forEach { emoji ->
-                        Text(text = emoji, fontSize = 14.sp)
-                    }
-                }
-            }
-        }
+        ReactionsBadgeRow(
+            reactions = groupedReactions,
+            onToggleReaction = onToggleReaction
+        )
 
         Spacer(modifier = Modifier.height(3.dp))
         Row(
@@ -2487,12 +2937,12 @@ fun VideoMessageItem(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (message.isStarred) {
-                Icon(Icons.Rounded.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
+                Icon(AppleSvgIcons.Star, contentDescription = "Favori", tint = AccentGold, modifier = Modifier.size(11.dp))
             }
             Text(
                 text = timeFormatted,
                 fontSize = 11.sp,
-                color = TimeStampMuted
+                color = MikayalaColors.textMuted
             )
             if (isSender) {
                 MessageStatusIndicator(status = message.status)
@@ -2515,6 +2965,13 @@ fun FullScreenPhotoDialog(
     onDismiss: () -> Unit
 ) {
     var loadError by remember { mutableStateOf(false) }
+    var scale by remember { mutableFloatStateOf(1f) }
+    var panOffset by remember { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
+        scale = nextScale
+        panOffset = if (nextScale > 1.02f) panOffset + offsetChange else Offset.Zero
+    }
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
@@ -2523,7 +2980,20 @@ fun FullScreenPhotoDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black),
+                .background(Color.Black)
+                .transformable(state = transformState)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (scale > 1.2f) {
+                                scale = 1f
+                                panOffset = Offset.Zero
+                            } else {
+                                scale = 2.5f
+                            }
+                        }
+                    )
+                },
             contentAlignment = Alignment.Center
         ) {
             coil.compose.AsyncImage(
@@ -2537,7 +3007,14 @@ fun FullScreenPhotoDialog(
                 onSuccess = {
                     loadError = false
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = panOffset.x
+                        translationY = panOffset.y
+                    }
             )
 
             if (loadError) {
@@ -2550,13 +3027,13 @@ fun FullScreenPhotoDialog(
                 ) {
                     Icon(Icons.Rounded.BrokenImage, contentDescription = null, tint = AccentRose, modifier = Modifier.size(36.dp))
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Impossible de charger la photo", color = TextPrimary, fontSize = 13.sp)
+                    Text("Impossible de charger la photo", color = Color.White, fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = onRetry,
-                        colors = ButtonDefaults.buttonColors(containerColor = VibrantCyan)
+                        colors = ButtonDefaults.buttonColors(containerColor = MikayalaColors.secondary)
                     ) {
-                        Text("Recharger l'image 🔄", color = Color.White, fontSize = 12.sp)
+                        Text("Recharger l'image", color = Color.White, fontSize = 12.sp)
                     }
                 }
             }
@@ -2565,13 +3042,16 @@ fun FullScreenPhotoDialog(
                 onClick = onDismiss,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
+                    .statusBarsPadding()
                     .padding(16.dp)
+                    .size(48.dp)
                     .background(Color.Black.copy(alpha = 0.6f), CircleShape)
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Close,
+                    imageVector = AppleSvgIcons.Close,
                     contentDescription = "Fermer",
-                    tint = Color.White
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -2711,7 +3191,8 @@ fun WheelOfFortuneMessageItem(
     repository: MikayalaRepository,
     isSender: Boolean,
     timeFormatted: String,
-    reactionsMap: List<String> = emptyList()
+    groupedReactions: List<GroupedReaction> = emptyList(),
+    onToggleReaction: (String) -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
     val baseMedia = remember(message.mediaUrl) {
@@ -2728,9 +3209,13 @@ fun WheelOfFortuneMessageItem(
     val spinCount = remember(message.mediaUrl) { ChatGames.wheelSpinCount(message.mediaUrl) }
     val wheelContext = LocalContext.current
 
-    // Rotation : à l'affichage, la roue est DIRECTEMENT sur le dernier résultat (aucune animation).
-    // Avant : elle se « réalignait » en tournant 3,5 s à chaque affichage, et la fin de CETTE animation
-    // enregistrait un nouveau coup → notification → la roue tournait chez le partenaire → boucle.
+    val wheelColors = remember {
+        listOf(
+            Color(0xFF7B3FF2), Color(0xFF10B981), Color(0xFFF59E0B),
+            Color(0xFF9C27B0), Color(0xFF00C853), Color(0xFFEC4899)
+        )
+    }
+
     val rotation = remember {
         androidx.compose.animation.core.Animatable(
             if (syncedResultIndex != null && syncedResultIndex in items.indices)
@@ -2741,7 +3226,6 @@ fun WheelOfFortuneMessageItem(
     var isSpinning by remember { mutableStateOf(false) }
     var requestPending by remember { mutableStateOf(false) }
 
-    // Un NOUVEAU tour (le mien ou celui du partenaire) : même animation vers le même résultat
     LaunchedEffect(spinCount, syncedResultIndex) {
         val idx = syncedResultIndex
         if (spinCount > lastShownSpin && idx != null && idx in items.indices) {
@@ -2756,10 +3240,9 @@ fun WheelOfFortuneMessageItem(
             )
             isSpinning = false
         } else if (spinCount < lastShownSpin) {
-            lastShownSpin = spinCount // état rétabli (coup refusé)
+            lastShownSpin = spinCount
         }
     }
-    val animatedRotation = rotation.value
 
     val currentResultLabel = remember(syncedResultIndex, items) {
         if (syncedResultIndex != null && syncedResultIndex in items.indices) {
@@ -2767,127 +3250,126 @@ fun WheelOfFortuneMessageItem(
         } else null
     }
 
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = CardDarkElevated,
-        border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color(0xFFFF007F), Color(0xFF7928CA)))),
-        modifier = Modifier.widthIn(min = 250.dp, max = 310.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+    val c = MikayalaColors
+
+    Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = c.surfaceElevated,
+            border = BorderStroke(0.5.dp, Brush.linearGradient(listOf(c.accent, c.secondary))),
+            modifier = Modifier.widthIn(min = 250.dp, max = 310.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Casino, contentDescription = null, tint = Color(0xFFFF007F), modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Roue de la Fortune d'Amour 🎡",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFF007F)
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Box(
-                modifier = Modifier.size(160.dp),
-                contentAlignment = Alignment.Center
+            Column(
+                modifier = Modifier.padding(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .rotate(animatedRotation)
-                ) {
-                    val sweepAngle = 360f / items.size
-                    val colors = listOf(
-                        Color(0xFFFF2D55), Color(0xFF00B4D8), Color(0xFFFFD600),
-                        Color(0xFF9C27B0), Color(0xFF00C853), Color(0xFFFF9100)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Casino, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Roue de la Fortune",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = c.accent
                     )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
 
-                    items.forEachIndexed { index, _ ->
-                        drawArc(
-                            color = colors[index % colors.size],
-                            startAngle = index * sweepAngle - 90f,
-                            sweepAngle = sweepAngle,
-                            useCenter = true
+                Box(
+                    modifier = Modifier.size(160.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { rotationZ = rotation.value }
+                    ) {
+                        val sweepAngle = 360f / items.size
+                        items.forEachIndexed { index, _ ->
+                            drawArc(
+                                color = wheelColors[index % wheelColors.size],
+                                startAngle = index * sweepAngle - 90f,
+                                sweepAngle = sweepAngle,
+                                useCenter = true
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = CircleShape,
+                        color = c.modal,
+                        border = BorderStroke(2.dp, Color.White),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = "💖", fontSize = 18.sp)
+                        }
+                    }
+
+                    Icon(
+                        imageVector = Icons.Rounded.ArrowDropDown,
+                        contentDescription = null,
+                        tint = c.textPrimary,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .align(Alignment.TopCenter)
+                            .offset(y = (-10).dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (currentResultLabel != null && !isSpinning) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = c.secondarySoft,
+                        border = BorderStroke(0.5.dp, c.secondary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Résultat : $currentResultLabel",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.textPrimary,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(10.dp)
                         )
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                Surface(
-                    shape = CircleShape,
-                    color = CardDarkElevated,
-                    border = BorderStroke(2.dp, Color.White),
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(text = "💖", fontSize = 18.sp)
-                    }
-                }
-
-                Icon(
-                    imageVector = Icons.Rounded.ArrowDropDown,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .align(Alignment.TopCenter)
-                        .offset(y = (-10).dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (currentResultLabel != null && !isSpinning) {
-                Surface(
+                val hasAlreadySpun = syncedResultIndex != null
+                Button(
+                    onClick = {
+                        if (!isSpinning && !requestPending) {
+                            requestPending = true
+                            val idx = items.indices.random()
+                            coroutineScope.launch {
+                                val ok = repository.playGameMove(message.id, ChatGames.wheelSpin(message.mediaUrl, idx), "Roue de la Fortune")
+                                requestPending = false
+                                if (!ok) Toast.makeText(wheelContext, "Tour non enregistré : vérifiez la connexion", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = !isSpinning && !requestPending,
+                    colors = ButtonDefaults.buttonColors(containerColor = c.accent),
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0x33FF007F),
-                    border = BorderStroke(1.dp, Color(0xFFFF007F)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Résultat : $currentResultLabel 🎉",
+                        text = when {
+                            isSpinning || requestPending -> "La roue tourne…"
+                            hasAlreadySpun -> "Rejouer"
+                            else -> "Tourner la roue"
+                        },
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(10.dp)
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            val hasAlreadySpun = syncedResultIndex != null
-            Button(
-                onClick = {
-                    if (!isSpinning && !requestPending) {
-                        // Résultat tiré maintenant, enregistré, puis animé sur les deux téléphones
-                        requestPending = true
-                        val idx = items.indices.random()
-                        coroutineScope.launch {
-                            val ok = repository.playGameMove(message.id, ChatGames.wheelSpin(message.mediaUrl, idx), "Roue de la Fortune")
-                            requestPending = false
-                            if (!ok) Toast.makeText(wheelContext, "Tour non enregistré : vérifiez la connexion", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                enabled = !isSpinning && !requestPending,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF007F)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = when {
-                        isSpinning || requestPending -> "La roue tourne... 🎡"
-                        hasAlreadySpun -> "Rejouer la Roue ! 🎡"
-                        else -> "Tourner la Roue ! 🎡"
-                    },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
             }
         }
+        ReactionsBadgeRow(reactions = groupedReactions, onToggleReaction = onToggleReaction)
     }
 }
 
@@ -2896,98 +3378,77 @@ fun CalendarEventMessageItem(
     message: MessageEntity,
     isSender: Boolean,
     timeFormatted: String,
-    reactionsMap: List<String> = emptyList()
+    groupedReactions: List<GroupedReaction> = emptyList(),
+    onToggleReaction: (String) -> Unit = {}
 ) {
-    var isConfirmed by remember { mutableStateOf(false) }
+    var isConfirmed by remember(message.id) { mutableStateOf(false) }
+    val c = MikayalaColors
 
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = CardDarkElevated,
-        border = BorderStroke(1.dp, Color(0xFFE91E63).copy(alpha = 0.5f)),
-        modifier = Modifier.widthIn(min = 240.dp, max = 300.dp)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFFE91E63).copy(alpha = 0.2f),
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.Event,
-                            contentDescription = null,
-                            tint = Color(0xFFE91E63),
-                            modifier = Modifier.size(20.dp)
+    Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = c.surfaceElevated,
+            border = BorderStroke(0.5.dp, c.accent.copy(alpha = 0.45f)),
+            modifier = Modifier.widthIn(min = 240.dp, max = 300.dp)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = c.accentSoft,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = AppleSvgIcons.Calendar,
+                                contentDescription = null,
+                                tint = c.accent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Événement de Couple",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.accent
+                        )
+                        Text(
+                            text = message.content,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.textPrimary
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = "Événement de Couple 📅",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFE91E63)
-                    )
-                    Text(
-                        text = message.content,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0x22141C2B),
-                border = BorderStroke(1.dp, BorderSubtleWhite),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Button(
+                    onClick = { isConfirmed = !isConfirmed },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isConfirmed) c.secondary else c.accent),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Schedule, contentDescription = null, tint = VibrantCyan, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "Prochainement", fontSize = 11.sp, color = TextPrimary)
-                    }
+                    Icon(
+                        imageVector = if (isConfirmed) AppleSvgIcons.Check else AppleSvgIcons.Plus,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isConfirmed) "Confirmé ✅" else "En attente ⏳",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isConfirmed) Color(0xFF00C853) else AccentGold
+                        text = if (isConfirmed) "Confirmé dans la conversation" else "Confirmer le rendez-vous",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Button(
-                onClick = { isConfirmed = !isConfirmed },
-                colors = ButtonDefaults.buttonColors(containerColor = if (isConfirmed) Color(0xFF00C853) else Color(0xFFE91E63)),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = if (isConfirmed) Icons.Rounded.CheckCircle else Icons.Rounded.Add,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (isConfirmed) "Inscrit à l'agenda de couple" else "Ajouter à mon agenda 📅",
-                    fontSize = 11.sp,
-                    color = Color.White
-                )
             }
         }
+        ReactionsBadgeRow(reactions = groupedReactions, onToggleReaction = onToggleReaction)
     }
 }
 

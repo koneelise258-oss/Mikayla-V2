@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mikayala.theme.*
+import com.example.mikayala.ui.icons.AppleSvgIcons
 import com.example.mikayala.utils.VoiceNoteManager
 import com.example.mikayala.utils.VoiceNoteState
 import java.io.File
@@ -117,12 +118,12 @@ fun VoiceNoteRecorder(
     ) {
         // Main Container (Capsule normale OU Barre d'enregistrement)
         Surface(
-            color = Color(0x381E2A3A),
+            color = MikayalaColors.surfaceElevated,
             shape = RoundedCornerShape(26.dp),
             border = BorderStroke(
                 1.dp,
-                if (recordingState == VoiceNoteState.RECORDING) AccentRose.copy(alpha = 0.5f)
-                else Color.White.copy(alpha = 0.12f)
+                if (recordingState == VoiceNoteState.RECORDING) MikayalaColors.accent.copy(alpha = 0.6f)
+                else MikayalaColors.border
             ),
             modifier = Modifier.weight(1f)
         ) {
@@ -140,14 +141,14 @@ fun VoiceNoteRecorder(
                         IconButton(
                             onClick = onEmojiClick,
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(42.dp)
                                 .testTag("chat_emoji_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.SentimentSatisfiedAlt,
+                                imageVector = AppleSvgIcons.Emoji,
                                 contentDescription = "Emojis",
-                                tint = if (showEmojiBar) VibrantCyan else TextSecondary,
-                                modifier = Modifier.size(24.dp)
+                                tint = if (showEmojiBar) MikayalaColors.secondary else TextSecondary,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
 
@@ -169,7 +170,7 @@ fun VoiceNoteRecorder(
                                 unfocusedIndicatorColor = Color.Transparent,
                                 focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary,
-                                cursorColor = VibrantCyan
+                                cursorColor = MikayalaColors.accent
                             ),
                             modifier = Modifier
                                 .weight(1f)
@@ -180,67 +181,66 @@ fun VoiceNoteRecorder(
                         IconButton(
                             onClick = onAttachmentClick,
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(42.dp)
                                 .testTag("chat_attachment_trombone_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.AttachFile,
+                                imageVector = AppleSvgIcons.Paperclip,
                                 contentDescription = "Pièces jointes et jeux",
                                 tint = TextSecondary,
                                 modifier = Modifier
-                                    .size(22.dp)
-                                    .rotate(-45f)
+                                    .size(20.dp)
+                                    .rotate(-35f)
                             )
                         }
 
                         IconButton(
                             onClick = onCameraClick,
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(42.dp)
                                 .testTag("chat_camera_quick_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.PhotoCamera,
+                                imageVector = AppleSvgIcons.Camera,
                                 contentDescription = "Caméra",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(22.dp)
+                                tint = MikayalaColors.accent,
+                                modifier = Modifier.size(21.dp)
                             )
                         }
                     }
                 }
 
                 VoiceNoteState.RECORDING -> {
-                    // ==========================================
-                    // 2. ÉTAT ENREGISTREMENT (Appui maintenu)
-                    // ==========================================
+                    val c = MikayalaColors
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Point rouge clignotant / micro qui pulse
                         Box(
                             modifier = Modifier
-                                .size(12.dp)
-                                .scale(pulseScale)
+                                .size(10.dp)
+                                .graphicsLayer {
+                                    scaleX = pulseScale
+                                    scaleY = pulseScale
+                                    alpha = pulseAlpha
+                                }
                                 .clip(CircleShape)
-                                .background(AccentRose.copy(alpha = pulseAlpha))
+                                .background(c.danger)
                         )
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // Timer en temps réel
                         Text(
                             text = String.format("%02d:%02d", durationSeconds / 60, durationSeconds % 60),
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.textPrimary
                         )
 
                         Spacer(modifier = Modifier.width(10.dp))
 
-                        // Waveform temps réel basée sur le volume de la voix
                         Row(
                             modifier = Modifier
                                 .weight(1f)
@@ -256,33 +256,30 @@ fun VoiceNoteRecorder(
                                         .weight(1f)
                                         .height(barHeight)
                                         .clip(RoundedCornerShape(2.dp))
-                                        .background(
-                                            AccentRose
-                                        )
+                                        .background(c.danger)
                                 )
                             }
                         }
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // Flèche glisser pour annuler (se déplace vers la gauche avec le doigt)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.offset {
-                                IntOffset(dragOffsetX.toInt().coerceIn(-cancelThresholdPx.toInt(), 0), 0)
+                            modifier = Modifier.graphicsLayer {
+                                translationX = dragOffsetX.coerceIn(-cancelThresholdPx, 0f)
                             }
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                                 contentDescription = null,
-                                tint = TextSecondary,
+                                tint = c.textSecondary,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Glisser pour annuler",
+                                text = "Annuler",
                                 fontSize = 11.sp,
-                                color = TextSecondary,
+                                color = c.textSecondary,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -305,13 +302,13 @@ fun VoiceNoteRecorder(
                                 manager.cancelRecording()
                                 Toast.makeText(context, "Enregistrement annulé", Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Delete,
+                                imageVector = AppleSvgIcons.Trash,
                                 contentDescription = "Supprimer",
-                                tint = Color(0xFFC4605C),
-                                modifier = Modifier.size(22.dp)
+                                tint = MikayalaColors.danger,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
@@ -398,19 +395,20 @@ fun VoiceNoteRecorder(
             // Cadenas flottant au-dessus du micro pendant l'appui
             androidx.compose.animation.AnimatedVisibility(
                 visible = recordingState == VoiceNoteState.RECORDING,
-                enter = fadeIn() + slideInVertically { it / 2 },
-                exit = fadeOut() + slideOutVertically { it / 2 }
+                enter = fadeIn(tween(150)) + slideInVertically(tween(180)) { it / 3 },
+                exit = fadeOut(tween(120)) + slideOutVertically(tween(150)) { it / 3 }
             ) {
+                val c = MikayalaColors
                 Surface(
                     shape = RoundedCornerShape(18.dp),
-                    color = CardDarkElevated,
+                    color = c.modal,
                     border = BorderStroke(
-                        1.dp,
-                        if (isLockThresholdMet) AccentRose else VibrantCyan
+                        0.5.dp,
+                        if (isLockThresholdMet) c.accent else c.borderStrong
                     ),
-                    shadowElevation = 1.dp,
+                    shadowElevation = 2.dp,
                     modifier = Modifier
-                        .offset(y = (-64).dp)
+                        .graphicsLayer { translationY = with(density) { (-62).dp.toPx() } }
                         .padding(bottom = 6.dp)
                 ) {
                     Column(
@@ -418,21 +416,23 @@ fun VoiceNoteRecorder(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
-                            imageVector = if (isLockThresholdMet) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
+                            imageVector = if (isLockThresholdMet) AppleSvgIcons.LockOpen else AppleSvgIcons.Lock,
                             contentDescription = "Verrouiller",
-                            tint = if (isLockThresholdMet) AccentRose else VibrantCyan,
+                            tint = if (isLockThresholdMet) c.accent else c.secondary,
                             modifier = Modifier
                                 .size(16.dp)
                                 .graphicsLayer {
-                                    if (isLockThresholdMet) scaleX = 1.15f
+                                    val s = if (isLockThresholdMet) 1.15f else 1f
+                                    scaleX = s
+                                    scaleY = s
                                 }
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (isLockThresholdMet) "Relâcher" else "Glisser 🔒",
+                            text = if (isLockThresholdMet) "Relâcher" else "Verrouiller",
                             fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isLockThresholdMet) AccentRose else TextSecondary
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isLockThresholdMet) c.accent else c.textSecondary
                         )
                     }
                 }
@@ -442,9 +442,10 @@ fun VoiceNoteRecorder(
             Surface(
                 shape = CircleShape,
                 color = Color.Transparent,
-                shadowElevation = 1.dp,
+                shadowElevation = 2.dp,
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(48.dp)
+                    .testTag("chat_send_or_mic_button")
                     // Gestion gestuelle WhatsApp (Hold & Drag) quand il n'y a pas de texte tapé
                     .then(
                         if (textInput.isBlank()) {
@@ -564,9 +565,11 @@ fun VoiceNoteRecorder(
                         .fillMaxSize()
                         .background(
                             when {
-                                // Bouton d'envoi / micro : rose poudré uni (lavande pendant un enregistrement verrouillé)
-                                recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED -> androidx.compose.ui.graphics.SolidColor(AccentViolet)
-                                else -> androidx.compose.ui.graphics.SolidColor(AccentRose)
+                                recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED ->
+                                    androidx.compose.ui.graphics.SolidColor(MikayalaColors.accent)
+                                textInput.isNotBlank() ->
+                                    androidx.compose.ui.graphics.SolidColor(MikayalaColors.secondary)
+                                else -> androidx.compose.ui.graphics.SolidColor(MikayalaColors.secondary)
                             }
                         )
                         .clickable(
@@ -578,20 +581,28 @@ fun VoiceNoteRecorder(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = when {
-                            textInput.isNotBlank() || recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED -> Icons.AutoMirrored.Rounded.Send
-                            else -> Icons.Rounded.Mic
+                    AnimatedContent(
+                        targetState = textInput.isNotBlank() || recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED,
+                        transitionSpec = {
+                            (fadeIn(tween(140)) + scaleIn(tween(140), initialScale = 0.82f)) togetherWith
+                                (fadeOut(tween(110)) + scaleOut(tween(110), targetScale = 0.82f))
                         },
-                        contentDescription = if (textInput.isNotBlank() || recordingState == VoiceNoteState.LOCKED || recordingState == VoiceNoteState.PAUSED) "Envoyer" else "Note vocale",
-                        tint = TextPrimary,
-                        modifier = Modifier
-                            .size(22.dp)
-                            .then(
-                                if (recordingState == VoiceNoteState.RECORDING) Modifier.scale(pulseScale)
-                                else Modifier
-                            )
-                    )
+                        label = "send_mic_icon"
+                    ) { isSend ->
+                        Icon(
+                            imageVector = if (isSend) AppleSvgIcons.Send else AppleSvgIcons.Mic,
+                            contentDescription = if (isSend) "Envoyer" else "Note vocale",
+                            tint = Color.White,
+                            modifier = Modifier
+                                .size(21.dp)
+                                .graphicsLayer {
+                                    if (!isSend && recordingState == VoiceNoteState.RECORDING) {
+                                        scaleX = pulseScale
+                                        scaleY = pulseScale
+                                    }
+                                }
+                        )
+                    }
                 }
             }
         }

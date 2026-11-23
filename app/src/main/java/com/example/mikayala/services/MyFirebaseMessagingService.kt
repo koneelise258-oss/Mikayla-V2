@@ -3,6 +3,9 @@ package com.example.mikayala.services
 import android.content.Context
 import android.util.Log
 import com.example.mikayala.data.SupabaseService
+import com.example.mikayala.data.UiPreferencesStore
+import com.example.mikayala.data.firebase.FirebaseService
+import com.example.mikayala.data.model.UserSettingsEntity
 import com.example.mikayala.util.NotificationHelper
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -10,14 +13,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Service de réception des notifications push Firebase Cloud Messaging (FCM).
- * - Réutilise l'instance authentifiée unique de SupabaseService.
+ * - Gère dynamiquement Firebase (backend principal) et Supabase (secondaire).
  * - Ne consigne jamais les jetons FCM complets dans les logs (masquage systématique).
- * - Met à jour la table sécurisée public.device_push_tokens dès qu'une session authentifiée est active.
+ * - Synchronise le jeton FCM sur /users/{uid}.fcmToken (Firebase) ou device_push_tokens (Supabase).
  * - Gère les états d'application : premier plan, arrière-plan et état tué.
  */
 class MyFirebaseMessagingService : FirebaseMessagingService() {
@@ -130,8 +131,17 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             prefs.commit()
         }
 
+        private fun isFirebaseBackend(context: Context): Boolean {
+            val prefs = context.applicationContext.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
+            return UiPreferencesStore.load(prefs, UserSettingsEntity()).backendProvider == "firebase"
+        }
+
         fun getPendingUnregistrationInfo(context: Context): Pair<String, String>? {
-            val uid = SupabaseService.getInstance().getCurrentSessionUid()
+            val uid = if (isFirebaseBackend(context)) {
+                FirebaseService.getInstance(context).getCurrentSessionUid()
+            } else {
+                SupabaseService.getInstance().getCurrentSessionUid()
+            }
             val list = getPendingUnregistrations(context)
             if (!uid.isNullOrBlank()) {
                 val match = list.firstOrNull { it.second == uid }
@@ -171,12 +181,27 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     }
                 }
             }
-            val supabase = SupabaseService.getInstance()
             val api = object : SupabasePushApi {
-                override fun getCurrentSessionUid(): String? = supabase.getCurrentSessionUid()
-                override suspend fun upsertDevicePushToken(fcmToken: String): Boolean =
-                    supabase.upsertDevicePushToken(fcmToken, installationSecret = DeviceInstallation.secret(appContext))
-                override suspend fun deleteDevicePushToken(fcmToken: String): Boolean = supabase.deleteDevicePushToken(fcmToken)
+                override fun getCurrentSessionUid(): String? = if (isFirebaseBackend(appContext)) {
+                    FirebaseService.getInstance(appContext).getCurrentSessionUid()
+                } else {
+                    SupabaseService.getInstance().getCurrentSessionUid()
+                }
+
+                override suspend fun upsertDevicePushToken(fcmToken: String): Boolean = if (isFirebaseBackend(appContext)) {
+                    FirebaseService.getInstance(appContext).upsertDevicePushToken(fcmToken)
+                } else {
+                    SupabaseService.getInstance().upsertDevicePushToken(
+                        fcmToken,
+                        installationSecret = DeviceInstallation.secret(appContext)
+                    )
+                }
+
+                override suspend fun deleteDevicePushToken(fcmToken: String): Boolean = if (isFirebaseBackend(appContext)) {
+                    FirebaseService.getInstance(appContext).deleteDevicePushToken(fcmToken)
+                } else {
+                    SupabaseService.getInstance().deleteDevicePushToken(fcmToken)
+                }
             }
             return FcmTokenSyncEngine.getInstance(storage, fetcher, api)
         }
@@ -277,16 +302,23 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             val coupleId = data["coupleId"] ?: data["couple_id"] ?: ""
             val senderId = data["senderId"] ?: data["sender_id"]
 
-            // Application fermée : Android vient de démarrer le processus pour ce message, et la session
-            // enregistrée n'est pas encore rechargée. Avant, currentUid valait null ici et la notification
-            // était IGNORÉE (« aucune session active ») : rien n'arrivait quand l'app était fermée.
-            // onMessageReceived tourne sur un fil d'arrière-plan : une attente courte est autorisée.
+            val useFirebase = isFirebaseBackend(applicationContext)
+            // Application fermée : attendre le rechargement de la session avant de lire currentUid
             try {
-                kotlinx.coroutines.runBlocking { SupabaseService.getInstance().awaitSessionReady(5_000L) }
+                kotlinx.coroutines.runBlocking {
+                    if (useFirebase) {
+                        FirebaseService.getInstance(applicationContext).awaitSessionReady(3_000L)
+                    } else {
+                        SupabaseService.getInstance().awaitSessionReady(5_000L)
+                    }
+                }
             } catch (_: Exception) {}
 
             // Ne jamais notifier l'utilisateur de ses propres messages
-            val currentUid = try { SupabaseService.getInstance().getCurrentSessionUid() } catch (_: Exception) { null }
+            val currentUid = try {
+                if (useFirebase) FirebaseService.getInstance(applicationContext).getCurrentSessionUid()
+                else SupabaseService.getInstance().getCurrentSessionUid()
+            } catch (_: Exception) { null }
             if (shouldIgnoreNotification(currentUid, senderId)) {
                 Log.d("FCM_MSG", "Notification ignorée : l'expéditeur est l'utilisateur courant")
                 return
@@ -398,10 +430,17 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                     if (coupleId.isNotEmpty()) {
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
-                                // Accusé « reçu » pour CE message (repli : tout le couple si la fonction serveur manque)
-                                val svc = SupabaseService.getInstance()
-                                if (data["messageId"].isNullOrBlank()) svc.markMessagesDelivered(coupleId)
-                                else svc.markMessagesDeliveredIds(coupleId, listOf(messageId))
+                                if (useFirebase) {
+                                    if (!data["messageId"].isNullOrBlank()) {
+                                        FirebaseService.getInstance(applicationContext)
+                                            .markMessagesDeliveredIds(coupleId, listOf(messageId))
+                                    }
+                                } else {
+                                    // Accusé « reçu » pour CE message (repli : tout le couple si la fonction serveur manque)
+                                    val svc = SupabaseService.getInstance()
+                                    if (data["messageId"].isNullOrBlank()) svc.markMessagesDelivered(coupleId)
+                                    else svc.markMessagesDeliveredIds(coupleId, listOf(messageId))
+                                }
                             } catch (e: Exception) {
                                 Log.w("FCM_MSG", "Échec confirmation message délivré: ${e.message}")
                             }

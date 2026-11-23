@@ -236,7 +236,7 @@ class SupabaseService(
         customKey = key
     }
 
-    private fun isConfigured(): Boolean {
+    fun isConfigured(): Boolean {
         return supabaseUrl.isNotEmpty() &&
                 supabaseKey.isNotEmpty() &&
                 !supabaseUrl.contains("xyzcompany.supabase.co") &&
@@ -1864,7 +1864,7 @@ class SupabaseService(
         null
     }
 
-    suspend fun getSignedAvatarUrl(path: String): String? = withContext(Dispatchers.IO) {
+    suspend fun getSignedAvatarUrl(path: String, expiresInSeconds: Int = 2592000): String? = withContext(Dispatchers.IO) {
         if (!isConfigured() || path.isEmpty()) return@withContext null
         try {
             val url = URL("$supabaseUrl/storage/v1/object/sign/avatars/$path")
@@ -1878,7 +1878,7 @@ class SupabaseService(
             conn.readTimeout = 6000
 
             val body = JSONObject().apply {
-                put("expiresIn", 3600)
+                put("expiresIn", expiresInSeconds)
             }
 
             val writer = OutputStreamWriter(conn.outputStream)
@@ -2071,6 +2071,205 @@ class SupabaseService(
         } catch (e: Exception) {
             Log.w("FCM_SEND", "sendFcmPush failed: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * Envoie une notification FCM via l'Edge Function Supabase `send-fcm` en mode Firebase
+     * (100 % gratuit, sans forfait Blaze), authentifié par le Firebase ID Token.
+     */
+    suspend fun sendFcmPushWithFirebaseToken(
+        firebaseIdToken: String,
+        coupleId: String,
+        recipientId: String,
+        type: String,
+        title: String,
+        body: String,
+        extraData: Map<String, String> = emptyMap(),
+        hidePreview: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || firebaseIdToken.isBlank() || recipientId.isBlank() || coupleId.isBlank()) {
+            return@withContext false
+        }
+        try {
+            val payload = JSONObject().apply {
+                put("mode", "firebase")
+                put("coupleId", coupleId)
+                put("recipientId", recipientId)
+                put("type", type)
+                put("title", title)
+                put("body", body)
+                put("hidePreview", hidePreview)
+                val dataObj = JSONObject()
+                for ((k, v) in extraData) dataObj.put(k, v)
+                put("data", dataObj)
+            }
+            val url = URL("$supabaseUrl/functions/v1/send-fcm")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("apikey", supabaseKey)
+            conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+            conn.setRequestProperty("x-firebase-token", firebaseIdToken)
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 15000
+            OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
+            val code = conn.responseCode
+            if (code in 200..299) {
+                true
+            } else {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() }
+                Log.w("FCM_SEND", "sendFcmPushWithFirebaseToken failed ($code): $err")
+                false
+            }
+        } catch (e: Exception) {
+            Log.w("FCM_SEND", "sendFcmPushWithFirebaseToken exception: ${e.message}")
+            false
+        }
+    }
+
+    private fun callMediaBridge(firebaseIdToken: String, jsonBody: String): Pair<Int, String?> {
+        return try {
+            val conn = URL("$supabaseUrl/functions/v1/media-bridge").openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("apikey", supabaseKey)
+            conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+            conn.setRequestProperty("x-firebase-token", firebaseIdToken)
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 20000
+            OutputStreamWriter(conn.outputStream).use { it.write(jsonBody) }
+            val code = conn.responseCode
+            val text = if (code in 200..299) {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                conn.errorStream?.bufferedReader()?.use { it.readText() }
+            }
+            code to text
+        } catch (e: Exception) {
+            -1 to e.message
+        }
+    }
+
+    /**
+     * Stockage gratuit via Supabase pour le mode Firebase (évite Firebase Storage Blaze) :
+     * 1) Tente l'Edge Function `media-bridge` (URL signée d'upload + URL signée de lecture) ;
+     * 2) En repli si `media-bridge` n'est pas encore déployée (404), envoie via REST Supabase Storage.
+     */
+    suspend fun uploadMediaViaSupabaseHybrid(
+        firebaseIdToken: String?,
+        bucket: String,
+        storagePath: String,
+        coupleId: String,
+        bytes: ByteArray,
+        mimeType: String
+    ): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || storagePath.isBlank()) return@withContext null
+
+        if (!firebaseIdToken.isNullOrBlank()) {
+            val reqJson = JSONObject().apply {
+                put("action", "upload-url")
+                put("bucket", bucket)
+                put("path", storagePath)
+                put("coupleId", coupleId)
+            }.toString()
+            val (code, respText) = callMediaBridge(firebaseIdToken, reqJson)
+            if (code in 200..299 && !respText.isNullOrBlank()) {
+                try {
+                    val obj = JSONObject(respText)
+                    val rawSignedUpload = obj.optString("signedUrl", "")
+                    if (rawSignedUpload.isNotBlank()) {
+                        val fullUploadUrl = if (rawSignedUpload.startsWith("http")) rawSignedUpload else "$supabaseUrl$rawSignedUpload"
+                        val putConn = URL(fullUploadUrl).openConnection() as HttpURLConnection
+                        putConn.requestMethod = "PUT"
+                        putConn.setRequestProperty("Content-Type", mimeType)
+                        putConn.setRequestProperty("x-upsert", "true")
+                        putConn.doOutput = true
+                        putConn.setFixedLengthStreamingMode(bytes.size)
+                        putConn.connectTimeout = 20000
+                        putConn.readTimeout = 120000
+                        putConn.outputStream.use { it.write(bytes) }
+                        if (putConn.responseCode in 200..299) {
+                            return@withContext getSignedUrlViaSupabaseHybrid(firebaseIdToken, bucket, storagePath, coupleId)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w("SupabaseStorage", "media-bridge upload exception: ${e.message}")
+                }
+            }
+        }
+
+        // Repli direct Supabase Storage REST
+        return@withContext if (bucket == "avatars") {
+            val parts = storagePath.split("/", limit = 2)
+            val uidFolder = parts.getOrElse(0) { "" }
+            val filePart = parts.getOrElse(1) { "" }.removeSuffix(".webp")
+            val uploaded = if (uidFolder.isNotBlank() && filePart.isNotBlank()) {
+                uploadAvatar(uidFolder, filePart, bytes)
+            } else null
+            if (uploaded != null) getSignedAvatarUrl(uploaded) else null
+        } else {
+            val uploaded = uploadMessageMedia(coupleId, storagePath, bytes, mimeType)
+            if (uploaded != null) getSignedMessageMediaUrl(storagePath) else null
+        }
+    }
+
+    suspend fun getSignedUrlViaSupabaseHybrid(
+        firebaseIdToken: String?,
+        bucket: String,
+        storagePath: String,
+        coupleId: String,
+        expiresInSeconds: Int = 604800
+    ): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || storagePath.isBlank()) return@withContext null
+
+        if (!firebaseIdToken.isNullOrBlank()) {
+            val reqJson = JSONObject().apply {
+                put("action", "sign")
+                put("bucket", bucket)
+                put("path", storagePath)
+                put("coupleId", coupleId)
+                put("expiresIn", expiresInSeconds)
+            }.toString()
+            val (code, respText) = callMediaBridge(firebaseIdToken, reqJson)
+            if (code in 200..299 && !respText.isNullOrBlank()) {
+                val signed = try { JSONObject(respText).optString("signedUrl", "") } catch (_: Exception) { "" }
+                if (signed.isNotBlank()) {
+                    return@withContext if (signed.startsWith("http")) signed else "$supabaseUrl$signed"
+                }
+            }
+        }
+
+        return@withContext if (bucket == "avatars") {
+            getSignedAvatarUrl(storagePath, expiresInSeconds)
+        } else {
+            getSignedMessageMediaUrl(storagePath, expiresInSeconds)
+        }
+    }
+
+    suspend fun deleteMediaViaSupabaseHybrid(
+        firebaseIdToken: String?,
+        bucket: String,
+        storagePath: String,
+        coupleId: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || storagePath.isBlank()) return@withContext false
+        if (!firebaseIdToken.isNullOrBlank()) {
+            val reqJson = JSONObject().apply {
+                put("action", "delete")
+                put("bucket", bucket)
+                put("path", storagePath)
+                put("coupleId", coupleId)
+            }.toString()
+            val (code, _) = callMediaBridge(firebaseIdToken, reqJson)
+            if (code in 200..299) return@withContext true
+        }
+        return@withContext if (bucket == "avatars") {
+            deleteAvatarFile(storagePath)
+        } else {
+            deleteMessageMedia(storagePath)
         }
     }
 }

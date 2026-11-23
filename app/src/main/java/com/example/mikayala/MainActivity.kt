@@ -19,11 +19,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.mikayala.data.firebase.FirebaseAuthManager
 import com.example.mikayala.data.repository.MikayalaRepository
-import com.example.mikayala.theme.DeepNight
+import com.example.mikayala.theme.MikayalaColors
 import com.example.mikayala.theme.MikayalaTheme
 import com.example.mikayala.ui.screens.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AppNavigationState {
     SPLASH,
@@ -85,6 +88,8 @@ class MainActivity : ComponentActivity() {
             } else {
                 com.example.mikayala.data.model.UserSettingsEntity() // Default fallback
             }
+            val firebaseUser by remember { FirebaseAuthManager.authStateFlow() }
+                .collectAsStateWithLifecycle(initialValue = FirebaseAuthManager.currentUser())
 
             // Anti-capture d'écran (et contenu masqué dans les applications récentes) : FLAG_SECURE réel
             val secureScreen = userSettings.antiScreenshotEnabled || userSettings.screenBlurOnSwitch
@@ -95,11 +100,26 @@ class MainActivity : ComponentActivity() {
 
             MikayalaTheme(
                 darkTheme = if (userSettings.followSystemTheme) androidx.compose.foundation.isSystemInDarkTheme() else userSettings.isDarkMode,
+                accentTheme = userSettings.accentTheme,
                 fontPreference = userSettings.fontFamilyPreference,
                 fontSizeScale = userSettings.fontSizeScale
             ) {
                 var navigationState by remember { 
                     mutableStateOf(if (startupError != null) AppNavigationState.ERROR else AppNavigationState.SPLASH) 
+                }
+
+                // En mode Firebase, aucun écran protégé n'est composé sans session Google active
+                LaunchedEffect(userSettings.backendProvider, firebaseUser?.uid) {
+                    if (userSettings.backendProvider == "firebase" && firebaseUser == null &&
+                        navigationState in listOf(
+                            AppNavigationState.MAIN_APP,
+                            AppNavigationState.ONBOARDING,
+                            AppNavigationState.SET_FIRST_PASSWORD,
+                            AppNavigationState.LOCK
+                        )
+                    ) {
+                        navigationState = AppNavigationState.AUTH
+                    }
                 }
 
                 // Verrouillage automatique (Paramètres > Confidentialité > Délai de verrouillage) :
@@ -137,7 +157,7 @@ class MainActivity : ComponentActivity() {
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = DeepNight
+                    color = MikayalaColors.background
                 ) {
                     Crossfade(targetState = navigationState, label = "main_navigation_crossfade") { state ->
                         when (state) {
@@ -175,29 +195,42 @@ class MainActivity : ComponentActivity() {
                                 SplashScreen(
                                     onSplashFinished = {
                                         lifecycleScope.launch {
-                                            if (repository.getCurrentUserId().isEmpty()) {
-                                                navigationState = AppNavigationState.AUTH
-                                            } else {
-                                                // Couple déjà connu sur ce téléphone : ouverture immédiate, vérification
-                                                // auprès de Supabase en arrière-plan (réseau lent : plus d'écran de
-                                                // démarrage bloqué). Sinon : on attend la réponse avant de choisir l'écran.
-                                                if (repository.activeCoupleSpace.value.isPaired) {
-                                                    lifecycleScope.launch { repository.findExistingCoupleSpace() }
-                                                } else {
-                                                    repository.findExistingCoupleSpace()
-                                                }
-                                                val coupleSpace = repository.activeCoupleSpace.value
-                                                val userSettings = repository.userSettings.value
-                                                if (coupleSpace.isPaired) {
-                                                    if (userSettings.hasLocalPassword && userSettings.pinCode.isNotEmpty()) {
-                                                        navigationState = AppNavigationState.LOCK
-                                                    } else if (!userSettings.hasCompletedPairingSetup || userSettings.pinCode.isEmpty()) {
-                                                        navigationState = AppNavigationState.SET_FIRST_PASSWORD
-                                                    } else {
-                                                        navigationState = AppNavigationState.MAIN_APP
+                                            try {
+                                                if (repository.isFirebaseMode() && repository.getCurrentUserId().isEmpty()) {
+                                                    withTimeoutOrNull(3500L) {
+                                                        repository.attemptFirebaseAutoSignIn()
                                                     }
+                                                }
+                                                if (repository.getCurrentUserId().isEmpty()) {
+                                                    navigationState = AppNavigationState.AUTH
                                                 } else {
-                                                    navigationState = AppNavigationState.ONBOARDING
+                                                    if (repository.activeCoupleSpace.value.isPaired) {
+                                                        lifecycleScope.launch {
+                                                            runCatching { repository.findExistingCoupleSpace() }
+                                                        }
+                                                    } else {
+                                                        withTimeoutOrNull(4500L) {
+                                                            repository.findExistingCoupleSpace()
+                                                        }
+                                                    }
+                                                    val coupleSpace = repository.activeCoupleSpace.value
+                                                    val currentSettings = repository.userSettings.value
+                                                    navigationState = if (coupleSpace.isPaired) {
+                                                        when {
+                                                            currentSettings.hasLocalPassword && currentSettings.pinCode.isNotEmpty() -> AppNavigationState.LOCK
+                                                            !currentSettings.hasCompletedPairingSetup || currentSettings.pinCode.isEmpty() -> AppNavigationState.SET_FIRST_PASSWORD
+                                                            else -> AppNavigationState.MAIN_APP
+                                                        }
+                                                    } else {
+                                                        AppNavigationState.ONBOARDING
+                                                    }
+                                                }
+                                            } catch (e: Throwable) {
+                                                Log.w("MikayalaStartup", "Splash transition fallback: ${e.message}")
+                                                navigationState = if (repository.getCurrentUserId().isEmpty()) {
+                                                    AppNavigationState.AUTH
+                                                } else {
+                                                    AppNavigationState.ONBOARDING
                                                 }
                                             }
                                         }
@@ -282,24 +315,47 @@ class MainActivity : ComponentActivity() {
                             }
                             AppNavigationState.MAIN_APP -> {
                                 val coupleSpace by repository.activeCoupleSpace.collectAsState()
-                                if (!coupleSpace.isPaired) {
+                                val fbSessionOk = userSettings.backendProvider != "firebase" || firebaseUser != null
+                                if (!fbSessionOk) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            color = MikayalaColors.accent
+                                        )
+                                    }
+                                    LaunchedEffect(Unit) {
+                                        navigationState = AppNavigationState.AUTH
+                                    }
+                                } else if (!coupleSpace.isPaired) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            color = MikayalaColors.secondary
+                                        )
+                                    }
                                     LaunchedEffect(Unit) {
                                         navigationState = AppNavigationState.ONBOARDING
                                     }
                                 } else {
-                                    MainDashboardScreen(
-                                        repository = repository,
-                                        pendingIntentExtras = pendingIntentExtras,
-                                        onClearIntentExtras = { pendingIntentExtras = null },
-                                        onLockApp = {
-                                            val userSettings = repository.userSettings.value
-                                            if (userSettings.hasLocalPassword && userSettings.pinCode.isNotEmpty()) {
-                                                navigationState = AppNavigationState.LOCK
-                                            } else {
-                                                android.widget.Toast.makeText(this@MainActivity, "Aucun code PIN configuré", android.widget.Toast.LENGTH_SHORT).show()
+                                    key(firebaseUser?.uid ?: "supabase") {
+                                        MainDashboardScreen(
+                                            repository = repository,
+                                            pendingIntentExtras = pendingIntentExtras,
+                                            onClearIntentExtras = { pendingIntentExtras = null },
+                                            onLockApp = {
+                                                val currentSettings = repository.userSettings.value
+                                                if (currentSettings.hasLocalPassword && currentSettings.pinCode.isNotEmpty()) {
+                                                    navigationState = AppNavigationState.LOCK
+                                                } else {
+                                                    android.widget.Toast.makeText(this@MainActivity, "Aucun code PIN configuré", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
                                             }
-                                        }
-                                    )
+                                        )
+                                    }
                                 }
                             }
                             AppNavigationState.ONBOARDING -> {

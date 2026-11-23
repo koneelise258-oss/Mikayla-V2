@@ -109,9 +109,15 @@ dependencies {
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.espresso.core)
 
-  // Firebase Cloud Messaging
-  implementation(platform("com.google.firebase:firebase-bom:33.2.0"))
-  implementation("com.google.firebase:firebase-messaging")
+  // Firebase (FCM + Firestore + Auth + Storage + Google Sign-In via Credential Manager)
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.firebase.messaging)
+  implementation(libs.firebase.firestore)
+  implementation(libs.firebase.auth)
+  implementation(libs.firebase.storage)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services)
+  implementation(libs.googleid)
 
   // Supabase
   implementation(platform(libs.supabase.bom))

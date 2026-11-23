@@ -139,3 +139,22 @@ test("compte de service : secret vide ou tronqué toujours refusé avec un code 
   assert.equal(validateServiceAccount(normalizeServiceAccount('{"type":"service_account","project_id":"p"')), "invalid_service_account_json");
   assert.equal(validateServiceAccount(normalizeServiceAccount(JSON.stringify({ type: "service_account", project_id: EXPECTED_FCM_PROJECT_ID }))), "missing_client_email");
 });
+
+import { extractFirestoreCouple, extractFirestoreFcmToken } from "./payload.ts";
+
+test("firestore : extraction couple_spaces et jeton FCM", () => {
+  const doc = {
+    fields: {
+      status: { stringValue: "paired" },
+      partner1Id: { stringValue: "fb_u1" },
+      partner2Id: { stringValue: "fb_u2" },
+      memberUids: { arrayValue: { values: [{ stringValue: "fb_u1" }, { stringValue: "fb_u2" }] } },
+    },
+  };
+  const row = extractFirestoreCouple(doc);
+  assert.ok(isPairedCoupleMember(row, "fb_u1", "fb_u2"));
+  assert.ok(!isPairedCoupleMember(row, "fb_u1", "intrus"));
+  assert.equal(extractFirestoreFcmToken({ fields: { fcmToken: { stringValue: "  tok_123  " } } }), "tok_123");
+  assert.equal(extractFirestoreFcmToken(null), "");
+});
+

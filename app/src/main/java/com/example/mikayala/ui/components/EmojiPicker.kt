@@ -133,34 +133,36 @@ fun EmojiPicker(
     val gridState = rememberLazyGridState()
     LaunchedEffect(selectedCategory, searchQuery) { gridState.scrollToItem(0) }
 
+    val c = MikayalaColors
+
     Column(
         modifier = modifier
-            .background(CardDarkElevated)
+            .background(c.modal)
             .padding(top = 8.dp)
     ) {
         TextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Rechercher (cœur, rire, fête…)", color = TextMuted, fontSize = 13.sp) },
+            placeholder = { Text("Rechercher (cœur, rire, fête…)", color = c.textMuted, fontSize = 13.sp) },
             leadingIcon = {
-                Icon(Icons.Rounded.Search, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.Search, contentDescription = null, tint = c.textSecondary, modifier = Modifier.size(18.dp))
             },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Rounded.Clear, contentDescription = "Effacer la recherche", tint = TextSecondary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Clear, contentDescription = "Effacer la recherche", tint = c.textSecondary, modifier = Modifier.size(18.dp))
                     }
                 }
             },
             singleLine = true,
             colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color(0x1F000000),
-                unfocusedContainerColor = Color(0x1F000000),
+                focusedContainerColor = c.surfaceSunken,
+                unfocusedContainerColor = c.surfaceSunken,
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary,
-                cursorColor = VibrantCyan
+                focusedTextColor = c.textPrimary,
+                unfocusedTextColor = c.textPrimary,
+                cursorColor = c.secondary
             ),
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier
@@ -169,7 +171,7 @@ fun EmojiPicker(
                 .heightIn(min = 46.dp)
         )
 
-        // Catégories : défilement horizontal, cible tactile de 40 dp (10 catégories ne tiennent pas toutes)
+        // Catégories : défilement horizontal, cible tactile de 40 dp
         LazyRow(
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             contentPadding = PaddingValues(horizontal = 8.dp),
@@ -181,7 +183,7 @@ fun EmojiPicker(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (isSelected) AccentRose.copy(alpha = 0.18f) else Color.Transparent)
+                        .background(if (isSelected) c.accentSoft else Color.Transparent)
                         .clickable {
                             searchQuery = ""
                             selectedCategory = tab.id
@@ -194,10 +196,10 @@ fun EmojiPicker(
             }
         }
 
-        HorizontalDivider(color = BorderSubtleWhite, thickness = 1.dp)
+        HorizontalDivider(color = c.border, thickness = 0.5.dp)
 
         val title = if (searchQuery.isNotBlank()) "Résultats" else categories.firstOrNull { it.id == selectedCategory }?.name.orEmpty()
-        Text(title, color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(start = 14.dp, top = 6.dp))
+        Text(title, color = c.textSecondary, fontSize = 12.sp, modifier = Modifier.padding(start = 14.dp, top = 6.dp))
 
         if (displayedEmojis.isEmpty()) {
             Box(
@@ -210,7 +212,7 @@ fun EmojiPicker(
                         selectedCategory == "recents" && searchQuery.isBlank() -> "Aucun émoji récent"
                         else -> "Aucun émoji trouvé"
                     },
-                    color = TextMuted,
+                    color = c.textMuted,
                     fontSize = 14.sp
                 )
             }

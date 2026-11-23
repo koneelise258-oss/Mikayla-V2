@@ -36,7 +36,13 @@ class DirectReplyReceiver : BroadcastReceiver() {
                     try {
                         val repository = MikayalaRepository.getInstance(context.applicationContext)
                         // App fermée : attendre le rechargement de la session avant d'envoyer
-                        com.example.mikayala.data.SupabaseService.getInstance().awaitSessionReady()
+                        if (repository.isFirebaseMode()) {
+                            com.example.mikayala.data.firebase.FirebaseService
+                                .getInstance(context.applicationContext)
+                                .awaitSessionReady(5_000L)
+                        } else {
+                            com.example.mikayala.data.SupabaseService.getInstance().awaitSessionReady()
+                        }
                         repository.sendMessage(replyText)
                         // Attendre la confirmation réelle du serveur (le message reste sinon en attente
                         // et sera renvoyé automatiquement à la prochaine ouverture)

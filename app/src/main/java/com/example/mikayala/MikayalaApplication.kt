@@ -2,11 +2,7 @@ package com.example.mikayala
 
 import android.app.Application
 import android.util.Log
-import com.example.mikayala.data.SupabaseService
 import com.example.mikayala.services.MyFirebaseMessagingService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class MikayalaApplication : Application() {
     override fun onCreate() {

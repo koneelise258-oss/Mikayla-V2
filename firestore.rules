@@ -1,0 +1,434 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global deny-by-default catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && !id.matches('.*[/\\\\].*');
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function coupleDoc(coupleId) {
+      return get(/databases/$(database)/documents/couple_spaces/$(coupleId)).data;
+    }
+
+    function isCoupleMemberInParent(coupleId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/couple_spaces/$(coupleId)) &&
+        request.auth.uid in coupleDoc(coupleId).memberUids;
+    }
+
+    function hasSameCoupleMembers(coupleId) {
+      return request.resource.data.memberUids is list &&
+        request.resource.data.memberUids.size() >= 1 &&
+        request.resource.data.memberUids.size() <= 2 &&
+        request.auth.uid in request.resource.data.memberUids &&
+        request.resource.data.memberUids == coupleDoc(coupleId).memberUids;
+    }
+
+    // ---------------------------------------------------------
+    // 1. Private User Profile (Owner-Only, PII isolated)
+    // ---------------------------------------------------------
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) && isValidId(userId) &&
+        request.resource.data.keys().hasAll(['uid', 'displayName', 'createdAt', 'updatedAt']) &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'bio', 'avatarUrl', 'moodEmoji',
+          'email', 'fcmToken', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.uid == userId &&
+        request.resource.data.displayName is string &&
+        request.resource.data.displayName.size() >= 1 &&
+        request.resource.data.displayName.size() <= 60 &&
+        (!('bio' in request.resource.data) || (request.resource.data.bio is string && request.resource.data.bio.size() <= 160)) &&
+        (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024)) &&
+        (!('moodEmoji' in request.resource.data) || (request.resource.data.moodEmoji is string && request.resource.data.moodEmoji.size() <= 16)) &&
+        (!('email' in request.resource.data) || (request.resource.data.email is string && request.resource.data.email.size() <= 120)) &&
+        (!('fcmToken' in request.resource.data) || (request.resource.data.fcmToken is string && request.resource.data.fcmToken.size() <= 512)) &&
+        isValidTimestamp(request.resource.data.createdAt) &&
+        isValidTimestamp(request.resource.data.updatedAt);
+
+      allow update: if isOwner(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'bio', 'avatarUrl', 'moodEmoji', 'email', 'fcmToken', 'updatedAt'
+        ]) &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() >= 1 && request.resource.data.displayName.size() <= 60)) &&
+        (!('bio' in request.resource.data) || (request.resource.data.bio is string && request.resource.data.bio.size() <= 160)) &&
+        (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024)) &&
+        (!('moodEmoji' in request.resource.data) || (request.resource.data.moodEmoji is string && request.resource.data.moodEmoji.size() <= 16)) &&
+        (!('fcmToken' in request.resource.data) || (request.resource.data.fcmToken is string && request.resource.data.fcmToken.size() <= 512)) &&
+        isValidTimestamp(request.resource.data.updatedAt);
+
+      allow delete: if isOwner(userId);
+    }
+
+    // ---------------------------------------------------------
+    // 2. Exact-ID Pairing Code Lookup (anti-enumeration)
+    // ---------------------------------------------------------
+    match /pairing_codes/{code} {
+      allow get: if isSignedIn() && isValidId(code);
+      allow list: if false;
+
+      allow create: if isSignedIn() && isValidId(code) &&
+        code.size() >= 4 && code.size() <= 20 &&
+        request.resource.data.keys().hasAll(['code', 'coupleId', 'creatorUid', 'status', 'createdAt', 'updatedAt']) &&
+        request.resource.data.keys().hasOnly(['code', 'coupleId', 'creatorUid', 'status', 'createdAt', 'updatedAt']) &&
+        request.resource.data.code == code &&
+        isValidId(request.resource.data.coupleId) &&
+        request.resource.data.creatorUid == request.auth.uid &&
+        request.resource.data.status == 'waiting' &&
+        isValidTimestamp(request.resource.data.createdAt) &&
+        isValidTimestamp(request.resource.data.updatedAt);
+
+      allow update: if isSignedIn() &&
+        request.resource.data.code == resource.data.code &&
+        request.resource.data.coupleId == resource.data.coupleId &&
+        request.resource.data.creatorUid == resource.data.creatorUid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) &&
+        isValidTimestamp(request.resource.data.updatedAt) &&
+        (
+          resource.data.creatorUid == request.auth.uid ||
+          (resource.data.status == 'waiting' && request.resource.data.status == 'paired')
+        );
+
+      allow delete: if isSignedIn() && resource.data.creatorUid == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------
+    // 3. Couple Spaces
+    // ---------------------------------------------------------
+    match /couple_spaces/{coupleId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid in resource.data.memberUids ||
+        (resource.data.status == 'waiting' && resource.data.partner2Id == '')
+      );
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() && isValidId(coupleId) &&
+        request.resource.data.keys().hasAll([
+          'pairingCode', 'status', 'partner1Id', 'partner2Id',
+          'memberUids', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'pairingCode', 'status', 'partner1Id', 'partner2Id', 'memberUids',
+          'partner1Name', 'partner2Name', 'partner1Avatar', 'partner2Avatar',
+          'partner1Bio', 'partner2Bio', 'partner1Mood', 'partner2Mood',
+          'partner1LastSeenMs', 'partner2LastSeenMs',
+          'partner1TypingAtMs', 'partner2TypingAtMs',
+          'partner1RecordingAtMs', 'partner2RecordingAtMs',
+          'anniversaryDate', 'loveQuote',
+          'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.pairingCode is string &&
+        request.resource.data.pairingCode.size() >= 4 &&
+        request.resource.data.pairingCode.size() <= 20 &&
+        request.resource.data.status == 'waiting' &&
+        request.resource.data.partner1Id == request.auth.uid &&
+        request.resource.data.partner2Id == '' &&
+        request.resource.data.memberUids == [request.auth.uid] &&
+        isValidTimestamp(request.resource.data.createdAt) &&
+        isValidTimestamp(request.resource.data.updatedAt);
+
+      allow update: if isSignedIn() &&
+        request.resource.data.pairingCode == resource.data.pairingCode &&
+        request.resource.data.partner1Id == resource.data.partner1Id &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        isValidTimestamp(request.resource.data.updatedAt) &&
+        (
+          // Existing member updating profile / quote / anniversary / lastSeen / typing / recording
+          (
+            request.auth.uid in resource.data.memberUids &&
+            request.resource.data.memberUids == resource.data.memberUids &&
+            request.resource.data.partner2Id == resource.data.partner2Id &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'partner1Name', 'partner2Name', 'partner1Avatar', 'partner2Avatar',
+              'partner1Bio', 'partner2Bio', 'partner1Mood', 'partner2Mood',
+              'partner1LastSeenMs', 'partner2LastSeenMs',
+              'partner1TypingAtMs', 'partner2TypingAtMs',
+              'partner1RecordingAtMs', 'partner2RecordingAtMs',
+              'anniversaryDate', 'loveQuote', 'updatedAt'
+            ])
+          ) ||
+          // Partner 2 joining a waiting couple space
+          (
+            resource.data.status == 'waiting' &&
+            resource.data.partner2Id == '' &&
+            request.auth.uid != resource.data.partner1Id &&
+            request.resource.data.status == 'paired' &&
+            request.resource.data.partner2Id == request.auth.uid &&
+            request.resource.data.memberUids == [resource.data.partner1Id, request.auth.uid] &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'partner2Id', 'partner2Name', 'partner2Avatar',
+              'partner2Bio', 'partner2Mood', 'memberUids', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.partner1Id;
+
+      // ---------------------------------------------------------
+      // 3a. Messages Subcollection (denormalized memberUids for query safety)
+      // ---------------------------------------------------------
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isCoupleMemberInParent(coupleId) && isValidId(messageId) &&
+          hasSameCoupleMembers(coupleId) &&
+          request.resource.data.keys().hasAll([
+            'coupleId', 'senderId', 'memberUids', 'content', 'type',
+            'status', 'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'coupleId', 'senderId', 'receiverId', 'memberUids',
+            'content', 'type', 'mediaUrl', 'storagePath', 'duration',
+            'status', 'deliveredAtMs', 'readAtMs', 'editedAtMs',
+            'isViewOnce', 'isViewed', 'isPinned', 'isDeletedForEveryone',
+            'reactions', 'replyToId', 'replyToSender', 'replyToContent',
+            'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.coupleId == coupleId &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() <= 4000 &&
+          request.resource.data.type is string &&
+          request.resource.data.type.size() >= 1 &&
+          request.resource.data.type.size() <= 32 &&
+          request.resource.data.status in ['pending', 'sent', 'delivered', 'read'] &&
+          (!('mediaUrl' in request.resource.data) || (request.resource.data.mediaUrl is string && request.resource.data.mediaUrl.size() <= 4096)) &&
+          (!('duration' in request.resource.data) || (request.resource.data.duration is number && request.resource.data.duration >= 0)) &&
+          isValidTimestamp(request.resource.data.createdAt) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids &&
+          request.resource.data.coupleId == resource.data.coupleId &&
+          request.resource.data.senderId == resource.data.senderId &&
+          request.resource.data.memberUids == resource.data.memberUids &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'content', 'editedAtMs', 'status', 'deliveredAtMs', 'readAtMs',
+            'isViewed', 'isPinned', 'isDeletedForEveryone', 'reactions',
+            'mediaUrl', 'updatedAt'
+          ]) &&
+          (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 4000)) &&
+          (!('status' in request.resource.data) || request.resource.data.status in ['pending', 'sent', 'delivered', 'read']) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow delete: if isSignedIn() && request.auth.uid == resource.data.senderId;
+      }
+
+      // ---------------------------------------------------------
+      // 3b. Shared Vault Subcollection
+      // ---------------------------------------------------------
+      match /vault_items/{itemId} {
+        allow get, list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isCoupleMemberInParent(coupleId) && isValidId(itemId) &&
+          hasSameCoupleMembers(coupleId) &&
+          request.resource.data.keys().hasAll([
+            'coupleId', 'memberUids', 'addedBy', 'title', 'type',
+            'category', 'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'coupleId', 'memberUids', 'addedBy', 'addedByName',
+            'title', 'type', 'category', 'caption', 'mediaUrl', 'dateAddedMs',
+            'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.coupleId == coupleId &&
+          request.resource.data.addedBy == request.auth.uid &&
+          request.resource.data.title is string &&
+          request.resource.data.title.size() <= 120 &&
+          request.resource.data.type in ['photo', 'video', 'audio', 'note', 'letter'] &&
+          request.resource.data.category in ['intime', 'souvenirs', 'projets', 'sauvegardes'] &&
+          (!('caption' in request.resource.data) || (request.resource.data.caption is string && request.resource.data.caption.size() <= 1000)) &&
+          (!('mediaUrl' in request.resource.data) || (request.resource.data.mediaUrl is string && request.resource.data.mediaUrl.size() <= 4096)) &&
+          isValidTimestamp(request.resource.data.createdAt) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids &&
+          request.resource.data.coupleId == resource.data.coupleId &&
+          request.resource.data.addedBy == resource.data.addedBy &&
+          request.resource.data.memberUids == resource.data.memberUids &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'caption', 'category', 'mediaUrl', 'updatedAt'
+          ]) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow delete: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      }
+
+      // ---------------------------------------------------------
+      // 3c. Shared Calendar Events Subcollection
+      // ---------------------------------------------------------
+      match /events/{eventId} {
+        allow get, list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isCoupleMemberInParent(coupleId) && isValidId(eventId) &&
+          hasSameCoupleMembers(coupleId) &&
+          request.resource.data.keys().hasAll([
+            'coupleId', 'memberUids', 'createdBy', 'title', 'dateMs',
+            'category', 'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'coupleId', 'memberUids', 'createdBy', 'title', 'dateMs',
+            'category', 'note', 'isRecurring', 'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.coupleId == coupleId &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.title is string &&
+          request.resource.data.title.size() >= 1 &&
+          request.resource.data.title.size() <= 120 &&
+          request.resource.data.dateMs is number &&
+          isValidTimestamp(request.resource.data.createdAt) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids &&
+          request.resource.data.coupleId == resource.data.coupleId &&
+          request.resource.data.createdBy == resource.data.createdBy &&
+          request.resource.data.memberUids == resource.data.memberUids &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'dateMs', 'category', 'note', 'isRecurring', 'updatedAt'
+          ]) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow delete: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      }
+
+      // ---------------------------------------------------------
+      // 3d. Shared Couple Games & Milestones Subcollection
+      // ---------------------------------------------------------
+      match /games/{gameId} {
+        allow get, list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isCoupleMemberInParent(coupleId) && isValidId(gameId) &&
+          hasSameCoupleMembers(coupleId) &&
+          request.resource.data.keys().hasAll([
+            'coupleId', 'memberUids', 'createdBy', 'kind', 'payloadJson',
+            'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'coupleId', 'memberUids', 'createdBy', 'kind', 'payloadJson',
+            'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.coupleId == coupleId &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.kind in ['coupon', 'bucket', 'quiz', 'dilemma', 'truth_dare', 'milestone', 'capsule'] &&
+          request.resource.data.payloadJson is string &&
+          request.resource.data.payloadJson.size() <= 8000 &&
+          isValidTimestamp(request.resource.data.createdAt) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids &&
+          request.resource.data.coupleId == resource.data.coupleId &&
+          request.resource.data.createdBy == resource.data.createdBy &&
+          request.resource.data.memberUids == resource.data.memberUids &&
+          request.resource.data.kind == resource.data.kind &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['payloadJson', 'updatedAt']) &&
+          request.resource.data.payloadJson is string &&
+          request.resource.data.payloadJson.size() <= 8000 &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow delete: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      }
+
+      // ---------------------------------------------------------
+      // 3e. Call Signals Subcollection
+      // ---------------------------------------------------------
+      match /call_signals/{signalId} {
+        allow get, list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isCoupleMemberInParent(coupleId) && isValidId(signalId) &&
+          hasSameCoupleMembers(coupleId) &&
+          request.resource.data.keys().hasAll([
+            'coupleId', 'memberUids', 'callerUid', 'isVideo', 'status',
+            'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'coupleId', 'memberUids', 'callerUid', 'callerName',
+            'isVideo', 'status', 'durationSeconds', 'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.coupleId == coupleId &&
+          request.resource.data.callerUid == request.auth.uid &&
+          request.resource.data.isVideo is bool &&
+          request.resource.data.status in ['ringing', 'accepted', 'declined', 'cancelled', 'ended'] &&
+          isValidTimestamp(request.resource.data.createdAt) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids &&
+          request.resource.data.coupleId == resource.data.coupleId &&
+          request.resource.data.callerUid == resource.data.callerUid &&
+          request.resource.data.memberUids == resource.data.memberUids &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'durationSeconds', 'updatedAt'
+          ]) &&
+          request.resource.data.status in ['ringing', 'accepted', 'declined', 'cancelled', 'ended'] &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow delete: if isSignedIn() && request.auth.uid == resource.data.callerUid;
+      }
+
+      // ---------------------------------------------------------
+      // 3f. FCM Push Requests Subcollection (Cloud Functions trigger)
+      // ---------------------------------------------------------
+      match /push_requests/{requestId} {
+        allow get, list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isCoupleMemberInParent(coupleId) && isValidId(requestId) &&
+          hasSameCoupleMembers(coupleId) &&
+          request.resource.data.keys().hasAll([
+            'coupleId', 'memberUids', 'senderId', 'recipientId', 'type',
+            'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'coupleId', 'memberUids', 'senderId', 'recipientId',
+            'type', 'title', 'body', 'dataJson', 'hidePreview',
+            'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.coupleId == coupleId &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.recipientId is string &&
+          request.resource.data.recipientId != request.auth.uid &&
+          request.resource.data.recipientId in coupleDoc(coupleId).memberUids &&
+          request.resource.data.type in [
+            'chat_message', 'call', 'missed_call', 'audio', 'image', 'video',
+            'vault_add', 'game', 'game_turn', 'anniversary', 'mood_update',
+            'poll_created', 'love_bomb', 'calendar_event', 'cycle',
+            'call_declined', 'call_cancelled', 'call_ended'
+          ] &&
+          (!('title' in request.resource.data) || (request.resource.data.title is string && request.resource.data.title.size() <= 120)) &&
+          (!('body' in request.resource.data) || (request.resource.data.body is string && request.resource.data.body.size() <= 500)) &&
+          (!('dataJson' in request.resource.data) || (request.resource.data.dataJson is string && request.resource.data.dataJson.size() <= 4000)) &&
+          (!('hidePreview' in request.resource.data) || request.resource.data.hidePreview is bool) &&
+          isValidTimestamp(request.resource.data.createdAt) &&
+          isValidTimestamp(request.resource.data.updatedAt);
+
+        allow update: if false;
+        allow delete: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      }
+    }
+  }
+}

@@ -6,6 +6,10 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import com.example.mikayala.data.SupabaseService
+import com.example.mikayala.data.firebase.FirebaseAuthManager
+import com.example.mikayala.data.firebase.FirebaseCoupleRepository
+import com.example.mikayala.data.firebase.FirebaseCoupleSpace
+import com.example.mikayala.data.firebase.FirebaseService
 import com.example.mikayala.data.model.*
 import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.*
@@ -23,6 +27,18 @@ class MikayalaRepository(private val context: Context) {
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     val supabaseService = SupabaseService.getInstance()
+    val firebaseService = FirebaseService.getInstance(context)
+    val firebaseRepository: FirebaseCoupleRepository = firebaseService.coupleRepository
+    private var firebaseListenersJob: Job? = null
+    @Volatile private var firebaseListeningCoupleId: String = ""
+    @Volatile private var lastIncomingFirebaseSignalId: String = ""
+    @Volatile private var activeFirebaseIncomingCall: Pair<Boolean, Boolean>? = null
+    @Volatile private var lastFirebaseTypingSentAt: Long = 0L
+    @Volatile private var lastFirebaseRecordingSentAt: Long = 0L
+
+    fun isFirebaseMode(): Boolean = _userSettings.value.backendProvider == "firebase"
+
+    fun getActiveFirebaseUser() = FirebaseAuthManager.currentUser()
 
     fun syncPendingPushToken() {
         repositoryScope.launch {
@@ -42,21 +58,154 @@ class MikayalaRepository(private val context: Context) {
             val hidePreview = false
             val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
             repositoryScope.launch {
-                supabaseService.sendFcmPush(
-                    coupleId = couple.id,
-                    recipientId = partnerId,
-                    type = type,
-                    title = "Mikayala",
-                    body = previewText,
-                    extraData = mapOf(
-                        "messageId" to messageId,
-                        "coupleId" to couple.id,
-                        "senderName" to myName
-                    ),
-                    hidePreview = hidePreview
-                )
+                if (isFirebaseMode()) {
+                    val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    dispatchFirebaseModePush(
+                        coupleId = couple.id,
+                        memberUids = memberUids,
+                        recipientId = partnerId,
+                        type = type,
+                        title = "Mikayala",
+                        body = previewText,
+                        extraData = mapOf(
+                            "messageId" to messageId,
+                            "coupleId" to couple.id,
+                            "senderName" to myName
+                        ),
+                        hidePreview = hidePreview
+                    )
+                } else {
+                    supabaseService.sendFcmPush(
+                        coupleId = couple.id,
+                        recipientId = partnerId,
+                        type = type,
+                        title = "Mikayala",
+                        body = previewText,
+                        extraData = mapOf(
+                            "messageId" to messageId,
+                            "coupleId" to couple.id,
+                            "senderName" to myName
+                        ),
+                        hidePreview = hidePreview
+                    )
+                }
             }
         }
+    }
+
+    /**
+     * Envoi de notification gratuit pour le mode Firebase :
+     * 1) Si Supabase est configuré, appelle l'Edge Function `send-fcm` (gratuit, sans forfait Blaze)
+     *    avec le jeton Firebase ID Token de l'utilisateur ;
+     * 2) En complément/repli, dépose la requête dans Firestore `push_requests`.
+     */
+    private suspend fun dispatchFirebaseModePush(
+        coupleId: String,
+        memberUids: List<String>,
+        recipientId: String,
+        type: String,
+        title: String = "Mikayala",
+        body: String = "",
+        extraData: Map<String, String> = emptyMap(),
+        hidePreview: Boolean = false
+    ): Boolean {
+        if (supabaseService.isConfigured()) {
+            val idToken = firebaseService.getCurrentIdToken()
+            if (!idToken.isNullOrBlank()) {
+                val ok = supabaseService.sendFcmPushWithFirebaseToken(
+                    firebaseIdToken = idToken,
+                    coupleId = coupleId,
+                    recipientId = recipientId,
+                    type = type,
+                    title = title,
+                    body = body,
+                    extraData = extraData,
+                    hidePreview = hidePreview
+                )
+                if (ok) return true
+            }
+        }
+        return firebaseService.sendFcmPush(
+            coupleId = coupleId,
+            memberUids = memberUids,
+            recipientId = recipientId,
+            type = type,
+            title = title,
+            body = body,
+            extraData = extraData,
+            hidePreview = hidePreview
+        )
+    }
+
+    /**
+     * Stockage média hybride pour le mode Firebase (gratuit sans forfait Blaze) :
+     * tente Firebase Storage s'il est activé, sinon bascule automatiquement sur Supabase Storage
+     * (préfixe `supa:` enregistré dans Firestore pour que les deux téléphones résolvent le lien).
+     */
+    private suspend fun uploadFirebaseOrSupabaseMedia(
+        coupleId: String,
+        rawStoragePath: String,
+        bytes: ByteArray,
+        mimeType: String
+    ): Result<Pair<String, String>> {
+        if (!firebaseService.storageUnavailable) {
+            val fbRes = firebaseService.uploadMessageMedia(rawStoragePath, bytes, mimeType)
+            val fbUrl = fbRes.getOrNull()
+            if (fbUrl != null) {
+                return Result.success(rawStoragePath to fbUrl)
+            }
+            if (!firebaseService.storageUnavailable && !supabaseService.isConfigured()) {
+                return Result.failure(fbRes.exceptionOrNull() ?: IllegalStateException("Envoi média Firebase échoué."))
+            }
+        }
+
+        if (supabaseService.isConfigured()) {
+            val idToken = firebaseService.getCurrentIdToken()
+            val supaUrl = supabaseService.uploadMediaViaSupabaseHybrid(
+                firebaseIdToken = idToken,
+                bucket = "messages-media",
+                storagePath = rawStoragePath,
+                coupleId = coupleId,
+                bytes = bytes,
+                mimeType = mimeType
+            )
+            if (!supaUrl.isNullOrBlank()) {
+                return Result.success("supa:$rawStoragePath" to supaUrl)
+            }
+            return Result.failure(IllegalStateException("Échec de l'envoi sur Supabase Storage. Vérifiez le bucket messages-media ou media-bridge."))
+        }
+
+        return Result.failure(
+            IllegalStateException("Stockage non disponible : configurez Supabase (gratuit) dans Paramètres > Serveur Supabase.")
+        )
+    }
+
+    private suspend fun resolveFirebaseOrSupabaseMediaUrl(coupleId: String, storagePath: String): String? {
+        if (storagePath.startsWith("supa:")) {
+            val clean = storagePath.removePrefix("supa:")
+            val idToken = firebaseService.getCurrentIdToken()
+            return supabaseService.getSignedUrlViaSupabaseHybrid(
+                firebaseIdToken = idToken,
+                bucket = "messages-media",
+                storagePath = clean,
+                coupleId = coupleId
+            )
+        }
+        return firebaseService.getDownloadUrl(storagePath)
+    }
+
+    private suspend fun deleteFirebaseOrSupabaseMedia(coupleId: String, storagePath: String): Boolean {
+        if (storagePath.startsWith("supa:")) {
+            val clean = storagePath.removePrefix("supa:")
+            val idToken = firebaseService.getCurrentIdToken()
+            return supabaseService.deleteMediaViaSupabaseHybrid(
+                firebaseIdToken = idToken,
+                bucket = "messages-media",
+                storagePath = clean,
+                coupleId = coupleId
+            )
+        }
+        return firebaseService.deleteMessageMedia(storagePath)
     }
 
     // --- StateFlows ---
@@ -148,6 +297,11 @@ class MikayalaRepository(private val context: Context) {
     val actionErrors: SharedFlow<String> = _actionErrors.asSharedFlow()
 
     init {
+        val savedSupaUrl = prefs.getString("supabase_url", "").orEmpty()
+        val savedSupaKey = prefs.getString("supabase_key", "").orEmpty()
+        if (savedSupaUrl.isNotBlank() && savedSupaKey.isNotBlank()) {
+            supabaseService.setCredentials(savedSupaUrl, savedSupaKey)
+        }
         // Préférences d'interface de l'appareil : restaurées avant tout, puis enregistrées à chaque changement
         _userSettings.value = com.example.mikayala.data.UiPreferencesStore.load(prefs, _userSettings.value)
         restoreAndPersistLocalGames()
@@ -177,10 +331,18 @@ class MikayalaRepository(private val context: Context) {
         }
 
         val storedNotifPrivacyMode = prefs.getString("notification_privacy_mode", "romantic") ?: "romantic"
-        if (storedUserId.isNotEmpty()) {
+        if (isFirebaseMode()) {
+            val fbUser = FirebaseAuthManager.currentUser()
+            val fbUid = fbUser?.uid ?: ""
+            val fbPairingCode = prefs.getString("fb_pairing_code", "") ?: ""
+            val fbCoupleId = prefs.getString("fb_couple_id", "") ?: ""
+            val fbUser1Id = prefs.getString("fb_user1_id", "") ?: ""
+            val fbUser2Id = prefs.getString("fb_user2_id", "") ?: ""
+            val fbCoupleStatus = prefs.getString("fb_couple_status", "none") ?: "none"
+            val fbPartnerName = prefs.getString("fb_partner_name", "Mon Partenaire") ?: "Mon Partenaire"
             _userSettings.value = _userSettings.value.copy(
-                userId = storedUserId,
-                displayName = storedDisplayName.ifEmpty { "Moi" },
+                userId = fbUid,
+                displayName = storedDisplayName.ifEmpty { fbUser?.displayName ?: "Moi" },
                 pinCode = storedPinCode,
                 fakePinCode = storedFakePinCode,
                 hasLocalPassword = storedHasPassword,
@@ -192,23 +354,50 @@ class MikayalaRepository(private val context: Context) {
                 cyclePartnerAlertsEnabled = com.example.mikayala.util.NotificationPrefs.isEnabled(context, com.example.mikayala.util.NotificationPrefs.Category.CYCLE),
                 loveWidgetEnabled = prefs.getBoolean("love_widget_enabled", true)
             )
-            // Stored state is loaded purely as cache, status starts unverified until Supabase sync
-            if (storedPairingCode.isNotEmpty()) {
+            if (fbUid.isNotEmpty() && fbPairingCode.isNotEmpty()) {
                 _coupleSpace.value = _coupleSpace.value.copy(
-                    id = storedCoupleId,
-                    pairingCode = storedPairingCode,
-                    partner1Id = storedUser1Id,
-                    partner2Id = storedUser2Id,
-                    partner1Name = storedDisplayName.ifEmpty { "Moi" },
-                    partner2Name = storedPartnerName,
-                    status = storedCoupleStatus
+                    id = fbCoupleId,
+                    pairingCode = fbPairingCode,
+                    partner1Id = fbUser1Id,
+                    partner2Id = fbUser2Id,
+                    partner1Name = storedDisplayName.ifEmpty { fbUser?.displayName ?: "Moi" },
+                    partner2Name = fbPartnerName,
+                    status = fbCoupleStatus
                 )
             }
+        } else {
+            if (storedUserId.isNotEmpty()) {
+                _userSettings.value = _userSettings.value.copy(
+                    userId = storedUserId,
+                    displayName = storedDisplayName.ifEmpty { "Moi" },
+                    pinCode = storedPinCode,
+                    fakePinCode = storedFakePinCode,
+                    hasLocalPassword = storedHasPassword,
+                    hasCompletedPairingSetup = storedPairingSetupCompleted,
+                    connectionMode = storedConnMode,
+                    notificationPrivacyMode = storedNotifPrivacyMode,
+                    notificationSound = com.example.mikayala.util.NotificationPrefs.sound(context),
+                    heartHapticEnabled = com.example.mikayala.util.NotificationPrefs.vibration(context),
+                    cyclePartnerAlertsEnabled = com.example.mikayala.util.NotificationPrefs.isEnabled(context, com.example.mikayala.util.NotificationPrefs.Category.CYCLE),
+                    loveWidgetEnabled = prefs.getBoolean("love_widget_enabled", true)
+                )
+                // Stored state is loaded purely as cache, status starts unverified until Supabase sync
+                if (storedPairingCode.isNotEmpty()) {
+                    _coupleSpace.value = _coupleSpace.value.copy(
+                        id = storedCoupleId,
+                        pairingCode = storedPairingCode,
+                        partner1Id = storedUser1Id,
+                        partner2Id = storedUser2Id,
+                        partner1Name = storedDisplayName.ifEmpty { "Moi" },
+                        partner2Name = storedPartnerName,
+                        status = storedCoupleStatus
+                    )
+                }
+            }
+            // Load local message cache (P2P + offline messages)
+            loadLocalMessagesCache()
+            loadLocalVaultCache()
         }
-
-        // Load local message cache (P2P + offline messages)
-        loadLocalMessagesCache()
-        loadLocalVaultCache()
 
         // Bind P2P socket receiver to store incoming P2P messages locally
         com.example.mikayala.util.P2PSocketManager.onP2PMessageReceived = { msgId, createdAt, _, content ->
@@ -262,12 +451,31 @@ class MikayalaRepository(private val context: Context) {
             Log.w("MikayalaRepository", "Could not register NetworkCallback: ${e.message}")
         }
 
-        // Launch periodic background sync loop to upload pending offline/P2P messages as soon as internet is available
+        // Launch periodic background sync loop (Supabase sync + Firebase foreground presence heartbeat)
         repositoryScope.launch {
+            var lastFirebasePresenceMs = 0L
             while (isActive) {
                 kotlinx.coroutines.delay(4000)
                 try {
-                    syncWithSupabase()
+                    if (!isFirebaseMode()) {
+                        syncWithSupabase()
+                    } else {
+                        val couple = _coupleSpace.value
+                        val now = System.currentTimeMillis()
+                        if (couple.isPaired &&
+                            couple.id.isNotBlank() &&
+                            com.example.mikayala.util.AppForeground.isResumed &&
+                            _userSettings.value.lastSeenPrivacy != "nobody" &&
+                            now - lastFirebasePresenceMs >= 30_000L
+                        ) {
+                            val uid = FirebaseAuthManager.currentUid()
+                            if (uid.isNotBlank()) {
+                                val isP1 = uid == couple.partner1Id
+                                firebaseService.touchPresence(couple.id, isP1, now)
+                                lastFirebasePresenceMs = now
+                            }
+                        }
+                    }
                 } catch (e: Exception) {
                     Log.w("MikayalaRepository", "Background sync loop iteration skipped: ${e.message}")
                 }
@@ -602,7 +810,411 @@ class MikayalaRepository(private val context: Context) {
         syncWithSupabase()
     }
 
+    suspend fun setBackendProvider(provider: String) {
+        val normalized = if (provider == "firebase") "firebase" else "supabase"
+        if (_userSettings.value.backendProvider == normalized) return
+        stopFirebaseListeners()
+        disconnectRealtime()
+        activeFirebaseIncomingCall = null
+        lastIncomingFirebaseSignalId = ""
+        _coupleSpace.value = CoupleSpaceEntity()
+        _messages.value = emptyList()
+        _vaultItems.value = emptyList()
+        _userSettings.update { it.copy(backendProvider = normalized, userId = "") }
+        if (normalized == "firebase") {
+            val fbUser = FirebaseAuthManager.currentUser()
+            if (fbUser != null) {
+                _userSettings.update {
+                    it.copy(
+                        userId = fbUser.uid,
+                        displayName = it.displayName.takeIf { d -> d.isNotBlank() && d != "Moi" } ?: (fbUser.displayName ?: "Moi"),
+                        avatarUrl = it.avatarUrl.ifBlank { fbUser.photoUrl?.toString().orEmpty() }
+                    )
+                }
+                syncPendingPushToken()
+                findExistingCoupleSpace()
+            }
+        } else {
+            val restored = restoreSupabaseSession()
+            if (!restored.isNullOrBlank()) {
+                loadLocalMessagesCache()
+                loadLocalVaultCache()
+                syncPendingPushToken()
+                findExistingCoupleSpace()
+            }
+        }
+    }
+
+    suspend fun attemptFirebaseAutoSignIn(): Boolean {
+        val res = FirebaseAuthManager.attemptAutoSignIn(context)
+        val user = res.getOrNull() ?: return false
+        _userSettings.update {
+            it.copy(
+                backendProvider = "firebase",
+                userId = user.uid,
+                displayName = it.displayName.takeIf { d -> d.isNotBlank() && d != "Moi" } ?: (user.displayName ?: "Moi"),
+                avatarUrl = it.avatarUrl.ifBlank { user.photoUrl?.toString().orEmpty() }
+            )
+        }
+        firebaseRepository.upsertMyProfile(
+            displayName = _userSettings.value.displayName,
+            bio = _userSettings.value.customStatus,
+            avatarUrl = _userSettings.value.avatarUrl,
+            moodEmoji = _userSettings.value.moodEmoji
+        )
+        return true
+    }
+
+    suspend fun signInWithGoogle(activityContext: Context): Result<String> {
+        val result = FirebaseAuthManager.signInWithGoogle(activityContext)
+        return result.map { user ->
+            val name = _userSettings.value.displayName.takeIf { it.isNotBlank() && it != "Moi" }
+                ?: user.displayName.orEmpty().ifBlank { "Moi" }
+            val avatar = _userSettings.value.avatarUrl.ifBlank { user.photoUrl?.toString().orEmpty() }
+            _userSettings.update {
+                it.copy(
+                    backendProvider = "firebase",
+                    userId = user.uid,
+                    displayName = name,
+                    avatarUrl = avatar
+                )
+            }
+            prefs.edit().putString("display_name", name).apply()
+            firebaseRepository.upsertMyProfile(
+                displayName = name,
+                bio = _userSettings.value.customStatus,
+                avatarUrl = avatar,
+                moodEmoji = _userSettings.value.moodEmoji,
+                email = user.email.orEmpty()
+            )
+            syncPendingPushToken()
+            user.uid
+        }
+    }
+
+    private fun applyFirebaseCoupleSpace(space: FirebaseCoupleSpace) {
+        val myUid = FirebaseAuthManager.currentUid()
+        if (myUid.isBlank()) return
+        val isP1 = myUid == space.partner1Id
+        val partnerId = if (isP1) space.partner2Id else space.partner1Id
+        val partnerName = if (isP1) space.partner2Name else space.partner1Name
+        val partnerAvatar = if (isP1) space.partner2Avatar else space.partner1Avatar
+        val partnerBio = if (isP1) space.partner2Bio else space.partner1Bio
+        val partnerLastSeen = if (isP1) space.partner2LastSeenMs else space.partner1LastSeenMs
+        val partnerTypingAt = if (isP1) space.partner2TypingAtMs else space.partner1TypingAtMs
+        val partnerRecordingAt = if (isP1) space.partner2RecordingAtMs else space.partner1RecordingAtMs
+        val myName = if (isP1) space.partner1Name else space.partner2Name
+        val myAvatar = if (isP1) space.partner1Avatar else space.partner2Avatar
+        val isPaired = space.status == "paired" && space.partner1Id.isNotBlank() && space.partner2Id.isNotBlank()
+        val localNickname = if (partnerId.isNotBlank()) {
+            prefs.getString("partner_custom_nickname_$partnerId", "")?.takeIf { it.isNotBlank() }
+        } else null
+        val displayPartner = localNickname ?: partnerName.ifBlank { if (isPaired) "Mon Partenaire" else "En attente..." }
+        val nowMs = System.currentTimeMillis()
+        val lastSeenLabel = when {
+            !isPaired -> "Hors ligne"
+            partnerLastSeen > 0L && nowMs - partnerLastSeen < 90_000L -> "En ligne"
+            partnerLastSeen > 0L -> formatLastSeen(partnerLastSeen.toString())
+            else -> partnerBio.ifBlank { "Connecté" }
+        }
+        _isPartnerOnline.value = isPaired && partnerLastSeen > 0L && (nowMs - partnerLastSeen < 90_000L)
+
+        val typingActive = isPaired && partnerTypingAt > 0L && (nowMs - partnerTypingAt) in 0L..6_000L
+        _partnerIsTyping.value = typingActive
+        typingResetJob?.cancel()
+        if (typingActive) {
+            val remaining = (6_000L - (nowMs - partnerTypingAt)).coerceIn(500L, 6_000L)
+            typingResetJob = repositoryScope.launch {
+                delay(remaining)
+                _partnerIsTyping.value = false
+            }
+        }
+
+        val recordingActive = isPaired && partnerRecordingAt > 0L && (nowMs - partnerRecordingAt) in 0L..10_000L
+        _partnerIsRecordingAudio.value = recordingActive
+        recordingResetJob?.cancel()
+        if (recordingActive) {
+            val remaining = (10_000L - (nowMs - partnerRecordingAt)).coerceIn(500L, 10_000L)
+            recordingResetJob = repositoryScope.launch {
+                delay(remaining)
+                _partnerIsRecordingAudio.value = false
+            }
+        }
+
+        _coupleSpace.value = CoupleSpaceEntity(
+            id = space.id,
+            pairingCode = space.pairingCode,
+            status = if (isPaired) "paired" else space.status,
+            partner1Id = space.partner1Id,
+            partner2Id = space.partner2Id,
+            partner1Name = myName.ifBlank { _userSettings.value.displayName.ifBlank { "Moi" } },
+            partner2Name = displayPartner,
+            partner1Avatar = myAvatar,
+            partner2Avatar = partnerAvatar,
+            partner1Status = _userSettings.value.customStatus.ifBlank { "En ligne" },
+            partner2Status = lastSeenLabel,
+            anniversaryDate = if (space.anniversaryDate > 0L) space.anniversaryDate else _coupleSpace.value.anniversaryDate,
+            loveQuote = space.loveQuote.ifBlank { _coupleSpace.value.loveQuote }
+        )
+        _userSettings.update {
+            it.copy(
+                coupleId = space.id,
+                displayName = myName.ifBlank { it.displayName },
+                avatarUrl = myAvatar.ifBlank { it.avatarUrl },
+                partnerNickname = displayPartner,
+                partnerAvatarUrl = partnerAvatar,
+                partnerBio = partnerBio,
+                partnerStatus = lastSeenLabel
+            )
+        }
+        prefs.edit().apply {
+            putString("fb_pairing_code", space.pairingCode)
+            putString("fb_couple_id", space.id)
+            putString("fb_couple_status", if (isPaired) "paired" else space.status)
+            putString("fb_partner_name", displayPartner)
+            putString("fb_user1_id", space.partner1Id)
+            putString("fb_user2_id", space.partner2Id)
+            apply()
+        }
+    }
+
+    private fun mapFirebaseMessage(fm: com.example.mikayala.data.firebase.FirebaseMessage, uid: String): MessageEntity {
+        val createdMs = fm.createdAt?.toDate()?.time ?: System.currentTimeMillis()
+        val cachedMedia = fm.storagePath?.takeIf { it.isNotBlank() }?.let { mediaUrlCache[it] }
+        return MessageEntity(
+            id = fm.id,
+            coupleId = fm.coupleId,
+            senderId = fm.senderId,
+            receiverId = fm.receiverId,
+            content = if (fm.isDeletedForEveryone) "Ce message a été supprimé" else fm.content,
+            type = fm.type,
+            mediaUrl = fm.mediaUrl?.takeIf { it.isNotBlank() } ?: cachedMedia,
+            storagePath = fm.storagePath,
+            duration = fm.duration.toInt(),
+            createdAt = createdMs,
+            status = fm.status,
+            deliveredAt = fm.deliveredAtMs,
+            readAt = fm.readAtMs,
+            isViewOnce = fm.isViewOnce,
+            isViewed = fm.isViewed,
+            isStarred = synchronized(starredIds) { fm.id in starredIds },
+            isPinned = fm.isPinned,
+            isDeletedForEveryone = fm.isDeletedForEveryone,
+            deletedFor = if (synchronized(hiddenIds) { fm.id in hiddenIds }) listOf(uid) else emptyList(),
+            editedAt = fm.editedAtMs,
+            reactions = fm.reactions,
+            replyToId = fm.replyToId,
+            replyToSender = fm.replyToSender,
+            replyToContent = fm.replyToContent
+        )
+    }
+
+    fun startFirebaseListeners(coupleId: String) {
+        val uid = FirebaseAuthManager.currentUid()
+        if (uid.isBlank() || coupleId.isBlank()) return
+        if (firebaseListeningCoupleId == coupleId && firebaseListenersJob?.isActive == true) return
+        stopFirebaseListeners()
+        firebaseListeningCoupleId = coupleId
+        firebaseListenersJob = repositoryScope.launch {
+            launch {
+                firebaseRepository.observeCoupleSpace(coupleId)
+                    .catch { Log.w("FirebaseSync", "Couple observer stopped: ${it.message}") }
+                    .collect { space ->
+                        if (space != null) applyFirebaseCoupleSpace(space)
+                    }
+            }
+            launch {
+                firebaseRepository.observeMessages(coupleId, uid)
+                    .catch { Log.w("FirebaseSync", "Messages observer stopped: ${it.message}") }
+                    .collect { list ->
+                        val mapped = list.map { fm -> mapFirebaseMessage(fm, uid) }
+                        if (mapped.size < 200) _hasOlderMessages.value = false
+                        val liveIds = mapped.mapTo(HashSet(mapped.size)) { it.id }
+                        val minLiveCreatedAt = mapped.minOfOrNull { it.createdAt } ?: Long.MAX_VALUE
+                        _messages.update { cur ->
+                            val olderKept = cur.filter {
+                                it.id !in liveIds && it.createdAt < minLiveCreatedAt && (it.coupleId == coupleId || it.coupleId.isEmpty())
+                            }
+                            (olderKept + mapped).sortedBy { it.createdAt }
+                        }
+                        for (m in mapped) {
+                            if (!m.storagePath.isNullOrBlank() && m.mediaUrl.isNullOrBlank()) {
+                                fetchAndApplySignedUrl(m.id, m.storagePath)
+                            }
+                        }
+                        val toDeliver = mapped.filter { it.senderId != uid && it.status == "sent" }.map { it.id }
+                        if (toDeliver.isNotEmpty()) {
+                            markMessagesDelivered(coupleId)
+                        }
+                    }
+            }
+            launch {
+                firebaseRepository.observeVaultItems(coupleId, uid)
+                    .catch { Log.w("FirebaseSync", "Vault observer stopped: ${it.message}") }
+                    .collect { items ->
+                        _vaultItems.value = items.map { fv ->
+                            VaultItemEntity(
+                                id = fv.id,
+                                coupleId = fv.coupleId,
+                                title = fv.title,
+                                type = fv.type,
+                                category = fv.category,
+                                caption = fv.caption,
+                                mediaUrl = fv.mediaUrl,
+                                addedBy = fv.addedBy,
+                                addedByName = fv.addedByName,
+                                dateAdded = if (fv.dateAddedMs > 0L) fv.dateAddedMs else (fv.createdAt?.toDate()?.time ?: System.currentTimeMillis())
+                            )
+                        }.sortedByDescending { it.dateAdded }
+                    }
+            }
+            launch {
+                firebaseRepository.observeEvents(coupleId, uid)
+                    .catch { Log.w("FirebaseSync", "Events observer stopped: ${it.message}") }
+                    .collect { evs ->
+                        val mapped = evs.map { fe ->
+                            CoupleEventEntity(
+                                id = fe.id,
+                                title = fe.title,
+                                date = fe.dateMs,
+                                category = fe.category,
+                                note = fe.note,
+                                isRecurring = fe.isRecurring
+                            )
+                        }.sortedBy { it.date }
+                        _events.value = mapped
+                        mapped.forEach { scheduleEventReminder(it) }
+                    }
+            }
+            launch {
+                firebaseRepository.observeGames(coupleId, uid)
+                    .catch { Log.w("FirebaseSync", "Games observer stopped: ${it.message}") }
+                    .collect { items ->
+                        val coupons = mutableListOf<LoveCouponEntity>()
+                        val buckets = mutableListOf<CoupleBucketItemEntity>()
+                        val quizzes = mutableListOf<QuizItemEntity>()
+                        val dilemmas = mutableListOf<CoupleDilemmaEntity>()
+                        val truths = mutableListOf<TruthOrDareEntity>()
+                        val milestones = mutableListOf<LoveMilestoneEntity>()
+                        val capsules = mutableListOf<LoveCapsuleEntity>()
+                        for (g in items) {
+                            try {
+                                when (g.kind) {
+                                    "coupon" -> coupons.add(localGamesJson.decodeFromString(LoveCouponEntity.serializer(), g.payloadJson))
+                                    "bucket" -> buckets.add(localGamesJson.decodeFromString(CoupleBucketItemEntity.serializer(), g.payloadJson))
+                                    "quiz" -> quizzes.add(localGamesJson.decodeFromString(QuizItemEntity.serializer(), g.payloadJson))
+                                    "dilemma" -> dilemmas.add(localGamesJson.decodeFromString(CoupleDilemmaEntity.serializer(), g.payloadJson))
+                                    "truth_dare" -> truths.add(localGamesJson.decodeFromString(TruthOrDareEntity.serializer(), g.payloadJson))
+                                    "milestone" -> milestones.add(localGamesJson.decodeFromString(LoveMilestoneEntity.serializer(), g.payloadJson))
+                                    "capsule" -> capsules.add(localGamesJson.decodeFromString(LoveCapsuleEntity.serializer(), g.payloadJson))
+                                }
+                            } catch (e: Exception) {
+                                Log.w("FirebaseSync", "Game decode error (${g.kind}): ${e.message}")
+                            }
+                        }
+                        if (coupons.isNotEmpty()) _coupons.value = coupons
+                        if (buckets.isNotEmpty()) _bucketList.value = buckets
+                        if (quizzes.isNotEmpty()) _quizItems.value = quizzes
+                        if (dilemmas.isNotEmpty()) _dilemmas.value = dilemmas
+                        if (truths.isNotEmpty()) _truthOrDare.value = truths
+                        if (milestones.isNotEmpty()) _milestones.value = milestones
+                        if (capsules.isNotEmpty()) _loveCapsules.value = capsules
+                    }
+            }
+            launch {
+                firebaseRepository.observeCallSignals(coupleId, uid)
+                    .catch { Log.w("FirebaseSync", "Calls observer stopped: ${it.message}") }
+                    .collect { signals ->
+                        val incoming = signals.firstOrNull { it.status == "ringing" && it.callerUid != uid }
+                        if (incoming != null) {
+                            activeFirebaseIncomingCall = Pair(true, incoming.isVideo)
+                            if (incoming.id != lastIncomingFirebaseSignalId) {
+                                lastIncomingFirebaseSignalId = incoming.id
+                                com.example.mikayala.util.NotificationHelper.showIncomingCallNotification(
+                                    context,
+                                    incoming.callerName.ifBlank { _userSettings.value.partnerNickname.ifBlank { "Partenaire" } },
+                                    incoming.isVideo,
+                                    incoming.id
+                                )
+                            }
+                        } else if (activeFirebaseIncomingCall != null || lastIncomingFirebaseSignalId.isNotBlank()) {
+                            activeFirebaseIncomingCall = null
+                            com.example.mikayala.util.NotificationHelper.dismissIncomingCallNotification(context)
+                        }
+                    }
+            }
+        }
+    }
+
+    fun stopFirebaseListeners() {
+        firebaseListenersJob?.cancel()
+        firebaseListenersJob = null
+        firebaseListeningCoupleId = ""
+        activeFirebaseIncomingCall = null
+    }
+
+    suspend fun recoverCoupleFromFirebase(): CoupleRecoveryResult {
+        val uid = FirebaseAuthManager.currentUid()
+        if (uid.isBlank()) return CoupleRecoveryResult.NoSession
+        val res = firebaseRepository.findMyCoupleSpaces()
+        if (res.isFailure) {
+            return CoupleRecoveryResult.ServerUnavailable(
+                res.exceptionOrNull()?.message ?: "Firebase indisponible",
+                _coupleSpace.value.isPaired
+            )
+        }
+        val spaces = res.getOrNull().orEmpty()
+        val paired = spaces.filter { it.status == "paired" && it.partner1Id.isNotBlank() && it.partner2Id.isNotBlank() }
+        val waiting = spaces.firstOrNull { it.status == "waiting" }
+        return when {
+            paired.size > 1 -> {
+                val items = paired.map { s ->
+                    val pId = if (s.partner1Id == uid) s.partner2Id else s.partner1Id
+                    val pName = if (s.partner1Id == uid) s.partner2Name else s.partner1Name
+                    CoupleSummaryItem(
+                        coupleId = s.id,
+                        pairingCode = s.pairingCode,
+                        status = "paired",
+                        partnerId = pId,
+                        partnerName = pName.ifBlank { "Mon Partenaire" },
+                        user1Id = s.partner1Id,
+                        user2Id = s.partner2Id,
+                        isPaired = true
+                    )
+                }
+                CoupleRecoveryResult.MultipleCouplesFound(items)
+            }
+            paired.size == 1 -> {
+                val selected = paired.first()
+                applyFirebaseCoupleSpace(selected)
+                startFirebaseListeners(selected.id)
+                CoupleRecoveryResult.SingleCoupleFound(_coupleSpace.value)
+            }
+            waiting != null -> {
+                applyFirebaseCoupleSpace(waiting)
+                CoupleRecoveryResult.WaitingCouple(waiting.pairingCode)
+            }
+            else -> {
+                clearCoupleCache()
+                CoupleRecoveryResult.NoCoupleFound
+            }
+        }
+    }
+
     suspend fun findExistingCoupleSpace(): Boolean {
+        if (isFirebaseMode()) {
+            val result = recoverCoupleFromFirebase()
+            return when (result) {
+                is CoupleRecoveryResult.SingleCoupleFound -> true
+                is CoupleRecoveryResult.MultipleCouplesFound -> {
+                    val first = result.couples.first()
+                    activateCouple(first)
+                    true
+                }
+                is CoupleRecoveryResult.ServerUnavailable -> result.keptCachedCouple
+                else -> false
+            }
+        }
         val result = recoverCoupleFromSupabase()
         return when (result) {
             is CoupleRecoveryResult.SingleCoupleFound -> true
@@ -621,14 +1233,23 @@ class MikayalaRepository(private val context: Context) {
 
     fun clearCoupleCache() {
         prefs.edit().apply {
-            remove("pairing_code")
-            remove("couple_id")
-            remove("couple_status")
-            remove("partner_name")
-            remove("user1_id")
-            remove("user2_id")
-            remove("partner_1_id")
-            remove("partner_2_id")
+            if (isFirebaseMode()) {
+                remove("fb_pairing_code")
+                remove("fb_couple_id")
+                remove("fb_couple_status")
+                remove("fb_partner_name")
+                remove("fb_user1_id")
+                remove("fb_user2_id")
+            } else {
+                remove("pairing_code")
+                remove("couple_id")
+                remove("couple_status")
+                remove("partner_name")
+                remove("user1_id")
+                remove("user2_id")
+                remove("partner_1_id")
+                remove("partner_2_id")
+            }
             apply()
         }
         _coupleSpace.value = CoupleSpaceEntity()
@@ -651,17 +1272,26 @@ class MikayalaRepository(private val context: Context) {
         val normalizedStatus = if (isPaired) "paired" else if (code.isNotEmpty()) "waiting" else "none"
 
         prefs.edit().apply {
-            putString("pairing_code", code)
-            putString("partner_name", partnerName)
-            putString("couple_status", normalizedStatus)
-            if (coupleId.isNotEmpty()) {
-                putString("couple_id", coupleId)
-            }
-            if (u1Id.isNotEmpty()) {
-                putString("user1_id", u1Id)
-            }
-            if (u2Id.isNotEmpty()) {
-                putString("user2_id", u2Id)
+            if (isFirebaseMode()) {
+                putString("fb_pairing_code", code)
+                putString("fb_partner_name", partnerName)
+                putString("fb_couple_status", normalizedStatus)
+                if (coupleId.isNotEmpty()) putString("fb_couple_id", coupleId)
+                if (u1Id.isNotEmpty()) putString("fb_user1_id", u1Id)
+                if (u2Id.isNotEmpty()) putString("fb_user2_id", u2Id)
+            } else {
+                putString("pairing_code", code)
+                putString("partner_name", partnerName)
+                putString("couple_status", normalizedStatus)
+                if (coupleId.isNotEmpty()) {
+                    putString("couple_id", coupleId)
+                }
+                if (u1Id.isNotEmpty()) {
+                    putString("user1_id", u1Id)
+                }
+                if (u2Id.isNotEmpty()) {
+                    putString("user2_id", u2Id)
+                }
             }
             apply()
         }
@@ -714,6 +1344,9 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun getCurrentUserId(): String {
+        if (isFirebaseMode()) {
+            return FirebaseAuthManager.currentUid()
+        }
         val sessionUid = supabaseService.getCurrentSessionUid()
         val cachedUid = prefs.getString("user_id", "") ?: ""
         if (!sessionUid.isNullOrEmpty()) {
@@ -732,6 +1365,7 @@ class MikayalaRepository(private val context: Context) {
 
         val myUserId = getCurrentUserId()
         if (myUserId.isNotEmpty() && message.senderId == myUserId) return true
+        if (isFirebaseMode()) return false
 
         val authUid = supabaseService.getCurrentSessionUid()
         if (!authUid.isNullOrEmpty() && message.senderId == authUid) return true
@@ -756,7 +1390,7 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun resolveCoupleMembers(): Pair<String, String> {
-        val authUid = supabaseService.getCurrentSessionUid() ?: getCurrentUserId()
+        val authUid = if (isFirebaseMode()) FirebaseAuthManager.currentUid() else (supabaseService.getCurrentSessionUid() ?: getCurrentUserId())
         val cachedUid = prefs.getString("user_id", "") ?: ""
         val couple = _coupleSpace.value
         val user1 = couple.partner1Id
@@ -789,6 +1423,10 @@ class MikayalaRepository(private val context: Context) {
         val couple = _coupleSpace.value
         val (myUserId, partnerUserId) = resolveCoupleMembers()
         if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank()) return
+        if (isFirebaseMode()) {
+            startFirebaseListeners(couple.id)
+            return
+        }
 
         supabaseService.subscribeToMessagesRealtime(
             coupleId = couple.id,
@@ -851,6 +1489,7 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun disconnectRealtime() {
+        stopFirebaseListeners()
         supabaseService.unsubscribeRealtime()
         _isPartnerOnline.value = false
         _partnerIsTyping.value = false
@@ -861,12 +1500,25 @@ class MikayalaRepository(private val context: Context) {
         supabaseService.untrackPresence()
     }
 
-    /**
-     * Application passée en arrière-plan : on n'est plus « en ligne » pour le partenaire, et on
-     * enregistre l'heure exacte de la dernière connexion (sauf si l'utilisateur la masque).
-     * Avant, la présence restait active tant que le processus vivait, même écran éteint.
-     */
     fun onAppBackground() {
+        if (isFirebaseMode()) {
+            val couple = _coupleSpace.value
+            val uid = FirebaseAuthManager.currentUid()
+            if (couple.id.isNotBlank() && uid.isNotBlank()) {
+                val isP1 = uid == couple.partner1Id
+                val fields = mutableMapOf<String, Any>(
+                    (if (isP1) "partner1TypingAtMs" else "partner2TypingAtMs") to 0L,
+                    (if (isP1) "partner1RecordingAtMs" else "partner2RecordingAtMs") to 0L
+                )
+                if (_userSettings.value.lastSeenPrivacy != "nobody") {
+                    fields[if (isP1) "partner1LastSeenMs" else "partner2LastSeenMs"] = System.currentTimeMillis()
+                }
+                repositoryScope.launch {
+                    firebaseRepository.updateCoupleProfileAndMeta(couple.id, fields)
+                }
+            }
+            return
+        }
         supabaseService.untrackPresence()
         repositoryScope.launch {
             try {
@@ -877,8 +1529,21 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
-    /** Retour au premier plan : présence de nouveau publiée et activité mise à jour. */
     fun onAppForeground() {
+        if (isFirebaseMode()) {
+            val couple = _coupleSpace.value
+            val uid = FirebaseAuthManager.currentUid()
+            if (couple.isPaired && couple.id.isNotBlank() && uid.isNotBlank()) {
+                startFirebaseListeners(couple.id)
+                if (_userSettings.value.lastSeenPrivacy != "nobody") {
+                    val isP1 = uid == couple.partner1Id
+                    repositoryScope.launch {
+                        firebaseService.touchPresence(couple.id, isP1)
+                    }
+                }
+            }
+            return
+        }
         val myUserId = getCurrentUserId()
         if (_userSettings.value.lastSeenPrivacy != "nobody") supabaseService.retrackPresence(myUserId)
         lastProfilesSyncAt = 0L // statut du partenaire rafraîchi à la prochaine synchronisation
@@ -886,11 +1551,33 @@ class MikayalaRepository(private val context: Context) {
     }
 
     fun sendTypingBroadcast(isTyping: Boolean) {
+        if (isFirebaseMode()) {
+            val couple = _coupleSpace.value
+            val uid = FirebaseAuthManager.currentUid()
+            if (!couple.isPaired || couple.id.isBlank() || uid.isBlank()) return
+            val now = System.currentTimeMillis()
+            if (isTyping && now - lastFirebaseTypingSentAt < 2_500L) return
+            lastFirebaseTypingSentAt = if (isTyping) now else 0L
+            val isP1 = uid == couple.partner1Id
+            repositoryScope.launch { firebaseService.setTypingState(couple.id, isP1, isTyping) }
+            return
+        }
         val myUserId = getCurrentUserId()
         supabaseService.broadcastTyping(isTyping, myUserId)
     }
 
     fun sendRecordingBroadcast(isRecording: Boolean) {
+        if (isFirebaseMode()) {
+            val couple = _coupleSpace.value
+            val uid = FirebaseAuthManager.currentUid()
+            if (!couple.isPaired || couple.id.isBlank() || uid.isBlank()) return
+            val now = System.currentTimeMillis()
+            if (isRecording && now - lastFirebaseRecordingSentAt < 2_500L) return
+            lastFirebaseRecordingSentAt = if (isRecording) now else 0L
+            val isP1 = uid == couple.partner1Id
+            repositoryScope.launch { firebaseService.setRecordingState(couple.id, isP1, isRecording) }
+            return
+        }
         val myUserId = getCurrentUserId()
         supabaseService.broadcastRecording(isRecording, myUserId)
     }
@@ -905,6 +1592,27 @@ class MikayalaRepository(private val context: Context) {
         if (!signingInFlight.add(storagePath)) return
         repositoryScope.launch {
             try {
+                if (isFirebaseMode()) {
+                    if (!forceRefresh) {
+                        val cached = mediaUrlCache[storagePath]?.takeIf {
+                            !storagePath.startsWith("supa:") || com.example.mikayala.util.SignedUrls.isUsable(it)
+                        }
+                        if (cached != null) {
+                            _messages.update { cur -> cur.map {
+                                if (it.id == messageId) it.copy(mediaUrl = cached) else it
+                            } }
+                            return@launch
+                        }
+                    }
+                    val url = resolveFirebaseOrSupabaseMediaUrl(_coupleSpace.value.id, storagePath)
+                    if (url != null) {
+                        mediaUrlCache[storagePath] = url
+                        _messages.update { cur -> cur.map {
+                            if (it.id == messageId) it.copy(mediaUrl = url) else it
+                        } }
+                    }
+                    return@launch
+                }
                 if (!forceRefresh) {
                     val cached = mediaUrlCache[storagePath]?.takeIf { com.example.mikayala.util.SignedUrls.isUsable(it) }
                     if (cached != null) {
@@ -1201,9 +1909,35 @@ class MikayalaRepository(private val context: Context) {
         // Hors ligne : pas d'envoi en cours, la synchronisation le renverra dès le retour d'Internet
         if (!hasNetwork) endOutgoing(messageUuid)
 
-        // If connected to internet, post to Supabase
+        // If connected to internet, post to active backend
         if (hasNetwork) {
             repositoryScope.launch {
+                if (isFirebaseMode()) {
+                    val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    val res = firebaseRepository.sendMessage(
+                        messageId = messageUuid,
+                        coupleId = coupleId,
+                        memberUids = memberUids,
+                        receiverId = partnerId,
+                        content = content,
+                        type = type,
+                        mediaUrl = mediaUrl,
+                        duration = duration,
+                        isViewOnce = isViewOnce,
+                        replyToId = replyToId,
+                        replyToSender = replyToSender,
+                        replyToContent = replyToContent
+                    )
+                    endOutgoing(messageUuid)
+                    if (res.isFailure) {
+                        _messages.update { cur -> cur.map { if (it.id == messageUuid) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit("Envoi Firebase échoué : ${res.exceptionOrNull()?.message ?: "erreur réseau"}")
+                    } else {
+                        val pushType = if (type == "text") "chat_message" else type
+                        notifyPartnerAfterInsert(pushType, content, messageUuid)
+                    }
+                    return@launch
+                }
                 val success = try { supabaseService.postMessageEntity(pendingMsg) } finally { endOutgoing(messageUuid) }
                 Log.d("MikayalaRepository", "[MIKAYALA_MESSAGE] postMessageEntity result=$success for ID $messageUuid")
                 if (success) {
@@ -1253,7 +1987,6 @@ class MikayalaRepository(private val context: Context) {
                 val messageId = UUID.randomUUID().toString()
                 val storagePath = "$coupleId/audio/$messageId.m4a"
                 val hasNetwork = isNetworkAvailable()
-                val hasP2P = isP2PConnected()
 
                 // Statut initial honnête : TOUJOURS "pending" tant que la confirmation serveur ou P2P n'est pas acquise
                 val pendingMsg = MessageEntity(
@@ -1270,11 +2003,41 @@ class MikayalaRepository(private val context: Context) {
                     status = "pending"
                 )
                 beginOutgoing(pendingMsg)
-                saveLocalMessagesCache()
+                if (!isFirebaseMode()) saveLocalMessagesCache()
 
-                // 2. Envoi via socket P2P local si connecté (la confirmation d'état reste pending jusqu'à confirmation d'insertion)
-                // Le P2P ne transporte que le texte : le vocal reste en attente et part au retour d'Internet
-                // (avant : seul un nom de fichier était envoyé, sans le son).
+                if (isFirebaseMode()) {
+                    val uploadRes = uploadFirebaseOrSupabaseMedia(coupleId, storagePath, bytes, "audio/mp4")
+                    val (storedPath, downloadUrl) = uploadRes.getOrNull() ?: run {
+                        endOutgoing(messageId)
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Envoi vocal échoué.")
+                        return@launch
+                    }
+                    mediaUrlCache[storedPath] = downloadUrl
+                    val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    val insertRes = firebaseRepository.sendMessage(
+                        messageId = messageId,
+                        coupleId = coupleId,
+                        memberUids = memberUids,
+                        receiverId = partnerId,
+                        content = pendingMsg.content,
+                        type = "audio",
+                        mediaUrl = downloadUrl,
+                        storagePath = storedPath,
+                        duration = pendingMsg.duration
+                    )
+                    endOutgoing(messageId)
+                    if (insertRes.isSuccess) {
+                        _messages.update { cur -> cur.map {
+                            if (it.id == messageId) it.copy(status = "sent", mediaUrl = downloadUrl, storagePath = storedPath) else it
+                        } }
+                        notifyPartnerAfterInsert("audio", "🎤 Note vocale reçue", messageId)
+                    } else {
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit("Envoi vocal Firestore échoué : ${insertRes.exceptionOrNull()?.message ?: "erreur"}")
+                    }
+                    return@launch
+                }
 
                 // 3. Envoi via Supabase si réseau disponible
                 if (hasNetwork) {
@@ -1364,6 +2127,41 @@ class MikayalaRepository(private val context: Context) {
                 beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=image storagePath=$storagePath UPLOAD START")
 
+                if (isFirebaseMode()) {
+                    val uploadRes = uploadFirebaseOrSupabaseMedia(coupleId, storagePath, webpBytes, "image/webp")
+                    val (storedPath, downloadUrl) = uploadRes.getOrNull() ?: run {
+                        endOutgoing(messageId)
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Envoi photo échoué.")
+                        return@launch
+                    }
+                    mediaUrlCache[storedPath] = downloadUrl
+                    val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    val insertRes = firebaseRepository.sendMessage(
+                        messageId = messageId,
+                        coupleId = coupleId,
+                        memberUids = memberUids,
+                        receiverId = partnerId,
+                        content = contentText,
+                        type = "image",
+                        mediaUrl = downloadUrl,
+                        storagePath = storedPath,
+                        isViewOnce = isViewOnce
+                    )
+                    endOutgoing(messageId)
+                    if (insertRes.isSuccess) {
+                        _messages.update { cur -> cur.map {
+                            if (it.id == messageId) it.copy(status = "sent", mediaUrl = downloadUrl, storagePath = storedPath) else it
+                        } }
+                        deleteOutgoingCopy(localCopy)
+                        notifyPartnerAfterInsert("image", contentText, messageId)
+                    } else {
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit("Envoi photo Firestore échoué.")
+                    }
+                    return@launch
+                }
+
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, webpBytes, "image/webp")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
@@ -1437,6 +2235,40 @@ class MikayalaRepository(private val context: Context) {
                 )
                 beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=video storagePath=$storagePath UPLOAD START")
+
+                if (isFirebaseMode()) {
+                    val uploadRes = uploadFirebaseOrSupabaseMedia(coupleId, storagePath, bytes, "video/mp4")
+                    val (storedPath, downloadUrl) = uploadRes.getOrNull() ?: run {
+                        endOutgoing(messageId)
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Envoi vidéo échoué.")
+                        return@launch
+                    }
+                    mediaUrlCache[storedPath] = downloadUrl
+                    val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    val insertRes = firebaseRepository.sendMessage(
+                        messageId = messageId,
+                        coupleId = coupleId,
+                        memberUids = memberUids,
+                        receiverId = partnerId,
+                        content = contentText,
+                        type = "video",
+                        mediaUrl = downloadUrl,
+                        storagePath = storedPath
+                    )
+                    endOutgoing(messageId)
+                    if (insertRes.isSuccess) {
+                        _messages.update { cur -> cur.map {
+                            if (it.id == messageId) it.copy(status = "sent", mediaUrl = downloadUrl, storagePath = storedPath) else it
+                        } }
+                        notifyPartnerAfterInsert("video", contentText, messageId)
+                        try { videoFile.delete() } catch (_: Exception) {}
+                    } else {
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit("Envoi vidéo Firestore échoué.")
+                    }
+                    return@launch
+                }
 
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "video/mp4")
                 val uploadSuccess = uploadedPath != null
@@ -1532,6 +2364,41 @@ class MikayalaRepository(private val context: Context) {
                 beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=image storagePath=$storagePath UPLOAD START")
 
+                if (isFirebaseMode()) {
+                    val uploadRes = uploadFirebaseOrSupabaseMedia(coupleId, storagePath, bytes, "image/webp")
+                    val (storedPath, downloadUrl) = uploadRes.getOrNull() ?: run {
+                        endOutgoing(messageId)
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Envoi photo échoué.")
+                        return@launch
+                    }
+                    mediaUrlCache[storedPath] = downloadUrl
+                    val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    val insertRes = firebaseRepository.sendMessage(
+                        messageId = messageId,
+                        coupleId = coupleId,
+                        memberUids = memberUids,
+                        receiverId = partnerId,
+                        content = contentText,
+                        type = "image",
+                        mediaUrl = downloadUrl,
+                        storagePath = storedPath,
+                        isViewOnce = isViewOnce
+                    )
+                    endOutgoing(messageId)
+                    if (insertRes.isSuccess) {
+                        _messages.update { cur -> cur.map {
+                            if (it.id == messageId) it.copy(status = "sent", mediaUrl = downloadUrl, storagePath = storedPath) else it
+                        } }
+                        deleteOutgoingCopy(localCopy)
+                        notifyPartnerAfterInsert("image", contentText, messageId)
+                    } else {
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit("Envoi photo Firestore échoué.")
+                    }
+                    return@launch
+                }
+
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/webp")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
@@ -1611,6 +2478,41 @@ class MikayalaRepository(private val context: Context) {
                 beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=camera_photo storagePath=$storagePath UPLOAD START")
 
+                if (isFirebaseMode()) {
+                    val uploadRes = uploadFirebaseOrSupabaseMedia(coupleId, storagePath, bytes, "image/webp")
+                    val (storedPath, downloadUrl) = uploadRes.getOrNull() ?: run {
+                        endOutgoing(messageId)
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Envoi photo échoué.")
+                        return@launch
+                    }
+                    mediaUrlCache[storedPath] = downloadUrl
+                    val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    val insertRes = firebaseRepository.sendMessage(
+                        messageId = messageId,
+                        coupleId = coupleId,
+                        memberUids = memberUids,
+                        receiverId = partnerId,
+                        content = contentText,
+                        type = "image",
+                        mediaUrl = downloadUrl,
+                        storagePath = storedPath,
+                        isViewOnce = isViewOnce
+                    )
+                    endOutgoing(messageId)
+                    if (insertRes.isSuccess) {
+                        _messages.update { cur -> cur.map {
+                            if (it.id == messageId) it.copy(status = "sent", mediaUrl = downloadUrl, storagePath = storedPath) else it
+                        } }
+                        deleteOutgoingCopy(localCopy)
+                        notifyPartnerAfterInsert("image", contentText, messageId)
+                    } else {
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit("Envoi photo Firestore échoué.")
+                    }
+                    return@launch
+                }
+
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "image/webp")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
@@ -1688,6 +2590,40 @@ class MikayalaRepository(private val context: Context) {
                 beginOutgoing(pendingMsg)
                 Log.d("MikayalaRepository", "[MIKAYALA_MEDIA] messageId=$messageId type=video storagePath=$storagePath UPLOAD START")
 
+                if (isFirebaseMode()) {
+                    val uploadRes = uploadFirebaseOrSupabaseMedia(coupleId, storagePath, bytes, "video/mp4")
+                    val (storedPath, downloadUrl) = uploadRes.getOrNull() ?: run {
+                        endOutgoing(messageId)
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Envoi vidéo échoué.")
+                        return@launch
+                    }
+                    mediaUrlCache[storedPath] = downloadUrl
+                    val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    val insertRes = firebaseRepository.sendMessage(
+                        messageId = messageId,
+                        coupleId = coupleId,
+                        memberUids = memberUids,
+                        receiverId = partnerId,
+                        content = pendingMsg.content,
+                        type = "video",
+                        mediaUrl = downloadUrl,
+                        storagePath = storedPath
+                    )
+                    endOutgoing(messageId)
+                    if (insertRes.isSuccess) {
+                        _messages.update { cur -> cur.map {
+                            if (it.id == messageId) it.copy(status = "sent", mediaUrl = downloadUrl, storagePath = storedPath) else it
+                        } }
+                        deleteOutgoingCopy(localCopy)
+                        notifyPartnerAfterInsert("video", pendingMsg.content, messageId)
+                    } else {
+                        _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(status = "failed") else it } }
+                        _actionErrors.tryEmit("Envoi vidéo Firestore échoué.")
+                    }
+                    return@launch
+                }
+
                 val uploadedPath = supabaseService.uploadMessageMedia(coupleId, storagePath, bytes, "video/mp4")
                 val uploadSuccess = uploadedPath != null
                 if (!uploadSuccess) {
@@ -1726,13 +2662,43 @@ class MikayalaRepository(private val context: Context) {
 
     fun sendDocumentMedia(uri: Uri, fileName: String) {
         val couple = _coupleSpace.value
-        if (!couple.isPaired || couple.id.isBlank()) return
+        val (myUserId, partnerId) = resolveCoupleMembers()
+        if (!couple.isPaired || couple.id.isBlank() || myUserId.isBlank() || partnerId.isBlank()) return
         repositoryScope.launch {
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val bytes = inputStream?.readBytes()
                 inputStream?.close()
                 if (bytes != null) {
+                    if (isFirebaseMode()) {
+                        val messageId = UUID.randomUUID().toString()
+                        val cleanName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80).ifBlank { "document" }
+                        val storagePath = "${couple.id}/documents/${messageId}_$cleanName"
+                        val mime = try { context.contentResolver.getType(uri) } catch (_: Exception) { null } ?: "application/octet-stream"
+                        val uploadRes = uploadFirebaseOrSupabaseMedia(couple.id, storagePath, bytes, mime)
+                        val (storedPath, downloadUrl) = uploadRes.getOrNull() ?: run {
+                            _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Envoi document échoué.")
+                            return@launch
+                        }
+                        mediaUrlCache[storedPath] = downloadUrl
+                        val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                        val insertRes = firebaseRepository.sendMessage(
+                            messageId = messageId,
+                            coupleId = couple.id,
+                            memberUids = memberUids,
+                            receiverId = partnerId,
+                            content = fileName,
+                            type = "document",
+                            mediaUrl = downloadUrl,
+                            storagePath = storedPath
+                        )
+                        if (insertRes.isSuccess) {
+                            notifyPartnerAfterInsert("chat_message", "📄 $fileName", messageId)
+                        } else {
+                            _actionErrors.tryEmit("Envoi document Firestore échoué.")
+                        }
+                        return@launch
+                    }
                     // 1) Bucket privé messages-media + URL signée (comme photos, vocaux et vidéos)
                     if (sendDocumentViaSignedStorage(uri, fileName, bytes)) return@launch
                     // 2) Repli transitoire : ancien envoi chat_media (URL publique) tant que
@@ -1747,11 +2713,15 @@ class MikayalaRepository(private val context: Context) {
                 }
             } catch (e: Exception) {
                 Log.e("MikayalaRepository", "Failed to send document: ${e.message}")
-                sendMessage(
-                    content = fileName,
-                    type = "document",
-                    mediaUrl = uri.toString()
-                )
+                if (isFirebaseMode()) {
+                    _actionErrors.tryEmit("Impossible d'envoyer le document.")
+                } else {
+                    sendMessage(
+                        content = fileName,
+                        type = "document",
+                        mediaUrl = uri.toString()
+                    )
+                }
             }
         }
     }
@@ -1847,6 +2817,16 @@ class MikayalaRepository(private val context: Context) {
         _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(reactions = optimistic) else it } }
         saveLocalMessagesCache()
         repositoryScope.launch {
+            if (isFirebaseMode()) {
+                val coupleId = _coupleSpace.value.id
+                if (coupleId.isBlank()) return@launch
+                val res = firebaseRepository.updateMessageFields(coupleId, messageId, mapOf("reactions" to optimistic))
+                if (res.isFailure) {
+                    _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(reactions = before) else it } }
+                    _actionErrors.tryEmit("Réaction non enregistrée : vérifiez la connexion")
+                }
+                return@launch
+            }
             val serverCurrent = supabaseService.fetchMessageReactions(messageId)
             val finalJson = if (serverCurrent != null) toggled(serverCurrent) else optimistic
             val ok = supabaseService.updateMessageFields(
@@ -1865,8 +2845,6 @@ class MikayalaRepository(private val context: Context) {
 
     /**
      * Favori PERSONNEL (comme WhatsApp) : enregistré sur ce téléphone seulement.
-     * Avant, il était écrit dans une colonne partagée (visible chez le partenaire) et la
-     * synchronisation l'effaçait quand cette colonne n'existait pas.
      */
     fun toggleStarred(messageId: String) {
         val nowStarred = synchronized(starredIds) {
@@ -1884,7 +2862,14 @@ class MikayalaRepository(private val context: Context) {
         _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(isPinned = newPinned) else it } }
         saveLocalMessagesCache()
         repositoryScope.launch {
-            val ok = supabaseService.updateMessageFields(messageId, JSONObject().apply { put("is_pinned", newPinned) })
+            val ok = if (isFirebaseMode()) {
+                val coupleId = _coupleSpace.value.id
+                if (coupleId.isNotBlank()) {
+                    firebaseRepository.updateMessageFields(coupleId, messageId, mapOf("isPinned" to newPinned)).isSuccess
+                } else false
+            } else {
+                supabaseService.updateMessageFields(messageId, JSONObject().apply { put("is_pinned", newPinned) })
+            }
             if (!ok) {
                 _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(isPinned = current.isPinned) else it } }
                 saveLocalMessagesCache()
@@ -1893,22 +2878,47 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Joue un coup dans un jeu du chat : met à jour l'état (media_url) localement puis sur Supabase,
-     * et prévient le partenaire que c'est son tour. Retourne false si l'enregistrement échoue
-     * (l'état local est alors restauré).
-     */
     suspend fun playGameMove(messageId: String, newState: String, gameTitle: String): Boolean {
         val before = _messages.value.firstOrNull { it.id == messageId } ?: return false
         _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(mediaUrl = newState) else it } }
+        val couple = _coupleSpace.value
+        val (_, partnerId) = resolveCoupleMembers()
+        if (isFirebaseMode()) {
+            val coupleId = couple.id
+            val ok = if (coupleId.isNotBlank()) {
+                firebaseRepository.updateMessageFields(coupleId, messageId, mapOf("mediaUrl" to newState)).isSuccess
+            } else false
+            if (!ok) {
+                _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(mediaUrl = before.mediaUrl) else it } }
+                return false
+            }
+            if (coupleId.isNotBlank() && partnerId.isNotBlank()) {
+                val members = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                repositoryScope.launch {
+                    firebaseService.sendFcmPush(
+                        coupleId = coupleId,
+                        memberUids = members,
+                        recipientId = partnerId,
+                        type = "game_turn",
+                        title = "Mikayala",
+                        body = "À toi de jouer",
+                        extraData = mapOf(
+                            "partnerName" to _userSettings.value.displayName.ifBlank { "Mon Amour" },
+                            "gameTitle" to gameTitle,
+                            "messageId" to "$messageId:$newState"
+                        ),
+                        hidePreview = false
+                    )
+                }
+            }
+            return true
+        }
         val ok = supabaseService.updateMessageFields(messageId, JSONObject().apply { put("media_url", newState) })
         if (!ok) {
             _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(mediaUrl = before.mediaUrl) else it } }
             return false
         }
         saveLocalMessagesCache()
-        val couple = _coupleSpace.value
-        val (_, partnerId) = resolveCoupleMembers()
         if (couple.id.isNotBlank() && partnerId.isNotBlank()) {
             supabaseService.sendFcmPush(
                 coupleId = couple.id,
@@ -1923,7 +2933,6 @@ class MikayalaRepository(private val context: Context) {
         return true
     }
 
-    /** Modification d'un message : date au format ISO (accepté par une colonne timestamptz) ; rétablie si refusée. */
     fun editMessage(messageId: String, newContent: String) {
         val before = _messages.value.firstOrNull { it.id == messageId } ?: return
         val now = System.currentTimeMillis()
@@ -1932,16 +2941,27 @@ class MikayalaRepository(private val context: Context) {
         } }
         saveLocalMessagesCache()
         repositoryScope.launch {
-            val f = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
-            f.timeZone = java.util.TimeZone.getTimeZone("UTC")
-            val ok = supabaseService.updateMessageFields(
-                messageId,
-                JSONObject().apply {
-                    put("content", newContent)
-                    put("edited_at", f.format(java.util.Date(now)))
-                },
-                optionalColumns = setOf("edited_at")
-            )
+            val ok = if (isFirebaseMode()) {
+                val coupleId = _coupleSpace.value.id
+                if (coupleId.isNotBlank()) {
+                    firebaseRepository.updateMessageFields(
+                        coupleId,
+                        messageId,
+                        mapOf("content" to newContent, "editedAtMs" to now)
+                    ).isSuccess
+                } else false
+            } else {
+                val f = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+                f.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                supabaseService.updateMessageFields(
+                    messageId,
+                    JSONObject().apply {
+                        put("content", newContent)
+                        put("edited_at", f.format(java.util.Date(now)))
+                    },
+                    optionalColumns = setOf("edited_at")
+                )
+            }
             if (!ok) {
                 _messages.update { cur -> cur.map { if (it.id == messageId) it.copy(content = before.content, editedAt = before.editedAt) else it } }
                 saveLocalMessagesCache()
@@ -1959,8 +2979,19 @@ class MikayalaRepository(private val context: Context) {
             } }
             saveLocalMessagesCache()
             repositoryScope.launch {
-                if (!supabaseService.deleteMessageForEveryone(messageId)) {
-                    // Refusé : le message n'est PAS supprimé chez le partenaire, on le dit et on le rétablit
+                val ok = if (isFirebaseMode()) {
+                    val coupleId = _coupleSpace.value.id
+                    if (coupleId.isNotBlank()) {
+                        firebaseRepository.updateMessageFields(
+                            coupleId,
+                            messageId,
+                            mapOf("isDeletedForEveryone" to true, "content" to "Ce message a été supprimé")
+                        ).isSuccess
+                    } else false
+                } else {
+                    supabaseService.deleteMessageForEveryone(messageId)
+                }
+                if (!ok) {
                     _messages.update { cur -> cur.map {
                         if (it.id == messageId) it.copy(isDeletedForEveryone = before.isDeletedForEveryone, content = before.content) else it
                     } }
@@ -1969,8 +3000,6 @@ class MikayalaRepository(private val context: Context) {
                 }
             }
         } else {
-            // « Supprimer pour moi » : masqué sur CE téléphone, durablement. Avant, il était écrit dans
-            // une colonne serveur (deleted_for) et réapparaissait après synchronisation si elle manquait.
             synchronized(hiddenIds) { hiddenIds.add(messageId) }
             prefs.edit().putStringSet("hidden_message_ids", HashSet(hiddenIds)).apply()
             _messages.update { cur -> cur.map {
@@ -1985,10 +3014,17 @@ class MikayalaRepository(private val context: Context) {
             if (it.id == messageId) it.copy(isViewed = true) else it
         } }
         repositoryScope.launch {
-            supabaseService.updateMessageFields(
-                messageId,
-                JSONObject().apply { put("is_viewed", true) }
-            )
+            if (isFirebaseMode()) {
+                val coupleId = _coupleSpace.value.id
+                if (coupleId.isNotBlank()) {
+                    firebaseRepository.updateMessageFields(coupleId, messageId, mapOf("isViewed" to true))
+                }
+            } else {
+                supabaseService.updateMessageFields(
+                    messageId,
+                    JSONObject().apply { put("is_viewed", true) }
+                )
+            }
         }
     }
 
@@ -2016,11 +3052,30 @@ class MikayalaRepository(private val context: Context) {
         return addVaultItem(title, type, "sauvegardes", message.content, mediaRef = mediaRef)
     }
 
-    /** URL affichable d'un média du coffre (les références « msgmedia: » sont des fichiers privés signés). */
+    /** URL affichable d'un média du coffre (les références « msgmedia: » ou « supa-msgmedia: » sont des fichiers privés signés). */
     suspend fun resolveVaultMediaUrl(ref: String): String? {
         if (ref.isBlank()) return null
+        if (ref.startsWith("supa-msgmedia:")) {
+            val path = ref.removePrefix("supa-msgmedia:")
+            mediaUrlCache[path]?.takeIf { com.example.mikayala.util.SignedUrls.isUsable(it) }?.let { return it }
+            val url = if (isFirebaseMode()) {
+                supabaseService.getSignedUrlViaSupabaseHybrid(
+                    firebaseIdToken = firebaseService.getCurrentIdToken(),
+                    bucket = "messages-media",
+                    storagePath = path,
+                    coupleId = _coupleSpace.value.id
+                )
+            } else {
+                supabaseService.getSignedMessageMediaUrl(path)
+            }
+            return url?.also { mediaUrlCache[path] = it }
+        }
         if (!ref.startsWith("msgmedia:")) return ref
         val path = ref.removePrefix("msgmedia:")
+        if (isFirebaseMode()) {
+            mediaUrlCache[path]?.let { return it }
+            return resolveFirebaseOrSupabaseMediaUrl(_coupleSpace.value.id, path)?.also { mediaUrlCache[path] = it }
+        }
         mediaUrlCache[path]?.takeIf { com.example.mikayala.util.SignedUrls.isUsable(it) }?.let { return it }
         return supabaseService.getSignedMessageMediaUrl(path)?.also { mediaUrlCache[path] = it }
     }
@@ -2038,7 +3093,24 @@ class MikayalaRepository(private val context: Context) {
             if (bmp !== original) bmp.recycle()
             original.recycle()
             val path = "${couple.id}/vault/${UUID.randomUUID()}.webp"
-            supabaseService.uploadMessageMedia(couple.id, path, out.toByteArray(), "image/webp") ?: return false
+            val bytes = out.toByteArray()
+            if (isFirebaseMode()) {
+                val uploadRes = uploadFirebaseOrSupabaseMedia(couple.id, path, bytes, "image/webp")
+                val (storedPath, url) = uploadRes.getOrNull() ?: run {
+                    _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Upload coffre échoué.")
+                    return false
+                }
+                mediaUrlCache[storedPath] = url
+                val mediaRef = if (storedPath.startsWith("supa:")) {
+                    "supa-msgmedia:${storedPath.removePrefix("supa:")}"
+                } else {
+                    "msgmedia:$storedPath"
+                }
+                val ok = addVaultItem(title.ifBlank { "Photo" }, "photo", category, caption, mediaRef = mediaRef)
+                if (!ok) deleteFirebaseOrSupabaseMedia(couple.id, storedPath)
+                return ok
+            }
+            supabaseService.uploadMessageMedia(couple.id, path, bytes, "image/webp") ?: return false
             val ok = addVaultItem(title.ifBlank { "Photo" }, "photo", category, caption, mediaRef = "msgmedia:$path")
             // Élément refusé : ne pas laisser un fichier orphelin dans le stockage
             if (!ok) supabaseService.deleteMessageMedia(path)
@@ -2050,29 +3122,38 @@ class MikayalaRepository(private val context: Context) {
     }
 
     // --- Shared Vault Actions ---
-    /**
-     * Ajoute un élément au coffre. L'élément n'apparaît (et l'app ne dit « enregistré ») qu'après
-     * confirmation du serveur : avant, il était affiché tout de suite puis disparaissait à la
-     * réouverture parce que l'insertion avait échoué en silence.
-     */
     suspend fun addVaultItem(title: String, type: String, category: String, caption: String, isViewOnce: Boolean = false, mediaRef: String = ""): Boolean {
         val couple = _coupleSpace.value
         val myUserId = getCurrentUserId()
         val coupleId = couple.id
         if (!couple.isPaired || coupleId.isEmpty() || myUserId.isEmpty()) return false
 
-        // Même identifiant (UUID standard) sur le téléphone et sur le serveur
         val id = UUID.randomUUID().toString()
-        val ok = supabaseService.insertVaultItem(
-            id = id,
-            coupleId = coupleId,
-            senderId = myUserId,
-            title = title,
-            type = type,
-            category = category,
-            caption = caption,
-            mediaUrl = mediaRef
-        )
+        val ok = if (isFirebaseMode()) {
+            val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+            firebaseRepository.addVaultItem(
+                itemId = id,
+                coupleId = coupleId,
+                memberUids = memberUids,
+                addedByName = _userSettings.value.displayName.ifBlank { "Moi" },
+                title = title,
+                type = type,
+                category = category,
+                caption = caption,
+                mediaUrl = mediaRef
+            ).isSuccess
+        } else {
+            supabaseService.insertVaultItem(
+                id = id,
+                coupleId = coupleId,
+                senderId = myUserId,
+                title = title,
+                type = type,
+                category = category,
+                caption = caption,
+                mediaUrl = mediaRef
+            )
+        }
         if (!ok) return false
         val newItem = VaultItemEntity(
             id = id,
@@ -2087,20 +3168,33 @@ class MikayalaRepository(private val context: Context) {
             dateAdded = System.currentTimeMillis()
         )
         _vaultItems.update { cur -> listOf(newItem) + cur.filterNot { it.id == id } }
-        saveLocalVaultCache()
+        if (!isFirebaseMode()) saveLocalVaultCache()
         return true
     }
 
     /** Supprime un élément du coffre ; il ne disparaît que si le serveur confirme. */
     suspend fun deleteVaultItem(id: String): Boolean {
+        val couple = _coupleSpace.value
         val item = _vaultItems.value.firstOrNull { it.id == id }
-        val ok = supabaseService.deleteVaultItem(id)
+        val ok = if (isFirebaseMode()) {
+            if (couple.id.isBlank()) false else firebaseRepository.deleteVaultItem(couple.id, id).isSuccess
+        } else {
+            supabaseService.deleteVaultItem(id)
+        }
         if (!ok) return false
         _vaultItems.update { cur -> cur.filterNot { it.id == id } }
-        saveLocalVaultCache()
-        // Fichier propre au coffre : supprimé aussi (jamais un média du chat, toujours utilisé par le message)
-        val path = item?.mediaUrl?.takeIf { it.startsWith("msgmedia:") }?.removePrefix("msgmedia:")
-        if (path != null && path.contains("/vault/")) supabaseService.deleteMessageMedia(path)
+        val rawRef = item?.mediaUrl.orEmpty()
+        val path = when {
+            rawRef.startsWith("supa-msgmedia:") -> "supa:" + rawRef.removePrefix("supa-msgmedia:")
+            rawRef.startsWith("msgmedia:") -> rawRef.removePrefix("msgmedia:")
+            else -> null
+        }
+        if (isFirebaseMode()) {
+            if (path != null && path.contains("/vault/")) deleteFirebaseOrSupabaseMedia(couple.id, path)
+        } else {
+            saveLocalVaultCache()
+            if (path != null && path.contains("/vault/")) supabaseService.deleteMessageMedia(path.removePrefix("supa:"))
+        }
         return true
     }
 
@@ -2108,6 +3202,10 @@ class MikayalaRepository(private val context: Context) {
     suspend fun refreshVault(): Boolean {
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return false
+        if (isFirebaseMode()) {
+            startFirebaseListeners(couple.id)
+            return true
+        }
         lastVaultSyncAt = System.currentTimeMillis()
         return syncVaultFromSupabase(couple.id, couple.pairingCode)
     }
@@ -2217,6 +3315,20 @@ class MikayalaRepository(private val context: Context) {
         val userId = getCurrentUserId()
         if (userId.isNotEmpty()) {
             repositoryScope.launch {
+                if (isFirebaseMode()) {
+                    firebaseRepository.upsertMyProfile(name, status, avatarUrl, moodEmoji)
+                    val couple = _coupleSpace.value
+                    if (couple.id.isNotBlank()) {
+                        val isP1 = userId == couple.partner1Id
+                        val fields = if (isP1) {
+                            mapOf("partner1Name" to name, "partner1Bio" to status, "partner1Mood" to moodEmoji)
+                        } else {
+                            mapOf("partner2Name" to name, "partner2Bio" to status, "partner2Mood" to moodEmoji)
+                        }
+                        firebaseRepository.updateCoupleProfileAndMeta(couple.id, fields)
+                    }
+                    return@launch
+                }
                 val curProfile = supabaseService.getProfile(userId)
                 val avatarPath = curProfile?.optString("avatar_path", "") ?: ""
                 val avatarVer = curProfile?.optInt("avatar_version", 0) ?: 0
@@ -2244,6 +3356,17 @@ class MikayalaRepository(private val context: Context) {
             partner2Avatar = avatarUrl
         )
         prefs.edit().putString("partner_name", nickname).putString("partner_custom_nickname", nickname).apply()
+        if (isFirebaseMode()) {
+            val couple = _coupleSpace.value
+            val myUserId = getCurrentUserId()
+            if (couple.id.isNotBlank() && myUserId.isNotBlank()) {
+                val fieldName = if (myUserId == couple.partner1Id) "partner2Name" else "partner1Name"
+                repositoryScope.launch {
+                    firebaseRepository.updateCoupleProfileAndMeta(couple.id, mapOf(fieldName to nickname))
+                }
+            }
+            return
+        }
 
         val myUserId = getCurrentUserId()
         val pairingCode = _coupleSpace.value.pairingCode
@@ -2406,14 +3529,27 @@ class MikayalaRepository(private val context: Context) {
     }
 
     /**
-     * « Pense à moi » : envoie une vraie notification au partenaire (type love_bomb, géré par send-fcm
-     * et MyFirebaseMessagingService). Retourne false si le couple n'est pas apparié ou si l'envoi échoue.
+     * « Pense à moi » : envoie une vraie notification au partenaire (type love_bomb, géré par
+     * push_requests / send-fcm et MyFirebaseMessagingService). Retourne false si échec.
      */
     suspend fun sendLovePulse(): Boolean {
         val couple = _coupleSpace.value
         val (myUserId, partnerId) = resolveCoupleMembers()
         if (!couple.isPaired || couple.id.isBlank() || partnerId.isBlank() || myUserId == partnerId) return false
         val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
+        if (isFirebaseMode()) {
+            val members = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+            return dispatchFirebaseModePush(
+                coupleId = couple.id,
+                memberUids = members,
+                recipientId = partnerId,
+                type = "love_bomb",
+                title = "Mikayala",
+                body = "$myName pense à vous 💓",
+                extraData = mapOf("partnerName" to myName, "kissCount" to "1"),
+                hidePreview = false
+            )
+        }
         return supabaseService.sendFcmPush(
             coupleId = couple.id,
             recipientId = partnerId,
@@ -2498,6 +3634,15 @@ class MikayalaRepository(private val context: Context) {
             partner2Name = partner2Name,
             loveQuote = loveQuote
         )
+        if (isFirebaseMode() && _coupleSpace.value.id.isNotBlank()) {
+            val cid = _coupleSpace.value.id
+            repositoryScope.launch {
+                firebaseRepository.updateCoupleProfileAndMeta(
+                    cid,
+                    mapOf("anniversaryDate" to anniversaryDate, "loveQuote" to loveQuote)
+                )
+            }
+        }
     }
 
     fun addMilestone(title: String, daysTarget: Long, icon: String = "🏆") {
@@ -2509,10 +3654,29 @@ class MikayalaRepository(private val context: Context) {
             isUnlocked = false
         )
         _milestones.value = _milestones.value + newMilestone
+        syncGameToFirebase(newMilestone.id, "milestone", localGamesJson.encodeToString(LoveMilestoneEntity.serializer(), newMilestone), isUpdate = false)
     }
 
     fun deleteMilestone(id: String) {
         _milestones.value = _milestones.value.filterNot { it.id == id }
+        deleteGameFromFirebase(id)
+    }
+
+    private fun syncGameToFirebase(gameId: String, kind: String, payloadJson: String, isUpdate: Boolean) {
+        if (!isFirebaseMode()) return
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return
+        val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+        repositoryScope.launch {
+            firebaseRepository.upsertGameItem(gameId, couple.id, memberUids, kind, payloadJson, isUpdate)
+        }
+    }
+
+    private fun deleteGameFromFirebase(gameId: String) {
+        if (!isFirebaseMode()) return
+        val coupleId = _coupleSpace.value.id
+        if (coupleId.isBlank()) return
+        repositoryScope.launch { firebaseRepository.deleteGameItem(coupleId, gameId) }
     }
 
     // --- Events & Calendar Actions ---
@@ -2526,6 +3690,13 @@ class MikayalaRepository(private val context: Context) {
         )
         _events.value = _events.value + newEvent
         scheduleEventReminder(newEvent)
+        if (isFirebaseMode() && _coupleSpace.value.id.isNotBlank()) {
+            val couple = _coupleSpace.value
+            val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+            repositoryScope.launch {
+                firebaseRepository.upsertEvent(newEvent.id, couple.id, memberUids, title, date, category, note, isCreate = true)
+            }
+        }
     }
 
     fun updateEvent(id: String, title: String, date: Long, category: String, note: String = "") {
@@ -2533,16 +3704,30 @@ class MikayalaRepository(private val context: Context) {
             if (it.id == id) it.copy(title = title, date = date, category = category, note = note) else it
         }
         _events.value.firstOrNull { it.id == id }?.let { scheduleEventReminder(it) }
+        if (isFirebaseMode() && _coupleSpace.value.id.isNotBlank()) {
+            val couple = _coupleSpace.value
+            val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+            repositoryScope.launch {
+                firebaseRepository.upsertEvent(id, couple.id, memberUids, title, date, category, note, isCreate = false)
+            }
+        }
     }
 
     fun deleteEvent(id: String) {
         _events.value = _events.value.filterNot { it.id == id }
+        if (isFirebaseMode() && _coupleSpace.value.id.isNotBlank()) {
+            val cid = _coupleSpace.value.id
+            repositoryScope.launch { firebaseRepository.deleteEvent(cid, id) }
+        }
     }
 
     // --- Quiz & Games Actions ---
     fun answerQuiz(id: String, answer: String) {
         _quizItems.value = _quizItems.value.map {
             if (it.id == id) it.copy(answerMe = answer, isLocked = false) else it
+        }
+        _quizItems.value.firstOrNull { it.id == id }?.let { item ->
+            syncGameToFirebase(id, "quiz", localGamesJson.encodeToString(QuizItemEntity.serializer(), item), isUpdate = true)
         }
     }
 
@@ -2554,16 +3739,21 @@ class MikayalaRepository(private val context: Context) {
             category = category
         )
         _quizItems.value = _quizItems.value + newQuiz
+        syncGameToFirebase(newQuiz.id, "quiz", localGamesJson.encodeToString(QuizItemEntity.serializer(), newQuiz), isUpdate = false)
     }
 
     fun deleteQuizItem(id: String) {
         _quizItems.value = _quizItems.value.filterNot { it.id == id }
+        deleteGameFromFirebase(id)
     }
 
     // --- Coupons Actions ---
     fun redeemCoupon(id: String) {
         _coupons.value = _coupons.value.map {
             if (it.id == id) it.copy(isRedeemed = true) else it
+        }
+        _coupons.value.firstOrNull { it.id == id }?.let { item ->
+            syncGameToFirebase(id, "coupon", localGamesJson.encodeToString(LoveCouponEntity.serializer(), item), isUpdate = true)
         }
     }
 
@@ -2577,16 +3767,21 @@ class MikayalaRepository(private val context: Context) {
             category = category
         )
         _coupons.value = listOf(newCoupon) + _coupons.value
+        syncGameToFirebase(newCoupon.id, "coupon", localGamesJson.encodeToString(LoveCouponEntity.serializer(), newCoupon), isUpdate = false)
     }
 
     fun deleteCoupon(id: String) {
         _coupons.value = _coupons.value.filterNot { it.id == id }
+        deleteGameFromFirebase(id)
     }
 
     // --- Bucket List Actions ---
     fun toggleBucketItem(id: String) {
         _bucketList.value = _bucketList.value.map {
             if (it.id == id) it.copy(isCompleted = !it.isCompleted) else it
+        }
+        _bucketList.value.firstOrNull { it.id == id }?.let { item ->
+            syncGameToFirebase(id, "bucket", localGamesJson.encodeToString(CoupleBucketItemEntity.serializer(), item), isUpdate = true)
         }
     }
 
@@ -2598,10 +3793,12 @@ class MikayalaRepository(private val context: Context) {
             category = category
         )
         _bucketList.value = _bucketList.value + newItem
+        syncGameToFirebase(newItem.id, "bucket", localGamesJson.encodeToString(CoupleBucketItemEntity.serializer(), newItem), isUpdate = false)
     }
 
     fun deleteBucketItem(id: String) {
         _bucketList.value = _bucketList.value.filterNot { it.id == id }
+        deleteGameFromFirebase(id)
     }
 
     // --- Truth or Dare Actions ---
@@ -2613,16 +3810,21 @@ class MikayalaRepository(private val context: Context) {
             intensity = intensity
         )
         _truthOrDare.value = listOf(newCard) + _truthOrDare.value
+        syncGameToFirebase(newCard.id, "truth_dare", localGamesJson.encodeToString(TruthOrDareEntity.serializer(), newCard), isUpdate = false)
     }
 
     fun deleteTruthOrDare(id: String) {
         _truthOrDare.value = _truthOrDare.value.filterNot { it.id == id }
+        deleteGameFromFirebase(id)
     }
 
     // --- Dilemmas Actions ---
     fun voteDilemma(id: String, choice: String) {
         _dilemmas.value = _dilemmas.value.map {
             if (it.id == id) it.copy(myChoice = choice) else it
+        }
+        _dilemmas.value.firstOrNull { it.id == id }?.let { item ->
+            syncGameToFirebase(id, "dilemma", localGamesJson.encodeToString(CoupleDilemmaEntity.serializer(), item), isUpdate = true)
         }
     }
 
@@ -2633,6 +3835,7 @@ class MikayalaRepository(private val context: Context) {
             optionB = optionB
         )
         _dilemmas.value = listOf(newDilemma) + _dilemmas.value
+        syncGameToFirebase(newDilemma.id, "dilemma", localGamesJson.encodeToString(CoupleDilemmaEntity.serializer(), newDilemma), isUpdate = false)
     }
 
     // --- Flo-style Cycle & Care Actions ---
@@ -2739,21 +3942,30 @@ class MikayalaRepository(private val context: Context) {
             photoHint = photoHint
         )
         _loveCapsules.value = listOf(newCapsule) + _loveCapsules.value
+        syncGameToFirebase(newCapsule.id, "capsule", localGamesJson.encodeToString(LoveCapsuleEntity.serializer(), newCapsule), isUpdate = false)
     }
 
     fun unlockLoveCapsule(id: String) {
         _loveCapsules.value = _loveCapsules.value.map {
             if (it.id == id) it.copy(isUnlocked = true, isOpened = true) else it
         }
+        _loveCapsules.value.firstOrNull { it.id == id }?.let { cap ->
+            syncGameToFirebase(id, "capsule", localGamesJson.encodeToString(LoveCapsuleEntity.serializer(), cap), isUpdate = true)
+        }
     }
 
     fun deleteLoveCapsule(id: String) {
         _loveCapsules.value = _loveCapsules.value.filterNot { it.id == id }
+        deleteGameFromFirebase(id)
     }
 
     // --- Supabase Realtime & API Integrations ---
     fun updateSupabaseCredentials(url: String, key: String) {
         supabaseService.setCredentials(url, key)
+        prefs.edit()
+            .putString("supabase_url", supabaseService.supabaseUrl)
+            .putString("supabase_key", key.trim())
+            .apply()
     }
 
     suspend fun testSupabaseConnection(): Pair<Boolean, String> {
@@ -2761,6 +3973,18 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun createCoupleSpaceInSupabase(pairingCode: String, partnerName: String): Boolean {
+        if (isFirebaseMode()) {
+            val res = firebaseRepository.createCoupleSpace(
+                pairingCode = pairingCode,
+                partnerName = partnerName,
+                moodEmoji = _userSettings.value.moodEmoji,
+                bio = _userSettings.value.customStatus.ifBlank { "En ligne" },
+                avatarUrl = _userSettings.value.avatarUrl
+            )
+            val space = res.getOrNull() ?: return false
+            applyFirebaseCoupleSpace(space)
+            return true
+        }
         Log.d("RepoDiag", "createCoupleSpaceInSupabase: code=$pairingCode")
         
         // On s'assure d'avoir un UID Supabase avant d'appeler le RPC
@@ -2797,6 +4021,19 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun joinCoupleSpaceInSupabase(pairingCode: String, partnerName: String): Boolean {
+        if (isFirebaseMode()) {
+            val res = firebaseRepository.joinCoupleSpace(
+                pairingCode = pairingCode,
+                partnerName = partnerName,
+                moodEmoji = _userSettings.value.moodEmoji,
+                bio = _userSettings.value.customStatus.ifBlank { "En ligne" },
+                avatarUrl = _userSettings.value.avatarUrl
+            )
+            val space = res.getOrNull() ?: return false
+            applyFirebaseCoupleSpace(space)
+            startFirebaseListeners(space.id)
+            return true
+        }
         Log.d("RepoDiag", "joinCoupleSpaceInSupabase: code=$pairingCode")
         
         if (!ensureAnonymousSession(partnerName)) {
@@ -2839,6 +4076,16 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun checkPartnerConnectedInSupabase(pairingCode: String): String? {
+        if (isFirebaseMode()) {
+            val space = firebaseRepository.getCoupleSpaceByCode(pairingCode).getOrNull() ?: return null
+            if (space.status == "paired" && space.partner1Id.isNotBlank() && space.partner2Id.isNotBlank()) {
+                applyFirebaseCoupleSpace(space)
+                startFirebaseListeners(space.id)
+                val myUid = FirebaseAuthManager.currentUid()
+                return if (myUid == space.partner1Id) space.partner2Name.ifBlank { "Partenaire" } else space.partner1Name.ifBlank { "Partenaire" }
+            }
+            return null
+        }
         val result = supabaseService.getCoupleSpace(pairingCode)
         if (result != null) {
             val status = result.optString("status", "")
@@ -2920,6 +4167,31 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun syncProfiles() {
+        if (isFirebaseMode()) {
+            val uid = FirebaseAuthManager.currentUid()
+            if (uid.isBlank()) return
+            val couple = _coupleSpace.value
+            if (couple.isPaired && couple.id.isNotBlank() && _userSettings.value.lastSeenPrivacy != "nobody") {
+                firebaseService.touchPresence(couple.id, isPartner1 = uid == couple.partner1Id)
+            }
+            val profile = firebaseRepository.fetchMyProfile().getOrNull()
+            if (profile != null) {
+                val dispName = profile.displayName.takeIf { it.isNotBlank() } ?: _userSettings.value.displayName
+                val bio = profile.bio.ifBlank { _userSettings.value.bio }
+                val avatarUrl = profile.avatarUrl.ifBlank { _userSettings.value.avatarUrl }
+                _userSettings.update {
+                    it.copy(
+                        userId = uid,
+                        displayName = dispName,
+                        bio = bio,
+                        avatarUrl = avatarUrl,
+                        moodEmoji = profile.moodEmoji.ifBlank { it.moodEmoji }
+                    )
+                }
+                if (dispName.isNotBlank()) prefs.edit().putString("display_name", dispName).apply()
+            }
+            return
+        }
         val myUserId = getCurrentUserId()
         if (myUserId.isEmpty()) return
 
@@ -3043,6 +4315,54 @@ class MikayalaRepository(private val context: Context) {
         try {
             val bytes = compressToWebP(context, uri) ?: return false
             val avatarUuid = UUID.randomUUID().toString()
+            if (isFirebaseMode()) {
+                val oldAvatarUrl = _userSettings.value.avatarUrl
+                var downloadUrl: String? = null
+                if (!firebaseService.storageUnavailable) {
+                    val uploadRes = firebaseService.uploadAvatar(myUserId, avatarUuid, bytes)
+                    downloadUrl = uploadRes.getOrNull()?.second
+                    if (downloadUrl == null && !firebaseService.storageUnavailable && !supabaseService.isConfigured()) {
+                        _actionErrors.tryEmit(uploadRes.exceptionOrNull()?.message ?: "Erreur Firebase Storage pour l'avatar.")
+                        return false
+                    }
+                }
+                if (downloadUrl == null) {
+                    if (!supabaseService.isConfigured()) {
+                        _actionErrors.tryEmit("Stockage non disponible : configurez Supabase (gratuit) dans Paramètres > Serveur Supabase.")
+                        return false
+                    }
+                    downloadUrl = supabaseService.uploadMediaViaSupabaseHybrid(
+                        firebaseIdToken = firebaseService.getCurrentIdToken(),
+                        bucket = "avatars",
+                        storagePath = "$myUserId/$avatarUuid.webp",
+                        coupleId = _coupleSpace.value.id,
+                        bytes = bytes,
+                        mimeType = "image/webp"
+                    )
+                    if (downloadUrl.isNullOrBlank()) {
+                        _actionErrors.tryEmit("Échec de l'upload de l'avatar sur Supabase Storage.")
+                        return false
+                    }
+                }
+                val profileRes = firebaseRepository.upsertMyProfile(
+                    displayName = _userSettings.value.displayName.ifBlank { "Moi" },
+                    bio = _userSettings.value.customStatus,
+                    avatarUrl = downloadUrl,
+                    moodEmoji = _userSettings.value.moodEmoji
+                )
+                if (profileRes.isFailure) return false
+                val couple = _coupleSpace.value
+                if (couple.id.isNotBlank()) {
+                    val avatarField = if (myUserId == couple.partner1Id) "partner1Avatar" else "partner2Avatar"
+                    firebaseRepository.updateCoupleProfileAndMeta(couple.id, mapOf(avatarField to downloadUrl))
+                }
+                _userSettings.update { it.copy(avatarUrl = downloadUrl) }
+                _coupleSpace.update { it.copy(partner1Avatar = downloadUrl) }
+                if (oldAvatarUrl.isNotBlank() && oldAvatarUrl != downloadUrl) {
+                    firebaseService.deleteAvatarByUrl(oldAvatarUrl)
+                }
+                return true
+            }
             val newPath = supabaseService.uploadAvatar(myUserId, avatarUuid, bytes)
             if (newPath != null) {
                 val curProfile = supabaseService.getProfile(myUserId)
@@ -3151,8 +4471,14 @@ class MikayalaRepository(private val context: Context) {
         if (coupleId.isBlank()) return
         val ids = partnerMessageIds(coupleId, setOf("sent"))
         if (ids.isEmpty()) return
+        val now = System.currentTimeMillis()
+        if (isFirebaseMode()) {
+            for (id in ids) {
+                firebaseRepository.updateMessageFields(coupleId, id, mapOf("status" to "delivered", "deliveredAtMs" to now))
+            }
+            return
+        }
         if (supabaseService.markMessagesDeliveredIds(coupleId, ids)) {
-            val now = System.currentTimeMillis()
             val set = ids.toSet()
             _messages.update { cur -> cur.map {
                 if (it.id in set && it.status == "sent") it.copy(status = "delivered", deliveredAt = it.deliveredAt ?: now) else it
@@ -3160,23 +4486,27 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Accusé « lu » : seulement si la conversation est réellement visible (app au premier plan)
-     * et si l'utilisateur n'a pas désactivé les accusés de lecture. Avant, un écran de conversation
-     * resté ouvert en arrière-plan marquait « lu » des messages jamais vus.
-     */
     suspend fun markMessagesRead(coupleId: String) {
         if (coupleId.isBlank()) return
         if (!com.example.mikayala.util.AppForeground.isResumed) return
         if (!_userSettings.value.readReceiptsEnabled) {
-            // Lecture masquée : on confirme quand même la réception
             markMessagesDelivered(coupleId)
             return
         }
         val ids = partnerMessageIds(coupleId, setOf("sent", "delivered"))
         if (ids.isEmpty()) return
+        val now = System.currentTimeMillis()
+        if (isFirebaseMode()) {
+            for (id in ids) {
+                firebaseRepository.updateMessageFields(
+                    coupleId,
+                    id,
+                    mapOf("status" to "read", "readAtMs" to now, "deliveredAtMs" to now)
+                )
+            }
+            return
+        }
         if (supabaseService.markMessagesReadIds(coupleId, ids)) {
-            val now = System.currentTimeMillis()
             val set = ids.toSet()
             _messages.update { cur -> cur.map {
                 if (it.id in set && it.status != "read") it.copy(status = "read", readAt = it.readAt ?: now, deliveredAt = it.deliveredAt ?: now) else it
@@ -3281,6 +4611,10 @@ class MikayalaRepository(private val context: Context) {
     private suspend fun syncWithSupabaseLocked() {
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return
+        if (isFirebaseMode()) {
+            startFirebaseListeners(couple.id)
+            return
+        }
         // Session pas encore rechargée : ne jamais interroger Supabase sans identité (résultats vides trompeurs).
         if (!supabaseService.hasActiveSession()) return
         val coupleId = couple.id
@@ -3371,6 +4705,23 @@ class MikayalaRepository(private val context: Context) {
         if (!couple.isPaired || couple.id.isBlank()) return 0
         val oldest = _messages.value.filter { it.coupleId == couple.id || it.coupleId.isEmpty() }
             .minByOrNull { it.createdAt } ?: return 0
+        if (isFirebaseMode()) {
+            val uid = FirebaseAuthManager.currentUid()
+            if (uid.isBlank()) return -1
+            val page = firebaseService.loadOlderMessages(couple.id, uid, oldest.createdAt, OLDER_PAGE)
+                .getOrElse { return -1 }
+            if (page.size < OLDER_PAGE) _hasOlderMessages.value = false
+            val fetched = page.map { mapFirebaseMessage(it, uid) }
+            if (fetched.isNotEmpty()) {
+                _messages.update { cur -> mergeMessageLists(cur, fetched) }
+                for (m in fetched) {
+                    if (!m.storagePath.isNullOrBlank() && m.mediaUrl.isNullOrBlank()) {
+                        fetchAndApplySignedUrl(m.id, m.storagePath)
+                    }
+                }
+            }
+            return fetched.size
+        }
         val f = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
         f.timeZone = java.util.TimeZone.getTimeZone("UTC")
         val beforeIso = f.format(java.util.Date(oldest.createdAt))
@@ -3504,9 +4855,30 @@ class MikayalaRepository(private val context: Context) {
         if (callId.isBlank()) return
         lastOutgoingCallId = ""
         val answered = durationSeconds > 0
-        supabaseService.updateCallStatus(callId, if (answered) "ended" else "cancelled")
+        val status = if (answered) "ended" else "cancelled"
         val couple = _coupleSpace.value
         val (_, partnerId) = resolveCoupleMembers()
+        if (isFirebaseMode()) {
+            val cid = couple.id
+            if (cid.isNotBlank()) {
+                firebaseRepository.updateCallSignalStatus(cid, callId, status, durationSeconds)
+                if (!answered && partnerId.isNotBlank()) {
+                    val members = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    dispatchFirebaseModePush(
+                        coupleId = cid,
+                        memberUids = members,
+                        recipientId = partnerId,
+                        type = "call_cancelled",
+                        title = "Mikayala",
+                        body = "",
+                        extraData = mapOf("callId" to callId, "coupleId" to cid),
+                        hidePreview = false
+                    )
+                }
+            }
+            return
+        }
+        supabaseService.updateCallStatus(callId, status)
         if (!answered && partnerId.isNotBlank() && couple.id.isNotBlank()) {
             supabaseService.sendFcmPush(
                 coupleId = couple.id,
@@ -3527,6 +4899,36 @@ class MikayalaRepository(private val context: Context) {
         val pairingCode = couple.pairingCode
         addCallLog(isVideo, 0)
         val myName = if (couple.partner1Name.isNotEmpty()) couple.partner1Name else "Moi"
+        if (isFirebaseMode()) {
+            val signalId = "call_${UUID.randomUUID().toString().take(12)}"
+            val members = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+            val res = firebaseRepository.createCallSignal(signalId, coupleId, members, myName, isVideo)
+            if (res.isSuccess) {
+                lastOutgoingCallId = signalId
+                val (_, partnerId) = resolveCoupleMembers()
+                if (partnerId.isNotBlank()) {
+                    repositoryScope.launch {
+                        dispatchFirebaseModePush(
+                            coupleId = coupleId,
+                            memberUids = members,
+                            recipientId = partnerId,
+                            type = "call",
+                            title = "Mikayala",
+                            body = if (isVideo) "📹 Appel Vidéo Entrant" else "📞 Appel Vocal Entrant",
+                            extraData = mapOf(
+                                "callerName" to myName,
+                                "callType" to if (isVideo) "video" else "voice",
+                                "callId" to signalId,
+                                "coupleId" to coupleId
+                            ),
+                            hidePreview = false
+                        )
+                    }
+                }
+                return JSONObject().put("id", signalId)
+            }
+            return null
+        }
         val res = supabaseService.initiateCall(coupleId, myName, if (isVideo) "video" else "voice", pairingCode)
         if (res != null) {
             val callId = res.optString("id")
@@ -3555,6 +4957,7 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun checkForIncomingCall(): Pair<Boolean, Boolean>? {
+        if (isFirebaseMode()) return activeFirebaseIncomingCall
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return null
         val coupleId = couple.id
@@ -3577,6 +4980,34 @@ class MikayalaRepository(private val context: Context) {
 
     suspend fun declineIncomingCall(explicitCallId: String = "") {
         val couple = _coupleSpace.value
+        if (isFirebaseMode()) {
+            val targetId = explicitCallId.ifBlank { lastIncomingFirebaseSignalId }
+            activeFirebaseIncomingCall = null
+            if (targetId.isNotBlank() && couple.id.isNotBlank()) {
+                firebaseRepository.updateCallSignalStatus(couple.id, targetId, "declined", 0)
+                val (_, partnerId) = resolveCoupleMembers()
+                if (partnerId.isNotBlank()) {
+                    val myName = _userSettings.value.displayName.ifBlank { "Mon Amour" }
+                    val members = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
+                    repositoryScope.launch {
+                        dispatchFirebaseModePush(
+                            coupleId = couple.id,
+                            memberUids = members,
+                            recipientId = partnerId,
+                            type = "call_declined",
+                            title = "Mikayala",
+                            body = "Appel refusé par $myName",
+                            extraData = mapOf(
+                                "callerName" to myName,
+                                "callId" to targetId
+                            ),
+                            hidePreview = false
+                        )
+                    }
+                }
+            }
+            return
+        }
         val targetCallId = if (explicitCallId.isNotBlank()) {
             explicitCallId
         } else {
@@ -3609,6 +5040,30 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun signOut(force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+        if (isFirebaseMode()) {
+            withContext(NonCancellable) {
+                try {
+                    com.example.mikayala.services.MyFirebaseMessagingService
+                        .getSyncEngine(context)
+                        .unregisterDeviceTokenOnLogout()
+                } catch (e: Exception) {
+                    Log.w("MikayalaAuth", "Désinscription token FCM Firebase ignorée: ${e.message}")
+                }
+                stopFirebaseListeners()
+                FirebaseAuthManager.signOut(context)
+                try {
+                    (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).cancelAll()
+                } catch (_: Exception) {}
+                clearCoupleCache()
+                _messages.value = emptyList()
+                _vaultItems.value = emptyList()
+                _userSettings.value = com.example.mikayala.data.UiPreferencesStore.load(
+                    prefs,
+                    com.example.mikayala.data.model.UserSettingsEntity()
+                )
+            }
+            return@withContext true
+        }
         val unregistered = try {
             com.example.mikayala.services.MyFirebaseMessagingService.getSyncEngine(context).unregisterDeviceTokenOnLogout()
         } catch (e: Exception) {

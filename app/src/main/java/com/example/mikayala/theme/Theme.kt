@@ -1,22 +1,20 @@
 package com.example.mikayala.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.ui.graphics.Color
-
 private fun schemeFor(p: MikayalaPalette) = if (p.isDark) darkColorScheme(
-    primary = p.accent, onPrimary = p.textPrimary,
-    secondary = p.lavender, onSecondary = p.background,
-    tertiary = p.sand,
+    primary = p.accent, onPrimary = Color.White,
+    secondary = p.secondary, onSecondary = p.background,
+    tertiary = p.lavender,
     background = p.background, onBackground = p.textPrimary,
     surface = p.surface, onSurface = p.textPrimary,
     surfaceVariant = p.surfaceElevated, onSurfaceVariant = p.textSecondary,
@@ -25,8 +23,8 @@ private fun schemeFor(p: MikayalaPalette) = if (p.isDark) darkColorScheme(
     error = p.danger
 ) else lightColorScheme(
     primary = p.accent, onPrimary = Color.White,
-    secondary = p.lavender, onSecondary = Color.White,
-    tertiary = p.sand,
+    secondary = p.secondary, onSecondary = Color.White,
+    tertiary = p.lavender,
     background = p.background, onBackground = p.textPrimary,
     surface = p.surface, onSurface = p.textPrimary,
     surfaceVariant = p.surfaceElevated, onSurfaceVariant = p.textSecondary,
@@ -38,11 +36,12 @@ private fun schemeFor(p: MikayalaPalette) = if (p.isDark) darkColorScheme(
 @Composable
 fun MikayalaTheme(
     darkTheme: Boolean = true,
+    accentTheme: String = "violet_emerald",
     fontPreference: String = "default",
     fontSizeScale: String = "medium",
     content: @Composable () -> Unit
 ) {
-    val palette = if (darkTheme) SoftDark else SoftLight
+    val palette = paletteFor(darkTheme = darkTheme, accentTheme = accentTheme)
     val colorScheme = schemeFor(palette)
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -56,7 +55,7 @@ fun MikayalaTheme(
                 }
                 currentContext as? Activity
             }
-            
+
             activity?.let { act ->
                 val window = act.window
                 val systemColor = palette.background
@@ -70,7 +69,6 @@ fun MikayalaTheme(
         }
     }
 
-    // Taille du texte (Paramètres > Apparence) : multiplie l'échelle système, sans l'ignorer
     val density = androidx.compose.ui.platform.LocalDensity.current
     val scaledDensity = androidx.compose.ui.unit.Density(
         density.density,

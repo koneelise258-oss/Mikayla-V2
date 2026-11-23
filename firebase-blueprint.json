@@ -1,0 +1,224 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account metadata and push token, strictly readable and writable only by the owner.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "bio": { "type": "string", "description": "Short romantic status" },
+        "avatarUrl": { "type": "string", "description": "Profile photo URL" },
+        "moodEmoji": { "type": "string", "description": "Current mood emoji" },
+        "email": { "type": "string", "description": "Private Google account email (owner-only PII)" },
+        "fcmToken": { "type": "string", "description": "Private FCM device token (owner-only)" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "createdAt", "updatedAt"]
+    },
+    "PairingCodeIndex": {
+      "title": "PairingCodeIndex",
+      "description": "Exact-ID pairing code lookup linking a 7-character code to a couple_space.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "coupleId": { "type": "string" },
+        "creatorUid": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "paired"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "coupleId", "creatorUid", "status", "createdAt", "updatedAt"]
+    },
+    "CoupleSpace": {
+      "title": "CoupleSpace",
+      "description": "Shared space between two paired partners.",
+      "type": "object",
+      "properties": {
+        "pairingCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "paired"] },
+        "partner1Id": { "type": "string" },
+        "partner2Id": { "type": "string" },
+        "memberUids": { "type": "array", "items": { "type": "string" } },
+        "partner1Name": { "type": "string" },
+        "partner2Name": { "type": "string" },
+        "partner1Avatar": { "type": "string" },
+        "partner2Avatar": { "type": "string" },
+        "partner1Bio": { "type": "string" },
+        "partner2Bio": { "type": "string" },
+        "partner1Mood": { "type": "string" },
+        "partner2Mood": { "type": "string" },
+        "partner1LastSeenMs": { "type": "number" },
+        "partner2LastSeenMs": { "type": "number" },
+        "partner1TypingAtMs": { "type": "number" },
+        "partner2TypingAtMs": { "type": "number" },
+        "partner1RecordingAtMs": { "type": "number" },
+        "partner2RecordingAtMs": { "type": "number" },
+        "anniversaryDate": { "type": "number" },
+        "loveQuote": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pairingCode", "status", "partner1Id", "partner2Id", "memberUids", "createdAt", "updatedAt"]
+    },
+    "CoupleMessage": {
+      "title": "CoupleMessage",
+      "description": "Real-time message or interactive chat game between the two partners.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "memberUids": { "type": "array", "items": { "type": "string" } },
+        "content": { "type": "string" },
+        "type": { "type": "string" },
+        "mediaUrl": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "duration": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "sent", "delivered", "read"] },
+        "deliveredAtMs": { "type": "number" },
+        "readAtMs": { "type": "number" },
+        "editedAtMs": { "type": "number" },
+        "isViewOnce": { "type": "boolean" },
+        "isViewed": { "type": "boolean" },
+        "isPinned": { "type": "boolean" },
+        "isDeletedForEveryone": { "type": "boolean" },
+        "reactions": { "type": "string" },
+        "replyToId": { "type": "string" },
+        "replyToSender": { "type": "string" },
+        "replyToContent": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["coupleId", "senderId", "memberUids", "content", "type", "status", "createdAt", "updatedAt"]
+    },
+    "VaultItem": {
+      "title": "VaultItem",
+      "description": "Shared memory or note stored in the couple vault.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array", "items": { "type": "string" } },
+        "addedBy": { "type": "string" },
+        "addedByName": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["photo", "video", "audio", "note", "letter"] },
+        "category": { "type": "string", "enum": ["intime", "souvenirs", "projets", "sauvegardes"] },
+        "caption": { "type": "string" },
+        "mediaUrl": { "type": "string" },
+        "dateAddedMs": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["coupleId", "memberUids", "addedBy", "title", "type", "category", "createdAt", "updatedAt"]
+    },
+    "CoupleEvent": {
+      "title": "CoupleEvent",
+      "description": "Shared couple calendar event.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array", "items": { "type": "string" } },
+        "createdBy": { "type": "string" },
+        "title": { "type": "string" },
+        "dateMs": { "type": "number" },
+        "category": { "type": "string" },
+        "note": { "type": "string" },
+        "isRecurring": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["coupleId", "memberUids", "createdBy", "title", "dateMs", "category", "createdAt", "updatedAt"]
+    },
+    "CoupleGameRecord": {
+      "title": "CoupleGameRecord",
+      "description": "Synchronized couple game item (coupon, bucket item, quiz, dilemma, truth or dare, milestone, capsule).",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array", "items": { "type": "string" } },
+        "createdBy": { "type": "string" },
+        "kind": { "type": "string", "enum": ["coupon", "bucket", "quiz", "dilemma", "truth_dare", "milestone", "capsule"] },
+        "payloadJson": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["coupleId", "memberUids", "createdBy", "kind", "payloadJson", "createdAt", "updatedAt"]
+    },
+    "CallSignal": {
+      "title": "CallSignal",
+      "description": "Real-time incoming/outgoing call signal between paired partners.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array", "items": { "type": "string" } },
+        "callerUid": { "type": "string" },
+        "callerName": { "type": "string" },
+        "isVideo": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["ringing", "accepted", "declined", "cancelled", "ended"] },
+        "durationSeconds": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["coupleId", "memberUids", "callerUid", "isVideo", "status", "createdAt", "updatedAt"]
+    },
+    "PushRequest": {
+      "title": "PushRequest",
+      "description": "FCM push notification dispatch request triggered by Cloud Functions for the partner.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array", "items": { "type": "string" } },
+        "senderId": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "dataJson": { "type": "string" },
+        "hidePreview": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["coupleId", "memberUids", "senderId", "recipientId", "type", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-only user profile and private account metadata."
+    },
+    "/pairing_codes/{code}": {
+      "schema": { "$ref": "#/entities/PairingCodeIndex" },
+      "description": "Secret exact-ID pairing code index (list forbidden)."
+    },
+    "/couple_spaces/{coupleId}": {
+      "schema": { "$ref": "#/entities/CoupleSpace" },
+      "description": "Couple space shared strictly between memberUids."
+    },
+    "/couple_spaces/{coupleId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/CoupleMessage" },
+      "description": "Real-time messages and chat game moves for a couple space."
+    },
+    "/couple_spaces/{coupleId}/vault_items/{itemId}": {
+      "schema": { "$ref": "#/entities/VaultItem" },
+      "description": "Shared vault memories for a couple space."
+    },
+    "/couple_spaces/{coupleId}/events/{eventId}": {
+      "schema": { "$ref": "#/entities/CoupleEvent" },
+      "description": "Shared calendar events for a couple space."
+    },
+    "/couple_spaces/{coupleId}/games/{gameId}": {
+      "schema": { "$ref": "#/entities/CoupleGameRecord" },
+      "description": "Synchronized couple hub games and milestones."
+    },
+    "/couple_spaces/{coupleId}/call_signals/{signalId}": {
+      "schema": { "$ref": "#/entities/CallSignal" },
+      "description": "Call ringing/status signals for a couple space."
+    },
+    "/couple_spaces/{coupleId}/push_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/PushRequest" },
+      "description": "Queued FCM push notification dispatch requests processed by Cloud Functions."
+    }
+  }
+}

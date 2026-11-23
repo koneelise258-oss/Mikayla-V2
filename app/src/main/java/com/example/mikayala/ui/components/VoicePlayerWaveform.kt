@@ -302,21 +302,20 @@ fun VoicePlayerWaveform(
         }
     }
 
+    val c = MikayalaColors
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Bouton Play / Pause / Loading / Retry
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(40.dp)
                 .clip(CircleShape)
-                .background(
-                    if (hasError) Brush.linearGradient(listOf(Color(0xFFC4605C), Color(0xFFC4605C)))
-                    else Brush.horizontalGradient(listOf(VibrantCyan, VibrantBlue))
-                )
+                .background(if (hasError) c.danger else c.secondary)
                 .clickable {
                     when {
                         hasError -> {
@@ -333,8 +332,8 @@ fun VoicePlayerWaveform(
             when {
                 isLoading -> {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = TextPrimary,
+                        modifier = Modifier.size(18.dp),
+                        color = Color.White,
                         strokeWidth = 2.dp
                     )
                 }
@@ -342,7 +341,7 @@ fun VoicePlayerWaveform(
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
                         contentDescription = "Réessayer la lecture",
-                        tint = TextPrimary,
+                        tint = Color.White,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -350,7 +349,7 @@ fun VoicePlayerWaveform(
                     Icon(
                         imageVector = Icons.Rounded.Pause,
                         contentDescription = "Mettre en pause",
-                        tint = TextPrimary,
+                        tint = Color.White,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -358,7 +357,7 @@ fun VoicePlayerWaveform(
                     Icon(
                         imageVector = Icons.Rounded.PlayArrow,
                         contentDescription = "Lire la note vocale",
-                        tint = TextPrimary,
+                        tint = Color.White,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -369,7 +368,6 @@ fun VoicePlayerWaveform(
 
         // Waveform & Barre de progression
         Column(modifier = Modifier.weight(1f)) {
-            // Ligne des barres avec détection de clic pour scrubbing / seek
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -399,7 +397,7 @@ fun VoicePlayerWaveform(
                             .height(renderedHeight)
                             .clip(RoundedCornerShape(2.dp))
                             .background(
-                                if (isPast) VibrantCyan else Color.White.copy(alpha = 0.32f)
+                                if (isPast) c.secondary else c.textMuted.copy(alpha = 0.35f)
                             )
                     )
                 }
@@ -407,7 +405,6 @@ fun VoicePlayerWaveform(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Horodatage (écoulé / total) et Sélecteur de vitesse WhatsApp
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -425,14 +422,14 @@ fun VoicePlayerWaveform(
                 Text(
                     text = displayTime,
                     fontSize = 11.sp,
-                    color = TimeStampMuted,
+                    color = c.textMuted,
                     fontWeight = FontWeight.Medium
                 )
 
                 // Sélecteur de vitesse WhatsApp (1x, 1.5x, 2x)
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = HoverStateCyan,
+                    color = c.accentSoft,
                     modifier = Modifier.clickable {
                         val nextIdx = (speeds.indexOf(playbackSpeed) + 1) % speeds.size
                         val newSpeed = speeds[nextIdx]
@@ -453,8 +450,8 @@ fun VoicePlayerWaveform(
                         text = "${if (playbackSpeed == 1.0f) "1" else if (playbackSpeed == 1.5f) "1.5" else "2"}x",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = VibrantCyan,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        color = c.accent,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                     )
                 }
             }

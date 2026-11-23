@@ -1,29 +1,29 @@
 package com.example.mikayala.ui.screens
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mikayala.data.repository.MikayalaRepository
 import com.example.mikayala.theme.*
+import com.example.mikayala.ui.icons.AppleSvgIcons
 import com.example.mikayala.ui.screens.couple.CoupleCalendarView
 import com.example.mikayala.ui.screens.couple.CoupleGamesView
 import com.example.mikayala.ui.screens.couple.FloCycleTrackerView
@@ -46,6 +46,7 @@ fun CoupleSpaceScreen(
     val dilemmas by repository.allDilemmas.collectAsState()
     val loveCapsules by repository.allLoveCapsules.collectAsState()
     val cycleInfo by repository.cycleInfo.collectAsState()
+    val palette = MikayalaColors
 
     // Real-time ticking timer for Love Time live precision
     var currentMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -59,78 +60,79 @@ fun CoupleSpaceScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MatteSlateBackground)
-            .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
-            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
+            .background(palette.background)
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = Spacing.maxContentWidth)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Modern Capsule Segmented Sub-Navbar for the 4 Couple Hubs
-        ScrollableTabRow(
-            selectedTabIndex = selectedSubSection,
-            containerColor = Color.Transparent,
-            contentColor = VibrantCyan,
-            edgePadding = 0.dp,
-            divider = {},
-            indicator = {}
+        // Apple iOS 18 Segmented Control for Couple Hubs
+        val hubs = listOf(
+            "Histoire" to AppleSvgIcons.Heart,
+            "Jeux" to AppleSvgIcons.Gamepad,
+            "Agenda" to AppleSvgIcons.Calendar,
+            "Cycle" to AppleSvgIcons.Sparkles
+        )
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = palette.surfaceSunken,
+            border = BorderStroke(0.5.dp, palette.border),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            val hubs = listOf(
-                Pair("Notre histoire", Icons.Rounded.Favorite),
-                Pair("Jeux", Icons.Rounded.SportsEsports),
-                Pair("Calendrier", Icons.Rounded.CalendarMonth),
-                Pair("Cycle", Icons.Rounded.Spa)
-            )
-            hubs.forEachIndexed { index, (title, icon) ->
-                val isSelected = selectedSubSection == index
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    // Onglet actif : pastille rose poudré discrète (lisible en clair et en sombre)
-                    color = if (isSelected) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Tab(
-                        selected = isSelected,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                hubs.forEachIndexed { index, (title, icon) ->
+                    val isSelected = selectedSubSection == index
+                    Surface(
                         onClick = { selectedSubSection = index },
-                        text = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) AccentRose else TextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = title,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) TextPrimary else TextSecondary
-                                )
-                            }
-                        },
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                        shape = RoundedCornerShape(11.dp),
+                        color = if (isSelected) palette.surfaceElevated else Color.Transparent,
+                        border = if (isSelected) BorderStroke(0.5.dp, palette.borderStrong) else null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 38.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = title,
+                                tint = if (isSelected) palette.accent else palette.textSecondary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = title,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (isSelected) palette.textPrimary else palette.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         AnimatedContent(
             targetState = selectedSubSection,
             transitionSpec = {
-                if (targetState > initialState) {
-                    (slideInHorizontally { width -> width / 3 } + fadeIn(tween(220))) togetherWith
-                            (slideOutHorizontally { width -> -width / 3 } + fadeOut(tween(220)))
-                } else {
-                    (slideInHorizontally { width -> -width / 3 } + fadeIn(tween(220))) togetherWith
-                            (slideOutHorizontally { width -> width / 3 } + fadeOut(tween(220)))
-                }
+                val forward = targetState > initialState
+                (slideInHorizontally(tween(190, easing = FastOutSlowInEasing)) { w -> if (forward) w / 8 else -w / 8 } +
+                    fadeIn(tween(180))) togetherWith
+                    (slideOutHorizontally(tween(160, easing = FastOutSlowInEasing)) { w -> if (forward) -w / 10 else w / 10 } +
+                        fadeOut(tween(140)))
             },
             label = "CoupleSpaceAnimatedContent"
         ) { section ->

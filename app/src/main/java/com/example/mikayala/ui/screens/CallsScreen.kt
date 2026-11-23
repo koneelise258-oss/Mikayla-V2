@@ -1,32 +1,36 @@
 package com.example.mikayala.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.CallMade
 import androidx.compose.material.icons.automirrored.rounded.CallMissed
 import androidx.compose.material.icons.automirrored.rounded.CallReceived
-import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.mikayala.data.model.CallLogEntity
 import com.example.mikayala.data.repository.MikayalaRepository
 import com.example.mikayala.theme.*
-import kotlinx.coroutines.launch
+import com.example.mikayala.ui.icons.AppleSvgIcons
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -35,26 +39,36 @@ fun CallsScreen(
     repository: MikayalaRepository,
     onStartCall: (isVideo: Boolean) -> Unit
 ) {
-    val coroutineScope = rememberCoroutineScope()
     val callLogs by repository.allCallLogs.collectAsState()
     val dateFormat = remember { SimpleDateFormat("dd MMM, HH:mm", Locale.FRANCE) }
     val callsSettings by repository.userSettings.collectAsState()
+    val palette = MikayalaColors
+    var activeFilter by remember { mutableStateOf("all") }
+
+    val filteredLogs = remember(callLogs, activeFilter) {
+        when (activeFilter) {
+            "missed" -> callLogs.filter { it.isMissed }
+            "video" -> callLogs.filter { it.isVideo }
+            "audio" -> callLogs.filter { !it.isVideo }
+            else -> callLogs
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepNight)
-            .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
-            .widthIn(max = com.example.mikayala.theme.Spacing.maxContentWidth)
+            .background(palette.background)
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = Spacing.maxContentWidth)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Direct Quick Call Hero Card
+        // iOS 18 Direct Quick Call Card
         Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = CardDark,
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderHighlight),
+            shape = RoundedCornerShape(22.dp),
+            color = palette.surface,
+            border = BorderStroke(0.5.dp, palette.borderStrong),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -64,88 +78,151 @@ fun CallsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(50.dp)
+                            .size(52.dp)
                             .clip(CircleShape)
-                            .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
+                            .background(palette.accentSoft)
+                            .border(1.5.dp, palette.secondary.copy(alpha = 0.6f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Rounded.Person, contentDescription = null, tint = AccentRose, modifier = Modifier.size(26.dp))
+                        if (callsSettings.partnerAvatarUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = callsSettings.partnerAvatarUrl,
+                                contentDescription = "Photo de votre partenaire",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                AppleSvgIcons.Person,
+                                contentDescription = "Partenaire",
+                                tint = palette.accent,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column {
                         Text(
-                            text = callsSettings.partnerNickname.ifBlank { "Mon partenaire" },
+                            text = callsSettings.partnerNickname.ifBlank { "Votre partenaire" },
                             fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            fontWeight = FontWeight.SemiBold,
+                            color = palette.textPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Appel audio ou vidéo",
+                            text = "Audio & FaceTime chiffrés",
                             fontSize = 12.sp,
-                            color = AccentViolet
+                            color = palette.secondary
                         )
                     }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Audio Call Button
                     IconButton(
-                        onClick = {
-                            onStartCall(false) // la sonnerie est envoyée par l'écran principal
-                        },
+                        onClick = { onStartCall(false) },
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
-                            .background(HoverStateWhite)
+                            .background(palette.accentSoft)
+                            .testTag("calls_hero_audio")
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Call,
+                            imageVector = AppleSvgIcons.Phone,
                             contentDescription = "Appel Audio",
-                            tint = AccentRose,
-                            modifier = Modifier.size(22.dp)
+                            tint = palette.accent,
+                            modifier = Modifier.size(21.dp)
                         )
                     }
 
-                    // Video Call Button
                     IconButton(
-                        onClick = {
-                            onStartCall(true)
-                        },
+                        onClick = { onStartCall(true) },
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
-                            .background(AccentRose)
+                            .background(palette.secondary)
+                            .testTag("calls_hero_video")
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Videocam,
+                            imageVector = AppleSvgIcons.Video,
                             contentDescription = "Appel Vidéo",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(22.dp)
+                            tint = Color.White,
+                            modifier = Modifier.size(21.dp)
                         )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // iOS 18 Segmented Control for call filters
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = palette.surfaceSunken,
+            border = BorderStroke(0.5.dp, palette.border),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(
+                    "all" to "Tous",
+                    "missed" to "Manqués",
+                    "video" to "Vidéo",
+                    "audio" to "Audio"
+                ).forEach { (key, label) ->
+                    val selected = activeFilter == key
+                    Surface(
+                        onClick = { activeFilter = key },
+                        shape = RoundedCornerShape(11.dp),
+                        color = if (selected) palette.surfaceElevated else Color.Transparent,
+                        border = if (selected) BorderStroke(0.5.dp, palette.borderStrong) else null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 34.dp)
+                            .testTag("calls_filter_$key")
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (selected) palette.textPrimary else palette.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "JOURNAL DES APPELS",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp,
-            color = AccentViolet
+            text = "RÉCENTS",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.8.sp,
+            color = palette.textMuted,
+            modifier = Modifier.padding(horizontal = 4.dp)
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (callLogs.isEmpty()) {
+        if (filteredLogs.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -153,8 +230,8 @@ fun CallsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 com.example.mikayala.ui.components.SoftEmptyState(
-                    icon = Icons.Rounded.Call,
-                    title = "Aucun appel pour le moment",
+                    icon = AppleSvgIcons.Phone,
+                    title = if (activeFilter == "all") "Aucun appel pour le moment" else "Aucun appel dans ce filtre",
                     message = "Vos appels audio et vidéo avec votre partenaire s'afficheront ici."
                 )
             }
@@ -164,7 +241,7 @@ fun CallsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                items(callLogs, key = { it.id }) { log ->
+                items(filteredLogs, key = { it.id }) { log ->
                     CallLogItem(
                         log = log,
                         timeFormatted = dateFormat.format(Date(log.timestamp)),
@@ -182,26 +259,38 @@ private fun CallLogItem(
     timeFormatted: String,
     onCallBack: (isVideo: Boolean) -> Unit
 ) {
+    val palette = MikayalaColors
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = CardDark,
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, BorderSubtleWhite),
-        modifier = Modifier.fillMaxWidth()
+        color = palette.surface,
+        border = BorderStroke(0.8.dp, palette.border),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onCallBack(log.isVideo) }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Call Type Icon
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(42.dp)
                         .clip(CircleShape)
-                        .background(if (log.isMissed) Color(0x33C4605C) else HoverStateWhite),
+                        .background(
+                            when {
+                                log.isMissed -> palette.danger.copy(alpha = 0.16f)
+                                log.isIncoming -> palette.secondarySoft
+                                else -> palette.accentSoft
+                            }
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -213,7 +302,7 @@ private fun CallLogItem(
                             Icons.AutoMirrored.Rounded.CallMade
                         },
                         contentDescription = null,
-                        tint = if (log.isMissed) Color(0xFFC4605C) else if (log.isIncoming) OnlinePresenceGreen else AccentViolet,
+                        tint = if (log.isMissed) palette.danger else if (log.isIncoming) palette.secondary else palette.accent,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -231,19 +320,19 @@ private fun CallLogItem(
                     Text(
                         text = if (log.isMissed) "Appel manqué • $timeFormatted" else "${log.durationSeconds / 60} min ${log.durationSeconds % 60} s • $timeFormatted",
                         fontSize = 12.sp,
-                        color = if (log.isMissed) Color(0xFFC4605C) else TextSecondary
+                        color = if (log.isMissed) palette.danger else TextSecondary
                     )
                 }
             }
 
             IconButton(
                 onClick = { onCallBack(log.isVideo) },
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
-                    imageVector = if (log.isVideo) Icons.Rounded.Videocam else Icons.Rounded.Call,
+                    imageVector = if (log.isVideo) AppleSvgIcons.Video else AppleSvgIcons.Phone,
                     contentDescription = "Rappeler",
-                    tint = AccentRose,
+                    tint = if (log.isVideo) palette.secondary else palette.accent,
                     modifier = Modifier.size(20.dp)
                 )
             }

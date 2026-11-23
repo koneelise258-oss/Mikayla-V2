@@ -35,10 +35,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,8 +48,9 @@ import com.example.mikayala.theme.*
 import com.example.mikayala.ui.components.ActiveCallOverlay
 import com.example.mikayala.ui.components.GlassNavBarItem
 import com.example.mikayala.ui.components.GlassmorphicFloatingNavBar
-import com.example.mikayala.ui.components.GlowingGradientButton
 import com.example.mikayala.ui.components.NeumorphicSquircleButton
+import com.example.mikayala.ui.icons.AppleSvgIcons
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,6 +160,7 @@ fun MainDashboardScreen(
                 try {
                     val incomingCall = repository.checkForIncomingCall()
                     if (incomingCall != null && activeCallState == null) {
+                        callIsIncoming = true
                         activeCallState = incomingCall
                     }
                 } catch (_: Exception) {}
@@ -177,291 +179,273 @@ fun MainDashboardScreen(
 
     val imeVisible = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
     val navBarVisible = !imeVisible && (selectedTab != 0 || showNavBarInChat)
+    val c = MikayalaColors
+    val tabStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    val partnerDisplayName = userSettings.partnerNickname.ifBlank { "Votre partenaire" }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
-            containerColor = MatteSlateBackground,
+            containerColor = c.background,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 Surface(
-                    color = DeepNight,
+                    color = c.surface.copy(alpha = 0.96f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
-                    ) {
-                        // Top Header Row (Style Reference Image)
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Center Title / Active Partner (WhatsApp style info click)
+                            // Partner Avatar (with integrated live dot) + Name + Subtitle
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
+                                horizontalArrangement = Arrangement.Start,
                                 modifier = Modifier
-                                    .weight(1f, fill = false) // un surnom long ne repousse plus les boutons hors écran
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(14.dp))
                                     .clickable { showPartnerProfileSheet = true }
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .testTag("partner_header_button")
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .clip(CircleShape)
-                                        .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (userSettings.partnerAvatarUrl.isNotBlank()) {
-                                        coil.compose.AsyncImage(
-                                            model = userSettings.partnerAvatarUrl,
-                                            contentDescription = "Photo de votre partenaire",
-                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Person,
-                                            contentDescription = "Photo de votre partenaire",
-                                            tint = AccentRose,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
+                                val isOnline = isPartnerOnline && userSettings.connectionMode == ConnectionMode.ONLINE
+                                val dotColor = when {
+                                    isPartnerRecording -> c.accent
+                                    isPartnerTyping -> c.secondary
+                                    isOnline -> c.secondary
+                                    else -> c.textMuted
                                 }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = userSettings.partnerNickname,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TextPrimary,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                        )
+                                Box(modifier = Modifier.size(40.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(CircleShape)
+                                            .background(c.accentSoft)
+                                            .border(1.dp, c.borderStrong, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (userSettings.partnerAvatarUrl.isNotBlank()) {
+                                            coil.compose.AsyncImage(
+                                                model = userSettings.partnerAvatarUrl,
+                                                contentDescription = "Photo de votre partenaire",
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = AppleSvgIcons.Person,
+                                                contentDescription = "Photo de votre partenaire",
+                                                tint = c.accent,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        val isOnline = isPartnerOnline && userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
-                                        val statusText = when {
-                                            isPartnerRecording -> "Enregistre un audio... 🎙️"
-                                            isPartnerTyping -> "En train d'écrire... ✨"
-                                            isOnline -> "En ligne"
-                                            userSettings.partnerStatus.isNotBlank() && userSettings.partnerStatus != "Hors ligne" -> userSettings.partnerStatus
-                                            else -> "Hors ligne"
-                                        }
-                                        val dotColor = when {
-                                            isPartnerRecording -> AccentRose
-                                            isPartnerTyping -> VibrantCyan
-                                            isOnline -> OnlinePresenceGreen
-                                            else -> TextMuted
-                                        }
-                                        val textColor = when {
-                                            isPartnerRecording -> AccentRose
-                                            isPartnerTyping -> VibrantCyan
-                                            isOnline -> TextSecondary
-                                            else -> TextMuted
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (isOnline && !isPartnerRecording && !isPartnerTyping) {
-                                                        OnlinePresenceGreen
-                                                    } else {
-                                                        dotColor
-                                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(11.dp)
+                                            .align(Alignment.BottomEnd)
+                                            .clip(CircleShape)
+                                            .background(dotColor)
+                                            .border(1.5.dp, c.surface, CircleShape)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = partnerDisplayName,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = c.textPrimary,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (userSettings.showLoveDaysInHeader && coupleSpace.anniversaryDate > 0L) {
+                                            val loveDays = ((System.currentTimeMillis() - coupleSpace.anniversaryDate).coerceAtLeast(0L) / TimeUnit.DAYS.toMillis(1)) + 1
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = c.accentSoft
+                                            ) {
+                                                Text(
+                                                    text = "${loveDays}j",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = c.accent,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                                 )
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = statusText,
-                                            fontSize = 11.sp,
-                                            color = textColor,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                        )
+                                            }
+                                        }
                                     }
+                                    val isOfflineMode = userSettings.connectionMode != ConnectionMode.ONLINE
+                                    val statusText = when {
+                                        isOfflineMode -> "Mode Hors-Ligne (P2P)"
+                                        isPartnerRecording -> "Enregistre un audio…"
+                                        isPartnerTyping -> "En train d'écrire…"
+                                        isOnline -> "En ligne"
+                                        userSettings.partnerStatus.isNotBlank() && userSettings.partnerStatus != "Hors ligne" -> userSettings.partnerStatus
+                                        else -> "Hors ligne"
+                                    }
+                                    val subtitleColor = when {
+                                        isOfflineMode -> c.danger
+                                        isPartnerRecording -> c.accent
+                                        isPartnerTyping || isOnline -> c.secondary
+                                        else -> c.textMuted
+                                    }
+                                    Text(
+                                        text = statusText,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isOnline || isPartnerTyping || isPartnerRecording || isOfflineMode) FontWeight.Medium else FontWeight.Normal,
+                                        color = subtitleColor,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
                                 }
                             }
 
-                            // Right Squircle Buttons (Search & Calls)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                NeumorphicSquircleButton(
-                                    icon = Icons.Rounded.Videocam,
-                                    contentDescription = "Appel Vidéo",
+                            // Right iOS 18 Icon Buttons (48dp touch targets, SF Symbols style)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
                                     onClick = { startOutgoingCall(true) },
-                                    size = 44.dp,
-                                    iconSize = 20.dp,
-                                    tint = VibrantCyan
-                                )
-                                NeumorphicSquircleButton(
-                                    icon = Icons.Rounded.Call,
-                                    contentDescription = "Appel Audio",
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("header_video_call")
+                                ) {
+                                    Icon(
+                                        imageVector = AppleSvgIcons.Video,
+                                        contentDescription = "Appel Vidéo",
+                                        tint = c.secondary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                IconButton(
                                     onClick = { startOutgoingCall(false) },
-                                    size = 44.dp,
-                                    iconSize = 20.dp,
-                                    tint = TextSecondary
-                                )
-                                // Menu ⋮ : regroupe les actions secondaires (auparavant deux boutons carrés)
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("header_audio_call")
+                                ) {
+                                    Icon(
+                                        imageVector = AppleSvgIcons.Phone,
+                                        contentDescription = "Appel Audio",
+                                        tint = c.accent,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                                 Box {
                                     var menuOpen by remember { mutableStateOf(false) }
-                                    IconButton(onClick = { menuOpen = true }) {
-                                        Icon(Icons.Rounded.MoreVert, contentDescription = "Plus d'options", tint = TextSecondary)
-                                    }
-                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                        DropdownMenuItem(
-                                            text = { Text("Espaces et raccourcis") },
-                                            leadingIcon = { Icon(Icons.Rounded.Widgets, contentDescription = null) },
-                                            onClick = { menuOpen = false; showNavDrawerSheet = true }
+                                    val isOnlineMode = userSettings.connectionMode == ConnectionMode.ONLINE
+                                    IconButton(
+                                        onClick = { menuOpen = true },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .testTag("header_more_menu")
+                                    ) {
+                                        Icon(
+                                            AppleSvgIcons.More,
+                                            contentDescription = "Plus d'options",
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(20.dp)
                                         )
+                                    }
+                                    DropdownMenu(
+                                        expanded = menuOpen,
+                                        onDismissRequest = { menuOpen = false },
+                                        containerColor = c.modal
+                                    ) {
                                         DropdownMenuItem(
-                                            text = { Text("Profil de mon partenaire") },
-                                            leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                                            text = { Text("Profil de $partnerDisplayName", color = c.textPrimary) },
+                                            leadingIcon = { Icon(AppleSvgIcons.Person, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp)) },
                                             onClick = { menuOpen = false; showPartnerProfileSheet = true }
                                         )
                                         if (selectedTab == 0) {
                                             DropdownMenuItem(
-                                                text = { Text("Rechercher") },
-                                                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                                                text = { Text("Rechercher", color = c.textPrimary) },
+                                                leadingIcon = { Icon(AppleSvgIcons.Search, contentDescription = null, tint = c.secondary, modifier = Modifier.size(18.dp)) },
                                                 onClick = { menuOpen = false; chatSearchMode = "search" }
                                             )
                                             DropdownMenuItem(
-                                                text = { Text("Messages favoris") },
-                                                leadingIcon = { Icon(Icons.Rounded.Star, contentDescription = null) },
+                                                text = { Text("Messages favoris", color = c.textPrimary) },
+                                                leadingIcon = { Icon(AppleSvgIcons.Star, contentDescription = null, tint = AccentGold, modifier = Modifier.size(18.dp)) },
                                                 onClick = { menuOpen = false; chatSearchMode = "starred" }
                                             )
                                             DropdownMenuItem(
-                                                text = { Text(if (showNavBarInChat) "Plein écran (masquer la barre)" else "Afficher la barre de navigation") },
-                                                leadingIcon = { Icon(if (showNavBarInChat) Icons.Rounded.Fullscreen else Icons.Rounded.FullscreenExit, contentDescription = null) },
+                                                text = { Text(if (showNavBarInChat) "Plein écran" else "Afficher les onglets", color = c.textPrimary) },
+                                                leadingIcon = { Icon(if (showNavBarInChat) Icons.Rounded.Fullscreen else Icons.Rounded.FullscreenExit, contentDescription = null, tint = c.textSecondary, modifier = Modifier.size(18.dp)) },
                                                 onClick = { menuOpen = false; showNavBarInChat = !showNavBarInChat }
                                             )
                                         }
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // Discreet Connection Mode Pill Selector (Option 1: En Ligne / Option 2: Hors-Ligne)
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
-                                border = BorderStroke(0.5.dp, BorderSubtleWhite),
-                                modifier = Modifier.height(30.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    val isOnline = userSettings.connectionMode == ConnectionMode.ONLINE
-
-                                    // Option 1: En Ligne (Discreet)
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = if (isOnline) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .clickable {
-                                                if (!isOnline) {
+                                        HorizontalDivider(color = c.border, thickness = 0.5.dp)
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    if (isOnlineMode) "Passer en P2P Hors-ligne" else "Revenir En ligne",
+                                                    color = c.textPrimary
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    if (isOnlineMode) AppleSvgIcons.Wifi else AppleSvgIcons.Cloud,
+                                                    contentDescription = null,
+                                                    tint = if (isOnlineMode) c.accent else c.secondary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            },
+                                            onClick = {
+                                                menuOpen = false
+                                                if (isOnlineMode) {
+                                                    repository.updateConnectionMode(ConnectionMode.OFFLINE_P2P)
+                                                    showOfflineP2PPage = true
+                                                } else {
                                                     repository.updateConnectionMode(ConnectionMode.ONLINE)
                                                     Toast.makeText(context, "Mode En Ligne activé", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(6.dp)
-                                                    .clip(CircleShape)
-                                                    .background(if (isOnline) VibrantCyan else TextMuted)
-                                            )
-                                            Spacer(modifier = Modifier.width(5.dp))
-                                            Text(
-                                                text = "En Ligne",
-                                                fontSize = 11.sp,
-                                                fontWeight = if (isOnline) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (isOnline) TextPrimary else TextSecondary
-                                            )
-                                        }
-                                    }
-
-                                    // Option 2: Hors-Ligne (Discreet)
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = if (!isOnline) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .clickable {
-                                                repository.updateConnectionMode(ConnectionMode.OFFLINE_P2P)
-                                                showOfflineP2PPage = true
-                                            }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(6.dp)
-                                                    .clip(CircleShape)
-                                                    .background(if (!isOnline) AccentRose else TextMuted)
-                                            )
-                                            Spacer(modifier = Modifier.width(5.dp))
-                                            Text(
-                                                text = "Hors-Ligne",
-                                                fontSize = 11.sp,
-                                                fontWeight = if (!isOnline) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (!isOnline) TextPrimary else TextSecondary
-                                            )
-                                        }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Raccourcis et verrouillage", color = c.textPrimary) },
+                                            leadingIcon = { Icon(AppleSvgIcons.Sparkles, contentDescription = null, tint = c.accent, modifier = Modifier.size(18.dp)) },
+                                            onClick = { menuOpen = false; showNavDrawerSheet = true }
+                                        )
                                     }
                                 }
                             }
                         }
+                        HorizontalDivider(color = c.border, thickness = 0.5.dp)
                     }
                 }
             },
             bottomBar = {
-                // Barre masquée pendant la saisie (clavier ouvert) : sinon elle restait au-dessus du
-                // clavier et réduisait d'autant la conversation.
                 AnimatedVisibility(
                     visible = navBarVisible,
-                    enter = slideInVertically { it } + fadeIn(tween(200)),
-                    exit = slideOutVertically { it } + fadeOut(tween(150))
+                    enter = slideInVertically(tween(200, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(180)),
+                    exit = slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(140))
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // (La pastille « Plein écran Chat » ajoutée au-dessus de la barre est retirée : elle
-                        // portait la barre à ~100 dp. Le plein écran reste dans le menu ⋮.)
                         GlassmorphicFloatingNavBar(
                             items = listOf(
-                                GlassNavBarItem(0, "Discussions", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Rounded.Chat, badgeCount = if (selectedTab == 0) 0 else unreadCount),
-                                GlassNavBarItem(1, "Appels", Icons.Rounded.Call, Icons.Rounded.Call),
-                                GlassNavBarItem(2, "Couple", Icons.Rounded.FavoriteBorder, Icons.Rounded.Favorite),
-                                GlassNavBarItem(3, "Coffre", Icons.Rounded.Lock, Icons.Rounded.LockOpen),
-                                GlassNavBarItem(4, "Paramètres", Icons.Rounded.Settings, Icons.Rounded.Settings)
+                                GlassNavBarItem(0, "Discussions", AppleSvgIcons.Chat, AppleSvgIcons.ChatFilled, badgeCount = if (selectedTab == 0) 0 else unreadCount),
+                                GlassNavBarItem(1, "Appels", AppleSvgIcons.Phone, AppleSvgIcons.Phone),
+                                GlassNavBarItem(2, "Couple", AppleSvgIcons.Heart, AppleSvgIcons.HeartFilled),
+                                GlassNavBarItem(3, "Coffre", AppleSvgIcons.Lock, AppleSvgIcons.LockOpen),
+                                GlassNavBarItem(4, "Réglages", AppleSvgIcons.Settings, AppleSvgIcons.Settings)
                             ),
                             selectedIndex = selectedTab,
-                            // Avant : changer d'onglet masquait la barre pour la conversation ; en revenant
-                            // aux Discussions, on se retrouvait sans barre de navigation.
-                            onItemSelected = { selectedTab = it }
+                            onItemSelected = { selectedTab = it },
+                            navBarStyle = userSettings.navBarStyle
                         )
                     }
                 }
@@ -471,186 +455,253 @@ fun MainDashboardScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    // Barre masquée : le contenu ne doit pas passer sous les boutons système (Android 7/10)
                     .then(if (navBarVisible) Modifier else Modifier.navigationBarsPadding())
             ) {
                 AnimatedContent(
                     targetState = selectedTab,
                     transitionSpec = {
-                        if (targetState > initialState) {
-                            (slideInHorizontally { width -> width / 3 } + fadeIn(tween(220))) togetherWith
-                                    (slideOutHorizontally { width -> -width / 3 } + fadeOut(tween(220)))
-                        } else {
-                            (slideInHorizontally { width -> -width / 3 } + fadeIn(tween(220))) togetherWith
-                                    (slideOutHorizontally { width -> width / 3 } + fadeOut(tween(220)))
-                        }
+                        val dir = if (targetState > initialState) 1 else -1
+                        (slideInHorizontally(tween(190, easing = FastOutSlowInEasing)) { w -> dir * (w / 10) } + fadeIn(tween(170))) togetherWith
+                            (slideOutHorizontally(tween(160, easing = FastOutSlowInEasing)) { w -> -dir * (w / 10) } + fadeOut(tween(130)))
                     },
                     label = "dashboard_tabs_transition"
                 ) { tab ->
-                    when (tab) {
-                        0 -> ChatScreen(
-                            repository = repository,
-                            onStartCall = { isVideo -> startOutgoingCall(isVideo) },
-                            searchMode = chatSearchMode,
-                            onCloseSearch = { chatSearchMode = null }
-                        )
-                        1 -> CallsScreen(
-                            repository = repository,
-                            onStartCall = { isVideo -> startOutgoingCall(isVideo) }
-                        )
-                        2 -> CoupleSpaceScreen(repository = repository)
-                        3 -> VaultScreen(repository = repository)
-                        4 -> SettingsScreen(repository = repository)
+                    tabStateHolder.SaveableStateProvider(tab) {
+                        when (tab) {
+                            0 -> ChatScreen(
+                                repository = repository,
+                                onStartCall = { isVideo -> startOutgoingCall(isVideo) },
+                                searchMode = chatSearchMode,
+                                onCloseSearch = { chatSearchMode = null }
+                            )
+                            1 -> CallsScreen(
+                                repository = repository,
+                                onStartCall = { isVideo -> startOutgoingCall(isVideo) }
+                            )
+                            2 -> CoupleSpaceScreen(repository = repository)
+                            3 -> VaultScreen(repository = repository)
+                            4 -> SettingsScreen(repository = repository)
+                        }
                     }
                 }
             }
         }
 
-        // Quick Navigation Drawer / Bottom Sheet Modal
+        // iOS 18 Grouped Inset Quick Navigation & Actions Sheet
         if (showNavDrawerSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showNavDrawerSheet = false },
-                containerColor = CardModalSurface,
-                scrimColor = Color.Black.copy(alpha = 0.65f),
+                containerColor = c.modal,
+                scrimColor = Color.Black.copy(alpha = 0.55f),
                 shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 24.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(VibrantCyan.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Widgets,
-                                    contentDescription = null,
-                                    tint = VibrantCyan,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "Navigation & Espaces 📱",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = "Sélectionnez votre onglet destination",
-                                    fontSize = 12.sp,
-                                    color = TextSecondary
-                                )
-                            }
+                        Column {
+                            Text(
+                                text = "Espaces & Raccourcis",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = c.textPrimary
+                            )
+                            Text(
+                                text = "Accès rapide et mode de connexion",
+                                fontSize = 12.sp,
+                                color = c.textSecondary
+                            )
                         }
-
-                        IconButton(onClick = { showNavDrawerSheet = false }) {
+                        IconButton(
+                            onClick = { showNavDrawerSheet = false },
+                            modifier = Modifier.size(48.dp)
+                        ) {
                             Icon(
-                                imageVector = Icons.Rounded.Close,
+                                imageVector = AppleSvgIcons.Close,
                                 contentDescription = "Fermer",
-                                tint = TextSecondary
+                                tint = c.textSecondary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // List of 5 Main Navigation Spaces
-                    val navTabs = listOf(
-                        Triple(0, "💬 Chat Confidentiel", "Messagerie privée & vocaux"),
-                        Triple(1, "📞 Appels", "Appels audio et vidéo, historique"),
-                        Triple(2, "💖 Espace de Couple", "Love Time, 8 Jeux & Calendrier"),
-                        Triple(3, "🔐 Coffre-Fort Secret", "Photos & souvenirs protégés"),
-                        Triple(4, "⚙️ Paramètres & Code PIN", "Thèmes & Sécurité")
-                    )
-
-                    navTabs.forEach { (index, title, subtitle) ->
-                        val isCurrent = selectedTab == index
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (isCurrent) VibrantCyan.copy(alpha = 0.15f) else MatteCardElevated,
-                            border = BorderStroke(1.dp, if (isCurrent) VibrantCyan else BorderSubtleWhite),
+                    val isOnlineMode = userSettings.connectionMode == ConnectionMode.ONLINE
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = c.surfaceElevated,
+                        border = BorderStroke(0.5.dp, c.border),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable {
-                                    selectedTab = index
-                                    showNavDrawerSheet = false
-                                }
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isOnlineMode) c.secondarySoft else Color.Transparent,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        if (!isOnlineMode) {
+                                            repository.updateConnectionMode(ConnectionMode.ONLINE)
+                                            Toast.makeText(context, "Mode En Ligne activé", Toast.LENGTH_SHORT).show()
+                                        }
+                                        showNavDrawerSheet = false
+                                    }
                             ) {
-                                Column {
-                                    Text(
-                                        text = title,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isCurrent) VibrantCyan else TextPrimary
-                                    )
-                                    Text(
-                                        text = subtitle,
-                                        fontSize = 11.sp,
-                                        color = TextSecondary
-                                    )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(AppleSvgIcons.Cloud, contentDescription = null, tint = if (isOnlineMode) c.secondary else c.textMuted, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("En ligne", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (isOnlineMode) c.secondary else c.textSecondary)
                                 }
-
-                                if (isCurrent) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = VibrantCyan,
-                                        modifier = Modifier.size(10.dp)
-                                    ) {}
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (!isOnlineMode) c.accentSoft else Color.Transparent,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        showNavDrawerSheet = false
+                                        repository.updateConnectionMode(ConnectionMode.OFFLINE_P2P)
+                                        showOfflineP2PPage = true
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(AppleSvgIcons.Wifi, contentDescription = null, tint = if (!isOnlineMode) c.accent else c.textMuted, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Hors-ligne P2P", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (!isOnlineMode) c.accent else c.textSecondary)
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Action: Lock App
+                    val navTabs = listOf(
+                        Triple(0, "Discussions", Triple(AppleSvgIcons.Chat, c.secondary, "Messagerie privée & vocaux")),
+                        Triple(1, "Appels", Triple(AppleSvgIcons.Phone, c.accent, "Audio, vidéo & historique")),
+                        Triple(2, "Espace Couple", Triple(AppleSvgIcons.Heart, c.accent, "Jeux à deux & calendrier")),
+                        Triple(3, "Coffre-Fort", Triple(AppleSvgIcons.Lock, c.secondary, "Souvenirs protégés")),
+                        Triple(4, "Paramètres", Triple(AppleSvgIcons.Settings, c.textSecondary, "Apparence, thème & PIN"))
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = c.surfaceElevated,
+                        border = BorderStroke(0.5.dp, c.border),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            navTabs.forEachIndexed { idx, (tabIdx, title, meta) ->
+                                val (iconVec, tintCol, subtitle) = meta
+                                val isCurrent = selectedTab == tabIdx
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 52.dp)
+                                        .clickable {
+                                            selectedTab = tabIdx
+                                            showNavDrawerSheet = false
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(tintCol.copy(alpha = 0.14f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(iconVec, contentDescription = null, tint = tintCol, modifier = Modifier.size(18.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = title,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isCurrent) c.accent else c.textPrimary
+                                        )
+                                        Text(
+                                            text = subtitle,
+                                            fontSize = 11.sp,
+                                            color = c.textSecondary
+                                        )
+                                    }
+                                    if (isCurrent) {
+                                        Icon(
+                                            imageVector = AppleSvgIcons.Check,
+                                            contentDescription = "Actif",
+                                            tint = c.accent,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                if (idx < navTabs.lastIndex) {
+                                    HorizontalDivider(
+                                        color = c.border,
+                                        thickness = 0.5.dp,
+                                        modifier = Modifier.padding(start = 58.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     Button(
                         onClick = {
                             showNavDrawerSheet = false
                             onLockApp()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentRose.copy(alpha = 0.2f)),
+                        colors = ButtonDefaults.buttonColors(containerColor = c.danger.copy(alpha = 0.14f)),
                         shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
+                        border = BorderStroke(0.5.dp, c.danger.copy(alpha = 0.45f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("lock_app_button")
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Lock,
-                                contentDescription = null,
-                                tint = AccentRose,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Verrouiller l'application 🔒",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AccentRose
-                            )
-                        }
+                        Icon(
+                            imageVector = AppleSvgIcons.Lock,
+                            contentDescription = null,
+                            tint = c.danger,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Verrouiller l'application",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.danger
+                        )
                     }
-
-                    Spacer(modifier = Modifier.height(20.dp))
                 }
             }
         }

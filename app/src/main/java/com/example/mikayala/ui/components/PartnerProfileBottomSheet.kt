@@ -52,18 +52,19 @@ fun PartnerProfileBottomSheet(
         rawMessages.filter { !it.deletedFor.contains(myUserId) }
     }
 
+    val c = MikayalaColors
+    val isPartnerOnline by repository.isPartnerOnline.collectAsState()
     var isMuted by remember { mutableStateOf(false) }
-    var selectedMediaTab by remember { mutableIntStateOf(0) } // 0: Photos/Médias, 1: Liens, 2: Favoris ⭐
+    var selectedMediaTab by remember { mutableIntStateOf(0) } // 0: Médias, 1: Liens, 2: Favoris
 
-    val isOnline = userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
-
-    val pulseAlpha = 1f // point de présence fixe (plus de clignotement)
+    val isOnline = isPartnerOnline && userSettings.connectionMode == com.example.mikayala.data.model.ConnectionMode.ONLINE
+    val partnerName = userSettings.partnerNickname.ifBlank { "Votre partenaire" }
 
     val mediaMessages = remember(messages) {
-        messages.filter { it.type == "image" || it.type == "video" || it.type == "audio" }
+        messages.filter { it.type in setOf("image", "photo", "video", "audio", "voice") }
     }
     val linkMessages = remember(messages) {
-        messages.filter { it.content.contains("http://") || it.content.contains("https://") || it.content.contains("www.") }
+        messages.filter { com.example.mikayala.util.ChatTextHelpers.containsLink(it.content) }
     }
     val starredMessages = remember(messages) {
         messages.filter { it.isStarred }
@@ -71,8 +72,9 @@ fun PartnerProfileBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MatteSlateBackground,
-        scrimColor = Color.Black.copy(alpha = 0.7f),
+        containerColor = c.modal,
+        scrimColor = Color.Black.copy(alpha = 0.55f),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
             Box(
                 modifier = Modifier
@@ -80,22 +82,23 @@ fun PartnerProfileBottomSheet(
                     .width(40.dp)
                     .height(4.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.2f))
+                    .background(c.borderStrong)
             )
         }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header Profile Card (Style WhatsApp Contact Info)
+            // Header Profile Card (iOS 18 Contact Info)
             Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MatteCardDark,
-                border = BorderStroke(0.5.dp, BorderSubtleWhite),
+                shape = RoundedCornerShape(22.dp),
+                color = c.surfaceElevated,
+                border = BorderStroke(0.5.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -104,16 +107,15 @@ fun PartnerProfileBottomSheet(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Avatar with Presence Glow
                     Box(contentAlignment = Alignment.BottomEnd) {
                         Box(
                             modifier = Modifier
-                                .size(88.dp)
+                                .size(84.dp)
                                 .clip(CircleShape)
-                                .background(com.example.mikayala.theme.MikayalaColors.accentSoft),
+                                .background(c.accentSoft)
+                                .border(1.5.dp, c.borderStrong, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            // Vraie photo du partenaire si elle existe, sinon icône neutre
                             if (userSettings.partnerAvatarUrl.isNotBlank()) {
                                 coil.compose.AsyncImage(
                                     model = userSettings.partnerAvatarUrl,
@@ -123,75 +125,60 @@ fun PartnerProfileBottomSheet(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.Rounded.Person,
+                                    imageVector = com.example.mikayala.ui.icons.AppleSvgIcons.Person,
                                     contentDescription = "Photo de votre partenaire",
-                                    tint = AccentRose,
-                                    modifier = Modifier.size(50.dp)
+                                    tint = c.accent,
+                                    modifier = Modifier.size(44.dp)
                                 )
                             }
                         }
 
-                        // Online Presence Dot / Badge
                         Box(
                             modifier = Modifier
-                                .size(20.dp)
+                                .size(18.dp)
                                 .clip(CircleShape)
-                                .background(if (isOnline) OnlinePresenceGreen.copy(alpha = pulseAlpha) else Color.Gray)
-                                .border(2.dp, MatteCardDark, CircleShape)
+                                .background(if (isOnline) c.secondary else c.textMuted)
+                                .border(2.5.dp, c.surfaceElevated, CircleShape)
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Partner Name
                     Text(
-                        text = userSettings.partnerNickname,
-                        fontSize = 22.sp,
+                        text = partnerName,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = c.textPrimary
                     )
 
-                    // Partner Status & Last Seen
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
-                        if (isOnline) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(OnlinePresenceGreen.copy(alpha = pulseAlpha))
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "En ligne",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = OnlinePresenceGreen
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Gray)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (userSettings.partnerStatus.isNotBlank() && userSettings.partnerStatus != "Hors ligne") userSettings.partnerStatus else "Hors ligne",
-                                fontSize = 13.sp,
-                                color = TextSecondary
-                            )
-                        }
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(if (isOnline) c.secondary else c.textMuted)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = when {
+                                isOnline -> "En ligne"
+                                userSettings.partnerStatus.isNotBlank() && userSettings.partnerStatus != "Hors ligne" -> userSettings.partnerStatus
+                                else -> "Hors ligne"
+                            },
+                            fontSize = 13.sp,
+                            fontWeight = if (isOnline) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isOnline) c.secondary else c.textSecondary
+                        )
                     }
 
-                    // Custom Bio / Quote
                     if (userSettings.partnerBio.isNotBlank() && userSettings.partnerBio != userSettings.partnerStatus) {
                         Text(
-                            text = "« " + userSettings.partnerBio + " »",
+                            text = "« ${userSettings.partnerBio} »",
                             fontSize = 13.sp,
-                            color = AccentRose,
+                            color = c.accent,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(top = 8.dp)
                         )
@@ -199,55 +186,48 @@ fun PartnerProfileBottomSheet(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Quick Actions Row (Appels, Recherche, Silencieux)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
                         ContactActionButton(
-                            icon = Icons.Rounded.Call,
+                            icon = com.example.mikayala.ui.icons.AppleSvgIcons.Phone,
                             label = "Audio",
-                            onClick = {
-                                onDismiss()
-                                onStartCall(false)
-                            }
+                            onClick = { onDismiss(); onStartCall(false) }
                         )
                         ContactActionButton(
-                            icon = Icons.Rounded.Videocam,
+                            icon = com.example.mikayala.ui.icons.AppleSvgIcons.Video,
                             label = "Vidéo",
-                            onClick = {
-                                onDismiss()
-                                onStartCall(true)
-                            }
+                            onClick = { onDismiss(); onStartCall(true) }
                         )
                         ContactActionButton(
-                            icon = Icons.Rounded.Search,
+                            icon = com.example.mikayala.ui.icons.AppleSvgIcons.Search,
                             label = "Chercher",
-                            onClick = {
-                                onDismiss()
-                                onOpenSearch()
-                            }
+                            onClick = { onDismiss(); onOpenSearch() }
                         )
                         ContactActionButton(
-                            icon = if (isMuted) Icons.Rounded.NotificationsOff else Icons.Rounded.Notifications,
+                            icon = if (isMuted) Icons.Rounded.NotificationsOff else com.example.mikayala.ui.icons.AppleSvgIcons.Bell,
                             label = if (isMuted) "Muet" else "Sons",
                             onClick = {
                                 isMuted = !isMuted
-                                val msg = if (isMuted) "Notifications en sourdine 🔕" else "Notifications activées 🔔"
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    if (isMuted) "Notifications en sourdine" else "Notifications activées",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Encryption & Security Banner
+            // Security Banner
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = CardDarkElevated,
-                border = BorderStroke(0.5.dp, BorderSubtleWhite),
+                color = c.surfaceElevated,
+                border = BorderStroke(0.5.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -255,119 +235,107 @@ fun PartnerProfileBottomSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Lock,
-                        contentDescription = "Chiffrement",
-                        tint = VibrantCyan,
-                        modifier = Modifier.size(22.dp)
+                        imageVector = com.example.mikayala.ui.icons.AppleSvgIcons.Lock,
+                        contentDescription = "Espace privé",
+                        tint = c.secondary,
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
                             text = "Espace privé du couple",
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.textPrimary
                         )
                         Text(
-                            text = "Les échanges sont réservés à vous deux par les règles d'accès du serveur et transitent en connexion sécurisée (HTTPS). Ils ne sont pas chiffrés de bout en bout.",
+                            text = "Vos échanges transitent en HTTPS et sont réservés à votre binôme via les règles du serveur.",
                             fontSize = 11.sp,
-                            color = TextSecondary
+                            color = c.textSecondary
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Shared Media & Links Section Tabs
+            // Shared Media, Links & Starred Section
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MatteCardDark,
-                border = BorderStroke(0.5.dp, BorderSubtleWhite),
+                shape = RoundedCornerShape(18.dp),
+                color = c.surfaceElevated,
+                border = BorderStroke(0.5.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Médias & Liens Partagés",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            text = "Médias, liens & favoris",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = c.textPrimary
                         )
                         Text(
                             text = "${messages.size} msgs",
                             fontSize = 12.sp,
-                            color = TextSecondary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Tab selector
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilterChip(
-                            selected = selectedMediaTab == 0,
-                            onClick = { selectedMediaTab = 0 },
-                            label = { Text("Photos/Médias (${mediaMessages.size})", fontSize = 11.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x387FA8CC),
-                                selectedLabelColor = Color.White,
-                                containerColor = CardDarkElevated,
-                                labelColor = TextSecondary
-                            )
-                        )
-                        FilterChip(
-                            selected = selectedMediaTab == 1,
-                            onClick = { selectedMediaTab = 1 },
-                            label = { Text("Liens (${linkMessages.size})", fontSize = 11.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x387FA8CC),
-                                selectedLabelColor = Color.White,
-                                containerColor = CardDarkElevated,
-                                labelColor = TextSecondary
-                            )
-                        )
-                        FilterChip(
-                            selected = selectedMediaTab == 2,
-                            onClick = { selectedMediaTab = 2 },
-                            label = { Text("Favoris ⭐ (${starredMessages.size})", fontSize = 11.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0x387FA8CC),
-                                selectedLabelColor = Color.White,
-                                containerColor = CardDarkElevated,
-                                labelColor = TextSecondary
-                            )
+                            color = c.textSecondary
                         )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            0 to "Médias (${mediaMessages.size})",
+                            1 to "Liens (${linkMessages.size})",
+                            2 to "Favoris (${starredMessages.size})"
+                        ).forEach { (idx, label) ->
+                            val selected = selectedMediaTab == idx
+                            FilterChip(
+                                selected = selected,
+                                onClick = { selectedMediaTab = idx },
+                                label = { Text(label, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = c.secondarySoft,
+                                    selectedLabelColor = c.secondary,
+                                    containerColor = c.surface,
+                                    labelColor = c.textSecondary
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     when (selectedMediaTab) {
                         0 -> {
                             if (mediaMessages.isEmpty()) {
-                                Text("Aucun média partagé pour le moment 📸", fontSize = 12.sp, color = TextMuted, modifier = Modifier.padding(vertical = 12.dp))
+                                Text("Aucun média partagé pour le moment", fontSize = 12.sp, color = c.textMuted, modifier = Modifier.padding(vertical = 8.dp))
                             } else {
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(mediaMessages) { msg ->
                                         Surface(
                                             shape = RoundedCornerShape(10.dp),
-                                            color = CardDarkElevated,
-                                            border = BorderStroke(0.5.dp, BorderSubtleWhite),
-                                            modifier = Modifier.size(70.dp)
+                                            color = c.surface,
+                                            border = BorderStroke(0.5.dp, c.border),
+                                            modifier = Modifier.size(64.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Icon(
-                                                    imageVector = if (msg.type == "video") Icons.Rounded.PlayCircle else Icons.Rounded.Image,
+                                                    imageVector = when (msg.type) {
+                                                        "video" -> com.example.mikayala.ui.icons.AppleSvgIcons.Video
+                                                        "audio", "voice" -> com.example.mikayala.ui.icons.AppleSvgIcons.Mic
+                                                        else -> Icons.Rounded.Image
+                                                    },
                                                     contentDescription = "Média",
-                                                    tint = VibrantCyan,
-                                                    modifier = Modifier.size(28.dp)
+                                                    tint = c.secondary,
+                                                    modifier = Modifier.size(24.dp)
                                                 )
                                             }
                                         }
@@ -377,22 +345,22 @@ fun PartnerProfileBottomSheet(
                         }
                         1 -> {
                             if (linkMessages.isEmpty()) {
-                                Text("Aucun lien partagé pour le moment 🔗", fontSize = 12.sp, color = TextMuted, modifier = Modifier.padding(vertical = 12.dp))
+                                Text("Aucun lien partagé pour le moment", fontSize = 12.sp, color = c.textMuted, modifier = Modifier.padding(vertical = 8.dp))
                             } else {
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     linkMessages.take(3).forEach { msg ->
-                                        Text(text = "• " + msg.content, fontSize = 12.sp, color = VibrantCyan, maxLines = 1)
+                                        Text(text = "• ${msg.content}", fontSize = 12.sp, color = c.secondary, maxLines = 1)
                                     }
                                 }
                             }
                         }
                         2 -> {
                             if (starredMessages.isEmpty()) {
-                                Text("Aucun message étoilé ⭐", fontSize = 12.sp, color = TextMuted, modifier = Modifier.padding(vertical = 12.dp))
+                                Text("Aucun message favori", fontSize = 12.sp, color = c.textMuted, modifier = Modifier.padding(vertical = 8.dp))
                             } else {
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     starredMessages.take(3).forEach { msg ->
-                                        Text(text = "⭐ " + msg.content, fontSize = 12.sp, color = TextPrimary, maxLines = 1)
+                                        Text(text = "★ ${msg.content}", fontSize = 12.sp, color = c.textPrimary, maxLines = 1)
                                     }
                                 }
                             }
@@ -401,13 +369,13 @@ fun PartnerProfileBottomSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Code de Jumelage Section
+            // Pairing Code Section
             Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = CardDarkElevated,
-                border = BorderStroke(0.5.dp, BorderSubtleWhite),
+                shape = RoundedCornerShape(16.dp),
+                color = c.surfaceElevated,
+                border = BorderStroke(0.5.dp, c.border),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
@@ -423,18 +391,18 @@ fun PartnerProfileBottomSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Code de Jumelage Partagé", fontSize = 12.sp, color = TextSecondary)
+                        Text("Code de jumelage partagé", fontSize = 12.sp, color = c.textSecondary)
                         Text(
-                            text = if (coupleSpace.pairingCode.isNotEmpty()) coupleSpace.pairingCode else "NON JUMELÉ",
+                            text = coupleSpace.pairingCode.ifEmpty { "NON JUMELÉ" },
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = VibrantCyan
+                            color = c.accent
                         )
                     }
                     Icon(
-                        imageVector = Icons.Rounded.ContentCopy,
+                        imageVector = com.example.mikayala.ui.icons.AppleSvgIcons.Copy,
                         contentDescription = "Copier",
-                        tint = VibrantCyan,
+                        tint = c.accent,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -449,21 +417,25 @@ fun ContactActionButton(
     label: String,
     onClick: () -> Unit
 ) {
+    val c = MikayalaColors
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Surface(
             shape = CircleShape,
-            color = CardDarkElevated,
-            border = BorderStroke(0.5.dp, BorderSubtleWhite),
-            modifier = Modifier.size(46.dp)
+            color = c.accentSoft,
+            border = BorderStroke(0.5.dp, c.border),
+            modifier = Modifier.size(48.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(imageVector = icon, contentDescription = label, tint = VibrantCyan, modifier = Modifier.size(22.dp))
+                Icon(imageVector = icon, contentDescription = label, tint = c.accent, modifier = Modifier.size(20.dp))
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
-        Text(text = label, fontSize = 11.sp, color = TextSecondary)
+        Text(text = label, fontSize = 11.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
     }
 }

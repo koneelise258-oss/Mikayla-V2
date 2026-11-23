@@ -1,7 +1,10 @@
 package com.example.mikayala.ui.components
 
-import androidx.compose.animation.*
-import androidx.compose.foundation.*
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -21,14 +23,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mikayala.theme.*
+import com.example.mikayala.theme.MikayalaColors
+import com.example.mikayala.ui.icons.AppleSvgIcons
 
 data class AttachmentGridItem(
     val id: String,
     val title: String,
     val icon: ImageVector,
-    val gradientColors: List<Color>,
-    val badge: String? = null,
+    val tint: Color,
     val onClick: () -> Unit
 )
 
@@ -46,7 +48,6 @@ fun ChatAttachmentAndGamesBottomSheet(
     onSendPoll: () -> Unit,
     onSendEvent: () -> Unit,
     onSendAiImage: (() -> Unit)? = null,
-    // Interactive Chat Games
     onSendScratchCard: () -> Unit,
     onSendTruthOrDare: () -> Unit,
     onSendQuiz: () -> Unit,
@@ -55,252 +56,121 @@ fun ChatAttachmentAndGamesBottomSheet(
     onSendLoveCoupon: () -> Unit,
     onSendWheel: () -> Unit
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Médias & Pièces jointes, 1: Jeux de Chat interactifs
+    val c = MikayalaColors
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xF2121A28),
-        scrimColor = Color.Black.copy(alpha = 0.65f),
+        containerColor = c.modal,
+        scrimColor = Color.Black.copy(alpha = 0.55f),
         dragHandle = {
-            Surface(
+            Box(
                 modifier = Modifier
                     .padding(vertical = 10.dp)
-                    .width(42.dp)
-                    .height(4.dp),
-                shape = CircleShape,
-                color = Color.White.copy(alpha = 0.25f)
-            ) {}
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(CircleShape)
+                    .background(c.borderStrong)
+            )
         },
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 28.dp)
         ) {
-            // Segmented Header Bar for Switching Between Attachments and Chat Games
+            // Contrôle segmenté épuré style iOS 18
             Surface(
                 shape = CircleShape,
-                color = com.example.mikayala.theme.MikayalaColors.surfaceSunken,
-                border = BorderStroke(0.8.dp, BorderSubtleWhite),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp)
+                color = c.surfaceSunken,
+                border = BorderStroke(0.5.dp, c.border),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier.padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Tab 0: Pièces jointes
-                    Surface(
-                        shape = CircleShape,
-                        color = if (selectedTab == 0) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { selectedTab = 0 }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
+                    listOf(
+                        Triple(0, AppleSvgIcons.Paperclip, "Partages"),
+                        Triple(1, AppleSvgIcons.Gamepad, "Jeux à deux")
+                    ).forEach { (idx, icon, label) ->
+                        val active = selectedTab == idx
+                        val activeBg = if (idx == 0) c.secondarySoft else c.accentSoft
+                        val activeFg = if (idx == 0) c.secondary else c.accent
+                        Surface(
+                            shape = CircleShape,
+                            color = if (active) activeBg else Color.Transparent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 40.dp)
+                                .clip(CircleShape)
+                                .clickable { selectedTab = idx }
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.AttachFile,
-                                contentDescription = null,
-                                tint = if (selectedTab == 0) VibrantCyan else TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Partages & Médias",
-                                fontSize = 12.sp,
-                                fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selectedTab == 0) Color.White else TextSecondary
-                            )
-                        }
-                    }
-
-                    // Tab 1: Jeux de Chat
-                    Surface(
-                        shape = CircleShape,
-                        color = if (selectedTab == 1) com.example.mikayala.theme.MikayalaColors.accentSoft else Color.Transparent,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { selectedTab = 1 }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.SportsEsports,
-                                contentDescription = null,
-                                tint = if (selectedTab == 1) AccentRose else TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Jeux de Chat 🎮",
-                                fontSize = 12.sp,
-                                fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selectedTab == 1) Color.White else TextSecondary
-                            )
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = if (active) activeFg else c.textSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = label,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = if (active) c.textPrimary else c.textSecondary
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Crossfade(targetState = selectedTab, label = "AttachmentTabCrossfade") { tab ->
+            Crossfade(
+                targetState = selectedTab,
+                animationSpec = tween(160),
+                label = "AttachmentTabCrossfade"
+            ) { tab ->
                 if (tab == 0) {
-                    // Standard WhatsApp-style Media & Shares (with App's Dark Luxury aesthetic)
                     val mediaItems = listOf(
-                        AttachmentGridItem(
-                            id = "gallery",
-                            title = "Galerie",
-                            icon = Icons.Rounded.PhotoLibrary,
-                            gradientColors = listOf(Color(0xFF7FA8CC), Color(0xFF7FA8CC)),
-                            onClick = onSendGallery
-                        ),
-                        AttachmentGridItem(
-                            id = "camera",
-                            title = "Caméra",
-                            icon = Icons.Rounded.PhotoCamera,
-                            gradientColors = listOf(Color(0xFFC4605C), Color(0xFFC4605C)),
-                            onClick = onSendCamera
-                        ),
-                        AttachmentGridItem(
-                            id = "video",
-                            title = "Vidéo",
-                            icon = Icons.Rounded.Videocam,
-                            gradientColors = listOf(Color(0xFF9283C4), Color(0xFFC97B86)),
-                            onClick = { onSendVideo?.invoke() ?: onSendGallery() }
-                        ),
-                        AttachmentGridItem(
-                            id = "location",
-                            title = "Localisation",
-                            icon = Icons.Rounded.LocationOn,
-                            gradientColors = listOf(Color(0xFF7FAF93), Color(0xFF7FAF93)),
-                            onClick = onSendLocation
-                        ),
-                        AttachmentGridItem(
-                            id = "contact",
-                            title = "Contact",
-                            icon = Icons.Rounded.Person,
-                            gradientColors = listOf(Color(0xFF7FA8CC), Color(0xFF7FA8CC)),
-                            onClick = onSendContact
-                        ),
-                        AttachmentGridItem(
-                            id = "document",
-                            title = "Document",
-                            icon = Icons.AutoMirrored.Rounded.InsertDriveFile,
-                            gradientColors = listOf(Color(0xFF9283C4), Color(0xFF9283C4)),
-                            onClick = onSendDocument
-                        ),
-                        AttachmentGridItem(
-                            id = "audio",
-                            title = "Audio",
-                            icon = Icons.Rounded.Headphones,
-                            gradientColors = listOf(Color(0xFFC9A15E), Color(0xFFC9A15E)),
-                            onClick = onSendAudio
-                        ),
-                        AttachmentGridItem(
-                            id = "poll",
-                            title = "Sondage",
-                            icon = Icons.Rounded.Poll,
-                            gradientColors = listOf(Color(0xFFC9A15E), Color(0xFFC9A15E)),
-                            onClick = onSendPoll
-                        ),
-                        AttachmentGridItem(
-                            id = "event",
-                            title = "Événement",
-                            icon = Icons.Rounded.Event,
-                            gradientColors = listOf(Color(0xFFC97B86), Color(0xFFC97B86)),
-                            onClick = onSendEvent
-                        )
+                        AttachmentGridItem("gallery", "Photos", Icons.Rounded.PhotoLibrary, c.accent, onSendGallery),
+                        AttachmentGridItem("camera", "Caméra", AppleSvgIcons.Camera, c.secondary, onSendCamera),
+                        AttachmentGridItem("video", "Vidéo", AppleSvgIcons.Video, c.lavender) { onSendVideo?.invoke() ?: onSendGallery() },
+                        AttachmentGridItem("location", "Position", AppleSvgIcons.Location, c.secondary, onSendLocation),
+                        AttachmentGridItem("contact", "Contact", AppleSvgIcons.Contact, c.sky, onSendContact),
+                        AttachmentGridItem("document", "Document", AppleSvgIcons.Document, c.accent, onSendDocument),
+                        AttachmentGridItem("audio", "Audio", Icons.Rounded.Headphones, c.sand, onSendAudio),
+                        AttachmentGridItem("poll", "Sondage", Icons.Rounded.Poll, c.secondary, onSendPoll),
+                        AttachmentGridItem("event", "Moment", AppleSvgIcons.Calendar, c.accent, onSendEvent)
                     ) + listOfNotNull(
-                        // Affiché seulement si une vraie fonction est fournie
                         onSendAiImage?.let { action ->
-                            AttachmentGridItem(
-                                id = "ai_image",
-                                title = "Images d'IA",
-                                icon = Icons.Rounded.AutoAwesome,
-                                gradientColors = listOf(Color(0xFF7FA8CC), Color(0xFF9283C4)),
-                                badge = "IA",
-                                onClick = action
-                            )
+                            AttachmentGridItem("ai_image", "Studio", AppleSvgIcons.Sparkles, c.accent, action)
                         }
                     )
-
                     AttachmentGrid(items = mediaItems)
                 } else {
-                    // Chat Games (Games that require the chat to play!)
                     val gameItems = listOf(
-                        AttachmentGridItem(
-                            id = "scratch_card",
-                            title = "Carte à Gratter",
-                            icon = Icons.Rounded.CardGiftcard,
-                            gradientColors = listOf(Color(0xFFC9A15E), Color(0xFFC9A15E)),
-                            badge = "Surprise",
-                            onClick = onSendScratchCard
-                        ),
-                        AttachmentGridItem(
-                            id = "truth_dare",
-                            title = "Action / Vérité",
-                            icon = Icons.Rounded.LocalFireDepartment,
-                            gradientColors = listOf(Color(0xFFC4605C), Color(0xFFC4605C)),
-                            badge = "Piquant 🔥",
-                            onClick = onSendTruthOrDare
-                        ),
-                        AttachmentGridItem(
-                            id = "quiz",
-                            title = "Quiz Couple",
-                            icon = Icons.Rounded.Psychology,
-                            gradientColors = listOf(Color(0xFF9283C4), Color(0xFF9283C4)),
-                            badge = "Complicité",
-                            onClick = onSendQuiz
-                        ),
-                        AttachmentGridItem(
-                            id = "tictactoe",
-                            title = "Morpion Direct",
-                            icon = Icons.Rounded.Grid3x3,
-                            gradientColors = listOf(Color(0xFF7FA8CC), Color(0xFF7FA8CC)),
-                            badge = "Tour par Tour",
-                            onClick = onSendTicTacToe
-                        ),
-                        AttachmentGridItem(
-                            id = "dilemma",
-                            title = "Tu Préfères ?",
-                            icon = Icons.Rounded.Balance,
-                            gradientColors = listOf(Color(0xFF7FAF93), Color(0xFF7FA8CC)),
-                            onClick = onSendDilemma
-                        ),
-                        AttachmentGridItem(
-                            id = "coupon",
-                            title = "Bon d'Amour",
-                            icon = Icons.Rounded.ConfirmationNumber,
-                            gradientColors = listOf(Color(0xFFC97B86), Color(0xFFC4605C)),
-                            badge = "Cadeau 💖",
-                            onClick = onSendLoveCoupon
-                        ),
-                        AttachmentGridItem(
-                            id = "wheel",
-                            title = "Roue de la Fortune",
-                            icon = Icons.Rounded.Casino,
-                            gradientColors = listOf(Color(0xFFC97B86), Color(0xFF9283C4)),
-                            badge = "Tourner 🎡",
-                            onClick = onSendWheel
-                        )
+                        AttachmentGridItem("scratch_card", "Carte mystère", Icons.Rounded.CardGiftcard, c.sand, onSendScratchCard),
+                        AttachmentGridItem("truth_dare", "Action / Vérité", Icons.Rounded.LocalFireDepartment, c.danger, onSendTruthOrDare),
+                        AttachmentGridItem("quiz", "Quiz Couple", Icons.Rounded.Psychology, c.accent, onSendQuiz),
+                        AttachmentGridItem("tictactoe", "Morpion", Icons.Rounded.Grid3x3, c.secondary, onSendTicTacToe),
+                        AttachmentGridItem("dilemma", "Tu préfères ?", Icons.Rounded.Balance, c.secondary, onSendDilemma),
+                        AttachmentGridItem("coupon", "Bon d'amour", Icons.Rounded.ConfirmationNumber, c.accent, onSendLoveCoupon),
+                        AttachmentGridItem("wheel", "Roue", Icons.Rounded.Casino, c.lavender, onSendWheel)
                     )
-
                     Column {
                         Text(
-                            text = "Jeux interactifs jouables directement dans le fil de discussion",
-                            fontSize = 11.sp,
-                            color = TextSecondary,
+                            text = "Jouez directement dans le fil de discussion",
+                            fontSize = 12.sp,
+                            color = c.textSecondary,
                             modifier = Modifier.padding(bottom = 12.dp, start = 4.dp)
                         )
                         AttachmentGrid(items = gameItems)
@@ -313,11 +183,9 @@ fun ChatAttachmentAndGamesBottomSheet(
 
 @Composable
 private fun AttachmentGrid(items: List<AttachmentGridItem>) {
-    // 4 Columns Grid matching reference layout
     val rows = items.chunked(4)
-
     Column(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         rows.forEach { rowItems ->
@@ -328,10 +196,9 @@ private fun AttachmentGrid(items: List<AttachmentGridItem>) {
                 rowItems.forEach { item ->
                     AttachmentSquircleButton(item = item)
                 }
-                // Fill empty slots in the row for proper alignment
                 if (rowItems.size < 4) {
                     repeat(4 - rowItems.size) {
-                        Spacer(modifier = Modifier.width(68.dp))
+                        Spacer(modifier = Modifier.width(72.dp))
                     }
                 }
             }
@@ -341,51 +208,32 @@ private fun AttachmentGrid(items: List<AttachmentGridItem>) {
 
 @Composable
 private fun AttachmentSquircleButton(item: AttachmentGridItem) {
+    val c = MikayalaColors
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(72.dp)
+            .clip(RoundedCornerShape(16.dp))
             .clickable { item.onClick() }
+            .padding(vertical = 4.dp)
             .testTag("attachment_${item.id}")
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            // Squircle Button Container with Subtle Gradient and Inner Light Glow
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                // Pastille unie teintée de la couleur de l'action (sans reflet ni halo)
-                color = item.gradientColors.first().copy(alpha = 0.16f),
-                modifier = Modifier.size(56.dp)
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = item.tint.copy(alpha = 0.14f),
+            border = BorderStroke(0.5.dp, item.tint.copy(alpha = 0.28f)),
+            modifier = Modifier.size(54.dp)
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = item.icon,
-                        contentDescription = item.title,
-                        tint = item.gradientColors.first(),
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-            }
-
-            // Optional Small Badge
-            if (item.badge != null) {
-                Surface(
-                    shape = CircleShape,
-                    color = AccentRose,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(x = 4.dp, y = (-4).dp)
-                ) {
-                    Text(
-                        text = item.badge,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
+                Icon(
+                    imageVector = item.icon,
+                    contentDescription = item.title,
+                    tint = item.tint,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
 
@@ -395,7 +243,7 @@ private fun AttachmentSquircleButton(item: AttachmentGridItem) {
             text = item.title,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
-            color = TextPrimary,
+            color = c.textPrimary,
             textAlign = TextAlign.Center,
             maxLines = 2,
             lineHeight = 13.sp

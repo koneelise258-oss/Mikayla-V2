@@ -147,3 +147,30 @@ export function normalizeServiceAccount(
   if (!sa.type && sa.client_email && sa.private_key) sa.type = "service_account";
   return JSON.stringify(sa);
 }
+
+export const FIRESTORE_DATABASE_ID = "ai-studio-android-mikayala-9f74e746-a740-4f00-85b2-7a4d380087a6";
+
+export interface FirestoreDoc {
+  fields?: Record<string, {
+    stringValue?: string;
+    arrayValue?: { values?: Array<{ stringValue?: string }> };
+  }>;
+}
+
+export function extractFirestoreCouple(doc: FirestoreDoc | null | undefined): CoupleRow | null {
+  const fields = doc?.fields;
+  if (!fields) return null;
+  const status = fields.status?.stringValue ?? null;
+  const memberValues = (fields.memberUids?.arrayValue?.values ?? [])
+    .map((v) => v?.stringValue ?? "")
+    .filter((v) => v.length > 0);
+  const user1 = fields.partner1Id?.stringValue ?? memberValues[0] ?? null;
+  const user2 = fields.partner2Id?.stringValue ?? memberValues[1] ?? null;
+  return { user1_id: user1, user2_id: user2, status };
+}
+
+export function extractFirestoreFcmToken(doc: FirestoreDoc | null | undefined): string {
+  const token = doc?.fields?.fcmToken?.stringValue ?? "";
+  return token.trim();
+}
+

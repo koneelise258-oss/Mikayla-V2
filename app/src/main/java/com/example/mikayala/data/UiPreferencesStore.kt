@@ -12,34 +12,64 @@ import com.example.mikayala.data.model.UserSettingsEntity
  */
 object UiPreferencesStore {
     private const val P = "ui_"
+    private const val KEY_FLAG_SECURE_MIGRATED_V2 = "ui_flag_secure_migrated_v2"
 
-    fun load(prefs: SharedPreferences, base: UserSettingsEntity): UserSettingsEntity = base.copy(
-        isDarkMode = prefs.getBoolean("is_dark_mode", base.isDarkMode),
-        followSystemTheme = prefs.getBoolean(P + "follow_system_theme", base.followSystemTheme),
-        biometricEnabled = prefs.getBoolean(P + "biometric", base.biometricEnabled),
-        lockTimeoutSeconds = prefs.getInt(P + "lock_timeout", base.lockTimeoutSeconds),
-        screenBlurOnSwitch = prefs.getBoolean(P + "screen_blur", base.screenBlurOnSwitch),
-        antiScreenshotEnabled = prefs.getBoolean(P + "anti_screenshot", base.antiScreenshotEnabled),
-        lastSeenPrivacy = prefs.getString(P + "last_seen", base.lastSeenPrivacy) ?: base.lastSeenPrivacy,
-        readReceiptsEnabled = prefs.getBoolean(P + "read_receipts", base.readReceiptsEnabled),
-        disappearingMessagesDays = prefs.getInt(P + "disappearing_days", base.disappearingMessagesDays),
-        enterIsSend = prefs.getBoolean(P + "enter_is_send", base.enterIsSend),
-        mediaVisibilityInGallery = prefs.getBoolean(P + "media_in_gallery", base.mediaVisibilityInGallery),
-        autoDownloadMedia = prefs.getString(P + "auto_download", base.autoDownloadMedia) ?: base.autoDownloadMedia,
-        photoUploadQuality = prefs.getString(P + "photo_quality", base.photoUploadQuality) ?: base.photoUploadQuality,
-        chatTheme = prefs.getString(P + "chat_theme", base.chatTheme) ?: base.chatTheme,
-        customWallpaperUri = prefs.getString(P + "wallpaper_uri", base.customWallpaperUri) ?: base.customWallpaperUri,
-        wallpaperOpacity = prefs.getFloat(P + "wallpaper_opacity", base.wallpaperOpacity),
-        wallpaperBlur = prefs.getFloat(P + "wallpaper_blur", base.wallpaperBlur),
-        fontFamilyPreference = prefs.getString(P + "font_family", base.fontFamilyPreference) ?: base.fontFamilyPreference,
-        bubbleStyle = prefs.getString(P + "bubble_style", base.bubbleStyle) ?: base.bubbleStyle,
-        fontSizeScale = prefs.getString(P + "font_size", base.fontSizeScale) ?: base.fontSizeScale,
-        proximityP2PEnabled = prefs.getBoolean(P + "p2p_enabled", base.proximityP2PEnabled),
-        autoSendOfflineQueue = prefs.getBoolean(P + "auto_send_queue", base.autoSendOfflineQueue),
-    )
+    fun load(prefs: SharedPreferences, base: UserSettingsEntity): UserSettingsEntity {
+        val migratedFlagSecure = prefs.getBoolean(KEY_FLAG_SECURE_MIGRATED_V2, false)
+        val screenBlur = if (migratedFlagSecure) {
+            prefs.getBoolean(P + "screen_blur", base.screenBlurOnSwitch)
+        } else {
+            base.screenBlurOnSwitch
+        }
+        val antiScreenshot = if (migratedFlagSecure) {
+            prefs.getBoolean(P + "anti_screenshot", base.antiScreenshotEnabled)
+        } else {
+            base.antiScreenshotEnabled
+        }
+        if (!migratedFlagSecure && (prefs.contains(P + "screen_blur") || prefs.contains(P + "anti_screenshot"))) {
+            prefs.edit()
+                .putBoolean(P + "screen_blur", screenBlur)
+                .putBoolean(P + "anti_screenshot", antiScreenshot)
+                .putBoolean(KEY_FLAG_SECURE_MIGRATED_V2, true)
+                .apply()
+        }
+        return base.copy(
+            isDarkMode = prefs.getBoolean("is_dark_mode", base.isDarkMode),
+            followSystemTheme = prefs.getBoolean(P + "follow_system_theme", base.followSystemTheme),
+            biometricEnabled = prefs.getBoolean(P + "biometric", base.biometricEnabled),
+            lockTimeoutSeconds = prefs.getInt(P + "lock_timeout", base.lockTimeoutSeconds),
+            screenBlurOnSwitch = screenBlur,
+            antiScreenshotEnabled = antiScreenshot,
+            lastSeenPrivacy = prefs.getString(P + "last_seen", base.lastSeenPrivacy) ?: base.lastSeenPrivacy,
+            readReceiptsEnabled = prefs.getBoolean(P + "read_receipts", base.readReceiptsEnabled),
+            disappearingMessagesDays = prefs.getInt(P + "disappearing_days", base.disappearingMessagesDays),
+            enterIsSend = prefs.getBoolean(P + "enter_is_send", base.enterIsSend),
+            mediaVisibilityInGallery = prefs.getBoolean(P + "media_in_gallery", base.mediaVisibilityInGallery),
+            autoDownloadMedia = prefs.getString(P + "auto_download", base.autoDownloadMedia) ?: base.autoDownloadMedia,
+            photoUploadQuality = prefs.getString(P + "photo_quality", base.photoUploadQuality) ?: base.photoUploadQuality,
+            chatTheme = prefs.getString(P + "chat_theme", base.chatTheme) ?: base.chatTheme,
+            customWallpaperUri = prefs.getString(P + "wallpaper_uri", base.customWallpaperUri) ?: base.customWallpaperUri,
+            wallpaperOpacity = prefs.getFloat(P + "wallpaper_opacity", base.wallpaperOpacity),
+            wallpaperBlur = prefs.getFloat(P + "wallpaper_blur", base.wallpaperBlur),
+            fontFamilyPreference = prefs.getString(P + "font_family", base.fontFamilyPreference) ?: base.fontFamilyPreference,
+            bubbleStyle = prefs.getString(P + "bubble_style", base.bubbleStyle) ?: base.bubbleStyle,
+            fontSizeScale = prefs.getString(P + "font_size", base.fontSizeScale) ?: base.fontSizeScale,
+            proximityP2PEnabled = prefs.getBoolean(P + "p2p_enabled", base.proximityP2PEnabled),
+            autoSendOfflineQueue = prefs.getBoolean(P + "auto_send_queue", base.autoSendOfflineQueue),
+            backendProvider = prefs.getString(P + "backend_provider", base.backendProvider) ?: base.backendProvider,
+            accentTheme = prefs.getString(P + "accent_theme", base.accentTheme) ?: base.accentTheme,
+            bubbleCornerRadiusDp = prefs.getInt(P + "bubble_radius_dp", base.bubbleCornerRadiusDp).coerceIn(10, 26),
+            showBubbleTails = prefs.getBoolean(P + "show_bubble_tails", base.showBubbleTails),
+            chatWallpaperPattern = prefs.getString(P + "wallpaper_pattern", base.chatWallpaperPattern) ?: base.chatWallpaperPattern,
+            navBarStyle = prefs.getString(P + "nav_bar_style", base.navBarStyle) ?: base.navBarStyle,
+            uiDensity = prefs.getString(P + "ui_density", base.uiDensity) ?: base.uiDensity,
+            showLoveDaysInHeader = prefs.getBoolean(P + "show_love_days", base.showLoveDaysInHeader),
+        )
+    }
 
     fun save(prefs: SharedPreferences, s: UserSettingsEntity) {
         prefs.edit()
+            .putBoolean(KEY_FLAG_SECURE_MIGRATED_V2, true)
             .putBoolean("is_dark_mode", s.isDarkMode)
             .putBoolean(P + "follow_system_theme", s.followSystemTheme)
             .putBoolean(P + "biometric", s.biometricEnabled)
@@ -62,6 +92,14 @@ object UiPreferencesStore {
             .putString(P + "font_size", s.fontSizeScale)
             .putBoolean(P + "p2p_enabled", s.proximityP2PEnabled)
             .putBoolean(P + "auto_send_queue", s.autoSendOfflineQueue)
+            .putString(P + "backend_provider", s.backendProvider)
+            .putString(P + "accent_theme", s.accentTheme)
+            .putInt(P + "bubble_radius_dp", s.bubbleCornerRadiusDp)
+            .putBoolean(P + "show_bubble_tails", s.showBubbleTails)
+            .putString(P + "wallpaper_pattern", s.chatWallpaperPattern)
+            .putString(P + "nav_bar_style", s.navBarStyle)
+            .putString(P + "ui_density", s.uiDensity)
+            .putBoolean(P + "show_love_days", s.showLoveDaysInHeader)
             .apply()
     }
 

@@ -14,10 +14,12 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -38,10 +41,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
+import com.example.mikayala.data.firebase.FirebaseAuthManager
 import com.example.mikayala.data.model.ConnectionMode
 import com.example.mikayala.data.repository.MikayalaRepository
 import com.example.mikayala.theme.*
 import com.example.mikayala.ui.components.PairingDialog
+import com.example.mikayala.ui.icons.AppleSvgIcons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,7 +145,16 @@ fun SettingsScreen(
                 if (success) {
                     Toast.makeText(context, "Photo de profil mise à jour", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Erreur lors de l'upload sur Supabase Storage.", Toast.LENGTH_SHORT).show()
+                    val msg = if (settings.backendProvider == "firebase") {
+                        if (repository.supabaseService.isConfigured()) {
+                            "Échec de l'envoi de l'avatar. Vérifiez la connexion ou les règles Storage."
+                        } else {
+                            "Configurez Serveur Supabase (gratuit) pour les photos sans forfait Blaze."
+                        }
+                    } else {
+                        "Erreur lors de l'upload sur Supabase Storage."
+                    }
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -150,8 +164,19 @@ fun SettingsScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let {
-            repository.updatePartnerProfile(settings.partnerNickname, settings.partnerStatus, it.toString())
-            Toast.makeText(context, "Photo du partenaire mise à jour", Toast.LENGTH_SHORT).show()
+            val saved = try {
+                val dest = java.io.File(context.filesDir, "partner_avatar.jpg")
+                context.contentResolver.openInputStream(it)?.use { input ->
+                    dest.outputStream().use { out -> input.copyTo(out) }
+                }
+                Uri.fromFile(dest).toString() + "?v=" + System.currentTimeMillis()
+            } catch (_: Exception) { null }
+            if (saved != null) {
+                repository.updatePartnerProfile(settings.partnerNickname, settings.partnerStatus, saved)
+                Toast.makeText(context, "Photo du partenaire mise à jour", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Impossible de lire cette photo", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -718,8 +743,11 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { section = null }) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = "Retour", tint = TextPrimary)
+                    IconButton(
+                        onClick = { section = null },
+                        modifier = Modifier.size(48.dp).testTag("settings_back_button")
+                    ) {
+                        Icon(AppleSvgIcons.Back, contentDescription = "Retour", tint = TextPrimary, modifier = Modifier.size(22.dp))
                     }
                     Text(
                         text = when (section) {
@@ -904,17 +932,18 @@ fun SettingsScreen(
         }
         if (section == null) {
             item {
+                val palette = MikayalaColors
                 Column {
-                    SettingsCategoryRow(Icons.Rounded.Person, AccentRose, "Mon compte", "Profils, surnoms, jumelage, appareils, serveur") { section = "couple" }
-                    SettingsCategoryRow(Icons.Rounded.Lock, AccentViolet, "Confidentialité et sécurité", "Présence, accusés de lecture, codes PIN, verrouillage") { section = "privacy" }
-                    SettingsCategoryRow(Icons.Rounded.Notifications, AccentGold, "Notifications", "Aperçus, son, vibration, catégories") { section = "notifications" }
-                    SettingsCategoryRow(Icons.Rounded.Chat, VibrantCyan, "Conversations", "Fond d'écran, bulles, police, médias") { section = "conversations" }
-                    SettingsCategoryRow(Icons.Rounded.Call, VibrantCyan, "Appels", "Notifications d'appel, micro et caméra") { section = "calls" }
-                    SettingsCategoryRow(Icons.Rounded.Storage, TextSecondary, "Stockage et données", "Espace utilisé, cache, sauvegardes") { section = "storage" }
-                    SettingsCategoryRow(Icons.Rounded.Palette, AccentRose, "Apparence", "Thème clair, sombre ou automatique, icône") { section = "appearance" }
-                    SettingsCategoryRow(Icons.Rounded.CalendarMonth, AccentRose, "Calendrier et cycle", "Anniversaire, rappels, notifications du cycle") { section = "calendar_cycle" }
-                    SettingsCategoryRow(Icons.Rounded.SportsEsports, AccentGold, "Jeux", "Notifications d'invitation et de tour") { section = "games" }
-                    SettingsCategoryRow(Icons.Rounded.WifiTethering, AccentViolet, "P2P et connexion locale", "En ligne ou hors-ligne (liaison directe)") { section = "connection" }
+                    SettingsCategoryRow(AppleSvgIcons.Person, palette.accent, "Mon compte", "Profils, surnoms, jumelage, Version Cloud Firebase", modifier = Modifier.testTag("settings_cat_couple")) { section = "couple" }
+                    SettingsCategoryRow(AppleSvgIcons.Shield, palette.accent, "Confidentialité et sécurité", "Présence, accusés de lecture, codes PIN, verrouillage", modifier = Modifier.testTag("settings_cat_privacy")) { section = "privacy" }
+                    SettingsCategoryRow(AppleSvgIcons.Bell, AccentGold, "Notifications", "Aperçus, son, vibration, catégories", modifier = Modifier.testTag("settings_cat_notifications")) { section = "notifications" }
+                    SettingsCategoryRow(AppleSvgIcons.Chat, palette.secondary, "Conversations", "Fond d'écran, motifs, bulles, police, médias", modifier = Modifier.testTag("settings_cat_conversations")) { section = "conversations" }
+                    SettingsCategoryRow(AppleSvgIcons.Phone, palette.secondary, "Appels", "Notifications d'appel, micro et caméra", modifier = Modifier.testTag("settings_cat_calls")) { section = "calls" }
+                    SettingsCategoryRow(AppleSvgIcons.Storage, TextSecondary, "Stockage et données", "Espace utilisé, cache, sauvegardes", modifier = Modifier.testTag("settings_cat_storage")) { section = "storage" }
+                    SettingsCategoryRow(AppleSvgIcons.Palette, palette.accent, "Apparence", "Palette Violet & Vert, barre de navigation, thème, icône", modifier = Modifier.testTag("settings_cat_appearance")) { section = "appearance" }
+                    SettingsCategoryRow(AppleSvgIcons.Calendar, palette.secondary, "Calendrier et cycle", "Anniversaire, rappels, notifications du cycle", modifier = Modifier.testTag("settings_cat_calendar_cycle")) { section = "calendar_cycle" }
+                    SettingsCategoryRow(AppleSvgIcons.Gamepad, AccentGold, "Jeux", "Notifications d'invitation et de tour", modifier = Modifier.testTag("settings_cat_games")) { section = "games" }
+                    SettingsCategoryRow(AppleSvgIcons.Wifi, palette.accent, "P2P et connexion locale", "En ligne ou hors-ligne (liaison directe)", modifier = Modifier.testTag("settings_cat_connection")) { section = "connection" }
                 }
             }
         }
@@ -966,14 +995,18 @@ fun SettingsScreen(
         // --- 2. SECTION: PERSONNALISATION VISUELLE & DESIGN ---
 
         if (section == "appearance" || section == "conversations") {
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color.Transparent,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (section == "appearance") {
+            item {
+                LiveAppearancePreviewCard(settings = settings)
+            }
+        }
+
+        if (section == "appearance") {
+            item {
+                val palette = MikayalaColors
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     SettingRow(
                         icon = Icons.Rounded.AppShortcut,
                         iconTint = AccentGold,
@@ -981,33 +1014,73 @@ fun SettingsScreen(
                         subtitle = "10 icônes au choix pour l'écran d'accueil",
                         onClick = { showAppIconModal = true }
                     )
-                    }
 
-                    // App theme mode switch (Mode Sombre / Clair)
-                    if (section == "appearance") {
-                        Text("Thème", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
-                        val themeChoice = when {
-                            settings.followSystemTheme -> "system"
-                            settings.isDarkMode -> "dark"
-                            else -> "light"
-                        }
-                        listOf(
-                            Triple("light", "Clair", "Fond crème, texte anthracite"),
-                            Triple("dark", "Sombre", "Fond anthracite, texte clair"),
-                            Triple("system", "Comme le téléphone", "Suit automatiquement le réglage d'Android")
-                        ).forEach { (id, label, desc) ->
-                            SettingsRadioRow(themeChoice == id, label, desc) {
-                                when (id) {
-                                    "system" -> repository.updateUiSettings { it.copy(followSystemTheme = true) }
-                                    "dark" -> repository.updateUiSettings { it.copy(followSystemTheme = false, isDarkMode = true) }
-                                    else -> repository.updateUiSettings { it.copy(followSystemTheme = false, isDarkMode = false) }
-                                }
+                    SettingsGroupTitle("Mode d'affichage")
+                    val themeChoice = when {
+                        settings.followSystemTheme -> "system"
+                        settings.isDarkMode -> "dark"
+                        else -> "light"
+                    }
+                    listOf(
+                        Triple("light", "Clair", "Fond lumineux, lecture douce"),
+                        Triple("dark", "Sombre", "Fond nuit violette, contraste reposant"),
+                        Triple("system", "Comme le téléphone", "Suit automatiquement le réglage d'Android")
+                    ).forEach { (id, label, desc) ->
+                        SettingsRadioRow(themeChoice == id, label, desc) {
+                            when (id) {
+                                "system" -> repository.updateUiSettings { it.copy(followSystemTheme = true) }
+                                "dark" -> repository.updateUiSettings { it.copy(followSystemTheme = false, isDarkMode = true) }
+                                else -> repository.updateUiSettings { it.copy(followSystemTheme = false, isDarkMode = false) }
                             }
                         }
                     }
+
+                    SettingsGroupTitle("Harmonie de couleurs")
+                    SoftChatStyles.ACCENT_THEMES.forEach { (id, label) ->
+                        val previewPal = paletteFor(palette.isDark, id)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(start = 6.dp)
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(previewPal.accent, previewPal.secondary)))
+                                    .border(1.dp, palette.borderStrong, CircleShape)
+                            )
+                            SettingsRadioRow(settings.accentTheme == id, label, "") {
+                                repository.updateUiSettings { it.copy(accentTheme = id) }
+                            }
+                        }
+                    }
+
+                    SettingsGroupTitle("Barre de navigation")
+                    SoftChatStyles.NAV_STYLES.forEach { (id, label) ->
+                        val desc = when (id) {
+                            "floating_glass" -> "Pilule flottante arrondie façon iOS / Glass"
+                            "compact" -> "Barre épurée avec icônes seules"
+                            else -> "Barre WhatsApp Material 3 avec pastille active"
+                        }
+                        SettingsRadioRow(settings.navBarStyle == id, label, desc) {
+                            repository.updateUiSettings { it.copy(navBarStyle = id) }
+                        }
+                    }
+
+                    SettingsGroupTitle("Disposition & En-tête")
+                    SettingsSwitchRow(
+                        title = "Compteur de jours dans l'en-tête",
+                        subtitle = "Affiche un petit badge de jours ensemble à côté du prénom",
+                        checked = settings.showLoveDaysInHeader,
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(showLoveDaysInHeader = on) } }
+                    )
+                    Text("Densité des messages", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+                    SettingsRadioRow(settings.uiDensity != "compact", "Confortable", "Espacement aéré") {
+                        repository.updateUiSettings { it.copy(uiDensity = "comfortable") }
+                    }
+                    SettingsRadioRow(settings.uiDensity == "compact", "Compacte", "Affiche plus de messages à l'écran") {
+                        repository.updateUiSettings { it.copy(uiDensity = "compact") }
+                    }
                 }
             }
-        }
         }
 
         // --- 3. SECTION: ESPACE COUPLE & SURNOMS ---
@@ -1080,11 +1153,113 @@ fun SettingsScreen(
                     }
 
                     if (section == "couple") {
+                    val palette = MikayalaColors
+                    val fbUser by FirebaseAuthManager.authStateFlow().collectAsState(initial = FirebaseAuthManager.currentUser())
+                    val isFirebase = settings.backendProvider == "firebase"
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = palette.surfaceElevated,
+                        border = BorderStroke(1.dp, if (isFirebase) palette.secondary.copy(alpha = 0.6f) else palette.accent.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(AppleSvgIcons.Cloud, contentDescription = null, tint = if (isFirebase) palette.secondary else palette.accent, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isFirebase) "Version active : Firebase (Principal)" else "Version active : Supabase (Secondaire)",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                            }
+                            Text(
+                                text = if (isFirebase) {
+                                    if (fbUser != null) "Connecté avec Google : ${fbUser?.email ?: fbUser?.displayName ?: "Compte actif"}. Cloud Firestore, Storage & Auth actifs. Supabase reste conservé sur le côté."
+                                    else "Mode Firebase principal sélectionné. Connectez votre compte Google pour synchroniser Firestore et Storage."
+                                } else {
+                                    "Serveur Supabase actif en mode secondaire. Vous pouvez revenir à Firebase (Principal) à tout moment."
+                                },
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val next = if (isFirebase) "supabase" else "firebase"
+                                        scope.launch {
+                                            repository.setBackendProvider(next)
+                                            Toast.makeText(
+                                                context,
+                                                if (next == "firebase") "Firebase (Principal) activé" else "Supabase (Secondaire) activé",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("settings_switch_backend_button")
+                                ) {
+                                    Text(
+                                        text = if (isFirebase) "Passer sur Supabase" else "Revenir sur Firebase",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = palette.accent
+                                    )
+                                }
+                                if (isFirebase) {
+                                    Button(
+                                        onClick = {
+                                            val act = context as? android.app.Activity
+                                            if (act == null) {
+                                                Toast.makeText(context, "Activité introuvable", Toast.LENGTH_SHORT).show()
+                                            } else if (fbUser == null) {
+                                                scope.launch {
+                                                    repository.signInWithGoogle(act).onSuccess {
+                                                        Toast.makeText(context, "Connecté avec Google", Toast.LENGTH_SHORT).show()
+                                                    }.onFailure { err ->
+                                                        Toast.makeText(context, err.localizedMessage ?: "Échec Google Sign-In", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            } else {
+                                                scope.launch {
+                                                    FirebaseAuthManager.signOut(context)
+                                                    Toast.makeText(context, "Déconnecté de Google / Firebase", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (fbUser == null) palette.secondary else palette.danger.copy(alpha = 0.18f)
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("settings_firebase_google_button")
+                                    ) {
+                                        Text(
+                                            text = if (fbUser == null) "Connexion Google" else "Déco. Google",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (fbUser == null) Color.White else palette.danger
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     SettingRow(
-                        icon = Icons.Rounded.CloudSync,
-                        iconTint = VibrantCyan,
-                        title = "Serveur (avancé)",
-                        subtitle = "Adresse du serveur et test de connexion — à ne modifier que sur conseil",
+                        icon = AppleSvgIcons.Cloud,
+                        iconTint = palette.accent,
+                        title = "Serveur Supabase (relais gratuit)",
+                        subtitle = if (repository.supabaseService.isConfigured()) {
+                            "Connecté pour les médias et notifications sans Blaze"
+                        } else {
+                            "Configurer URL & clé pour médias et notifications gratuits"
+                        },
                         onClick = { showSupabaseDialog = true }
                     )
                     }
@@ -1117,7 +1292,7 @@ fun SettingsScreen(
             item {
                 SettingsSwitchRow(
                     title = "Bloquer les captures d'écran",
-                    subtitle = "Empêche captures et enregistrements, et masque l'application dans les applications récentes",
+                    subtitle = "Désactivé par défaut (écran noir sur recopie vidéo). Activez pour masquer les captures et miniatures.",
                     checked = settings.antiScreenshotEnabled || settings.screenBlurOnSwitch,
                     onCheckedChange = { on -> repository.updateUiSettings { it.copy(antiScreenshotEnabled = on, screenBlurOnSwitch = on) } }
                 )
@@ -1171,33 +1346,63 @@ fun SettingsScreen(
             }
             item { SettingsGroupTitle("Apparence des messages") }
             item {
+                val palette = MikayalaColors
                 Column {
                     Text("Couleur de vos bulles", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
-                    com.example.mikayala.theme.SoftChatStyles.BUBBLES.forEach { (id, label) ->
-                        val sw = com.example.mikayala.theme.SoftChatStyles.bubble(id, com.example.mikayala.theme.MikayalaColors, true).background
+                    SoftChatStyles.BUBBLES.forEach { (id, label) ->
+                        val sw = SoftChatStyles.bubble(id, palette, true).background
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).background(sw).border(0.5.dp, BorderSubtleWhite, CircleShape))
+                            Box(modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).background(sw).border(0.8.dp, palette.borderStrong, CircleShape))
                             SettingsRadioRow(settings.bubbleStyle == id, label, "") { repository.updateBubbleStyle(id) }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Arrondi des bulles : ${settings.bubbleCornerRadiusDp} dp", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp))
+                    Slider(
+                        value = settings.bubbleCornerRadiusDp.toFloat(),
+                        onValueChange = { v -> repository.updateUiSettings { it.copy(bubbleCornerRadiusDp = v.toInt()) } },
+                        valueRange = 10f..26f,
+                        colors = SliderDefaults.colors(thumbColor = palette.accent, activeTrackColor = palette.accent)
+                    )
+                    SettingsSwitchRow(
+                        title = "Pointes sur les bulles (style WhatsApp)",
+                        subtitle = "Affine le coin inférieur des bulles reçues et envoyées",
+                        checked = settings.showBubbleTails,
+                        onCheckedChange = { on -> repository.updateUiSettings { it.copy(showBubbleTails = on) } }
+                    )
+
                     Text("Fond de conversation", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
-                    com.example.mikayala.theme.SoftChatStyles.WALLPAPERS.forEach { (id, label) ->
-                        SettingsRadioRow(settings.chatTheme == id || (id == "twilight" && settings.chatTheme !in com.example.mikayala.theme.SoftChatStyles.WALLPAPERS.map { it.first } && settings.chatTheme != "custom_image"), label, "") {
+                    SoftChatStyles.WALLPAPERS.forEach { (id, label) ->
+                        SettingsRadioRow(settings.chatTheme == id || (id == "twilight" && settings.chatTheme !in SoftChatStyles.WALLPAPERS.map { it.first } && settings.chatTheme != "custom_image"), label, "") {
                             repository.updateWallpaper(id, "")
                         }
                     }
                     SettingsRadioRow(settings.chatTheme == "custom_image", "Ma photo", if (settings.chatTheme == "custom_image") "Touchez pour en choisir une autre" else "Choisir une photo de la galerie") {
                         wallpaperPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     }
-                    if (settings.chatTheme == "custom_image") {
-                        Text("Visibilité de la photo : ${(settings.wallpaperOpacity * 100).toInt()} %", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
-                        Slider(
-                            value = settings.wallpaperOpacity,
-                            onValueChange = { repository.updateWallpaperControls(it, 0f) },
-                            valueRange = 0.2f..1f,
-                            colors = SliderDefaults.colors(thumbColor = AccentRose, activeTrackColor = AccentRose)
-                        )
+
+                    Text("Motif en filigrane", fontSize = 14.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+                    SoftChatStyles.PATTERNS.forEach { (id, label) ->
+                        SettingsRadioRow(settings.chatWallpaperPattern == id, label, "") {
+                            repository.updateUiSettings { it.copy(chatWallpaperPattern = id) }
+                        }
                     }
+
+                    Text("Visibilité du fond : ${(settings.wallpaperOpacity * 100).toInt()} %", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+                    Slider(
+                        value = settings.wallpaperOpacity,
+                        onValueChange = { repository.updateWallpaperControls(it, settings.wallpaperBlur) },
+                        valueRange = 0.25f..1f,
+                        colors = SliderDefaults.colors(thumbColor = palette.secondary, activeTrackColor = palette.secondary)
+                    )
+                    Text("Flou du fond : ${settings.wallpaperBlur.toInt()} dp", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(start = 4.dp, top = 2.dp))
+                    Slider(
+                        value = settings.wallpaperBlur,
+                        onValueChange = { repository.updateWallpaperControls(settings.wallpaperOpacity, it) },
+                        valueRange = 0f..20f,
+                        colors = SliderDefaults.colors(thumbColor = palette.accent, activeTrackColor = palette.accent)
+                    )
                 }
             }
             item { SettingsGroupTitle("Texte") }
@@ -1693,25 +1898,83 @@ private fun openAppDetailsSettings(context: Context) {
 }
 
 @Composable
+private fun LiveAppearancePreviewCard(settings: com.example.mikayala.data.model.UserSettingsEntity) {
+    val p = MikayalaColors
+    val bgBrush = SoftChatStyles.wallpaper(settings.chatTheme, p)
+    val inBubble = SoftChatStyles.bubble(settings.bubbleStyle, p, false)
+    val outBubble = SoftChatStyles.bubble(settings.bubbleStyle, p, true)
+    val r = settings.bubbleCornerRadiusDp.coerceIn(8, 28).dp
+    val tail = if (settings.showBubbleTails) 4.dp else r
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, p.borderStrong),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(bgBrush)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Aperçu en direct • ${SoftChatStyles.ACCENT_THEMES.firstOrNull { it.first == settings.accentTheme }?.second ?: "Violet & Émeraude"}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = p.secondary
+            )
+            Surface(
+                shape = RoundedCornerShape(topStart = r, topEnd = r, bottomStart = tail, bottomEnd = r),
+                color = inBubble.background,
+                border = if (inBubble.outlined) BorderStroke(1.dp, p.border) else null
+            ) {
+                Text(
+                    text = "Coucou, j'aime beaucoup ce nouveau style WhatsApp !",
+                    fontSize = 13.sp,
+                    color = inBubble.text,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                Surface(
+                    shape = RoundedCornerShape(topStart = r, topEnd = r, bottomStart = r, bottomEnd = tail),
+                    color = outBubble.background,
+                    border = if (outBubble.outlined) BorderStroke(1.dp, p.borderStrong) else null
+                ) {
+                    Text(
+                        text = "Violet & Vert émeraude, 100 % personnalisable.",
+                        fontSize = 13.sp,
+                        color = outBubble.text,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsCategoryRow(
     icon: ImageVector,
     tint: Color,
     title: String,
     subtitle: String,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 56.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 14.dp),
+            .padding(horizontal = 4.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier.size(44.dp).clip(CircleShape).background(tint.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
         }
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
