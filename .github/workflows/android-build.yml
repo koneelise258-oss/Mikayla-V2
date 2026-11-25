@@ -128,7 +128,16 @@ jobs:
           fi
           chmod +x gradlew
           # Compilation propre : aucun résultat réutilisé d'une compilation précédente
-          ./gradlew --no-daemon --stacktrace --no-build-cache clean assembleDebug
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace --no-build-cache clean assembleDebug 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      # Erreurs de compilation Kotlin publiées en annotations (lisibles sans ouvrir les journaux)
+      - name: Erreurs de compilation
+        if: failure()
+        run: |
+          grep -E '^e: ' "$RUNNER_TEMP/build.log" | head -40 | while IFS= read -r l; do
+            echo "::error::${l#e: }"
+          done || true
 
       - name: Unit tests
         run: |
