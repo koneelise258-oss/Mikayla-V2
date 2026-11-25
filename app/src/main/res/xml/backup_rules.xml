@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 6 à 11 : sauvegarde automatique.
-     Exclu : mikayala_push_prefs (secret d'installation et jetons FCM, propres à CET appareil). -->
+<!-- Sauvegarde désactivée (allowBackup=false) : messages, session et code de verrouillage restent sur CE téléphone. -->
 <full-backup-content>
-    <exclude domain="sharedpref" path="mikayala_push_prefs.xml" />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="file" path="." />
 </full-backup-content>

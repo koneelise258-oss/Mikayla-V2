@@ -93,7 +93,7 @@ object P2PSocketManager {
         scope.launch {
             try {
                 serverSocket = ServerSocket(port)
-                Log.d(TAG, "ServerSocket listening on $localIp:$port with PIN $pin")
+                Log.d(TAG, "ServerSocket listening on $localIp:$port")
 
                 while (_p2pState.value is P2PState.Hosting) {
                     val clientSocket = serverSocket?.accept() ?: break

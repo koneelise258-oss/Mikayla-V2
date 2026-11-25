@@ -1,0 +1,5 @@
+-- Appliquée le 25/11/2026 (trace).
+-- Rôle anon : plus aucun droit sur les tables publiques ; TRUNCATE/TRIGGER/REFERENCES retirés aux utilisateurs.
+-- couples : seule la colonne disappearing_seconds est modifiable (jumelage par create_couple / join_couple).
+-- messages : déclencheur mik_messages_clean_insert (expéditeur = utilisateur connecté, jamais « reçu »/« lu » à l'envoi).
+-- Suppression de edit_message_content, delete_message_for_everyone, delete_message_for_me (sans contrôle d'appartenance).
