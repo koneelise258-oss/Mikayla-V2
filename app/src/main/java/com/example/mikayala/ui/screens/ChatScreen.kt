@@ -307,7 +307,13 @@ fun ChatScreen(
     val hasOlderHeader = hasOlderMessages && searchMode == null && activeFilterChip == "all" && messages.isNotEmpty()
 
     var selectedMessageIds by remember { mutableStateOf(setOf<String>()) }
-    var textInput by remember { mutableStateOf("") }
+    // Brouillon conservé (comme WhatsApp) : le texte commencé revient après fermeture de l'appli
+    val draftPrefs = remember { context.getSharedPreferences("mikayala_prefs", android.content.Context.MODE_PRIVATE) }
+    var textInput by remember { mutableStateOf(draftPrefs.getString("chat_draft", "") ?: "") }
+    LaunchedEffect(textInput) {
+        kotlinx.coroutines.delay(600)
+        draftPrefs.edit().putString("chat_draft", textInput.take(4000)).apply()
+    }
     var replyToMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var editingMessageId by remember { mutableStateOf<String?>(null) }
     var selectedMessageForOptions by remember { mutableStateOf<MessageEntity?>(null) }
