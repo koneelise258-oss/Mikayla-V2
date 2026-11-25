@@ -7,7 +7,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 // ==============================================================================
-// SYSTÈME DE DESIGN « VIOLET & ÉMERAUDE » — 5 harmonies personnalisables,
+// SYSTÈME DE DESIGN « VIOLET & ÉMERAUDE » (neutres iOS 18, bulles pleines façon iMessage) — 5 harmonies personnalisables,
 // modes clair ET sombre, inspiré de l'ergonomie WhatsApp Material 3.
 // Les alias historiques (DeepNight, CardDark, VibrantCyan, AccentRose...) restent
 // synchronisés automatiquement pour toute l'application.
@@ -50,16 +50,16 @@ data class MikayalaPalette(
 
 val VioletEmeraldLight = MikayalaPalette(
     isDark = false,
-    background = Color(0xFFF6F4FB),
+    background = Color(0xFFF2F2F7),
     surface = Color(0xFFFFFFFF),
-    surfaceElevated = Color(0xFFEDE8F8),
-    surfaceSunken = Color(0xFFE7E2F3),
+    surfaceElevated = Color(0xFFF2EEFB),
+    surfaceSunken = Color(0xFFE9E9EE),
     modal = Color(0xFFFFFFFF),
-    textPrimary = Color(0xFF1A1625),
-    textSecondary = Color(0xFF5D576B),
-    textMuted = Color(0xFF8C859C),
-    border = Color(0xFFE1DAE9),
-    borderStrong = Color(0xFFCBBFE0),
+    textPrimary = Color(0xFF000000),
+    textSecondary = Color(0xFF6C6C70),
+    textMuted = Color(0xFFAEAEB2),
+    border = Color(0xFFD8D8DC),
+    borderStrong = Color(0xFFC6C6C8),
     accent = Color(0xFF7C3AED),
     accentSoft = Color(0xFFEDE9FE),
     secondary = Color(0xFF10B981),
@@ -70,24 +70,24 @@ val VioletEmeraldLight = MikayalaPalette(
     warning = Color(0xFFD97706),
     success = Color(0xFF059669),
     danger = Color(0xFFDC2626),
-    bubbleOutgoing = Color(0xFFEDE9FE),
-    bubbleIncoming = Color(0xFFFFFFFF),
-    onBubbleOutgoing = Color(0xFF1E1438),
+    bubbleOutgoing = Color(0xFF7C3AED),
+    bubbleIncoming = Color(0xFFE9E9EB),
+    onBubbleOutgoing = Color(0xFFFFFFFF),
     pressed = Color(0x127C3AED),
 )
 
 val VioletEmeraldDark = MikayalaPalette(
     isDark = true,
-    background = Color(0xFF0F0B1A),
-    surface = Color(0xFF171226),
-    surfaceElevated = Color(0xFF211A36),
-    surfaceSunken = Color(0xFF120E1E),
-    modal = Color(0xFF1C162E),
-    textPrimary = Color(0xFFF5F3FA),
-    textSecondary = Color(0xFFB8B0CE),
-    textMuted = Color(0xFF81789B),
-    border = Color(0xFF2E2646),
-    borderStrong = Color(0xFF423763),
+    background = Color(0xFF000000),
+    surface = Color(0xFF1C1C1E),
+    surfaceElevated = Color(0xFF2C2C2E),
+    surfaceSunken = Color(0xFF141416),
+    modal = Color(0xFF1C1C1E),
+    textPrimary = Color(0xFFFFFFFF),
+    textSecondary = Color(0xFF98989F),
+    textMuted = Color(0xFF636366),
+    border = Color(0xFF2C2C2E),
+    borderStrong = Color(0xFF3A3A3C),
     accent = Color(0xFF9D7BFF),
     accentSoft = Color(0xFF2D2152),
     secondary = Color(0xFF34D399),
@@ -98,42 +98,42 @@ val VioletEmeraldDark = MikayalaPalette(
     warning = Color(0xFFF59E0B),
     success = Color(0xFF10B981),
     danger = Color(0xFFEF4444),
-    bubbleOutgoing = Color(0xFF43297D),
-    bubbleIncoming = Color(0xFF1C2331),
-    onBubbleOutgoing = Color(0xFFF7F5FD),
+    bubbleOutgoing = Color(0xFF7C3AED),
+    bubbleIncoming = Color(0xFF26252A),
+    onBubbleOutgoing = Color(0xFFFFFFFF),
     pressed = Color(0x18FFFFFF),
 )
 
 // Variante inversée : Émeraude primaire + Violet secondaire
 val EmeraldVioletLight = VioletEmeraldLight.copy(
-    background = Color(0xFFF3FAF7),
-    surfaceElevated = Color(0xFFE4F4EE),
-    surfaceSunken = Color(0xFFDCF0E8),
-    border = Color(0xFFD0E7DE),
-    borderStrong = Color(0xFFA9D6C5),
+    background = Color(0xFFF2F2F7),
+    surfaceElevated = Color(0xFFE8F6F0),
+    surfaceSunken = Color(0xFFE9E9EE),
+    border = Color(0xFFD8D8DC),
+    borderStrong = Color(0xFFC6C6C8),
     accent = Color(0xFF059669),
     accentSoft = Color(0xFFD1FAE5),
     secondary = Color(0xFF7C3AED),
     secondarySoft = Color(0xFFEDE9FE),
-    bubbleOutgoing = Color(0xFFD1FAE5),
-    onBubbleOutgoing = Color(0xFF062E22)
+    bubbleOutgoing = Color(0xFF059669),
+    onBubbleOutgoing = Color(0xFFFFFFFF)
 )
 
 val EmeraldVioletDark = VioletEmeraldDark.copy(
-    background = Color(0xFF091512),
-    surface = Color(0xFF10201B),
-    surfaceElevated = Color(0xFF172D26),
-    surfaceSunken = Color(0xFF0B1814),
-    modal = Color(0xFF122620),
-    border = Color(0xFF214036),
-    borderStrong = Color(0xFF315D4F),
+    background = Color(0xFF000000),
+    surface = Color(0xFF1C1C1E),
+    surfaceElevated = Color(0xFF2C2C2E),
+    surfaceSunken = Color(0xFF141416),
+    modal = Color(0xFF1C1C1E),
+    border = Color(0xFF2C2C2E),
+    borderStrong = Color(0xFF3A3A3C),
     accent = Color(0xFF34D399),
     accentSoft = Color(0xFF133D2E),
     secondary = Color(0xFFA78BFA),
     secondarySoft = Color(0xFF2C204D),
-    bubbleOutgoing = Color(0xFF115E46),
-    bubbleIncoming = Color(0xFF18222B),
-    onBubbleOutgoing = Color(0xFFECFDF5)
+    bubbleOutgoing = Color(0xFF059669),
+    bubbleIncoming = Color(0xFF26252A),
+    onBubbleOutgoing = Color(0xFFFFFFFF)
 )
 
 val AmethystMintLight = VioletEmeraldLight.copy(
