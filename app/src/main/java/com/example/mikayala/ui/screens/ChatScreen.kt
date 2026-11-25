@@ -109,9 +109,20 @@ fun ChatScreen(
     var showInAppCamera by remember { mutableStateOf(false) }
     var inAppCameraMode by remember { mutableStateOf(CameraCaptureMode.PHOTO) }
 
+    // Galerie : jusqu'à 10 photos/vidéos d'un coup (comme WhatsApp).
+    // 1 seul élément → éditeur ; plusieurs → envoi direct, chacun dans sa bulle.
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
+        contract = ActivityResultContracts.PickMultipleVisualMedia(10)
+    ) { uris: List<Uri> ->
+        if (uris.size > 1) {
+            uris.forEach { u ->
+                val mt = context.contentResolver.getType(u) ?: ""
+                if (mt.startsWith("video")) repository.sendVideoMedia(u) else repository.sendImageMedia(u)
+            }
+            Toast.makeText(context, "${uris.size} médias en cours d'envoi", Toast.LENGTH_SHORT).show()
+            return@rememberLauncherForActivityResult
+        }
+        val uri = uris.firstOrNull()
         if (uri != null) {
             Log.d("ChatScreen", "[MIKAYALA_IMAGE] Gallery picker selected URI=$uri")
             val mimeType = context.contentResolver.getType(uri) ?: ""

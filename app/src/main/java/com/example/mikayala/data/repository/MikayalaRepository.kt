@@ -288,6 +288,10 @@ class MikayalaRepository(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
 
+    // Messages éphémères : réglage du couple (0 = désactivé)
+    private val _disappearingSeconds = MutableStateFlow(prefs.getInt("disappearing_seconds", 0))
+    val disappearingSeconds: StateFlow<Int> = _disappearingSeconds.asStateFlow()
+
     // Messages envoyés en P2P (Wi-Fi direct, sans Internet) pas encore copiés sur Supabase.
     // Avant : ils passaient « envoyé / lu » via P2P et n'étaient JAMAIS publiés sur le serveur.
     private val p2pUnsyncedIds: MutableSet<String> = java.util.Collections.synchronizedSet(
@@ -519,6 +523,7 @@ class MikayalaRepository(private val context: Context) {
                     put("delivered_at", msg.deliveredAt ?: 0)
                     put("read_at", msg.readAt ?: 0)
                     put("is_ephemeral", msg.isViewOnce)
+                    put("expires_at", msg.expiresAt ?: 0)
                     put("is_viewed", msg.isViewed)
                     put("is_starred", msg.isStarred)
                     put("is_pinned", msg.isPinned)
@@ -1775,6 +1780,11 @@ class MikayalaRepository(private val context: Context) {
             }
 
             val isViewOnce = obj.optBoolean("is_ephemeral", obj.optBoolean("is_view_once", false))
+            val expiresAt: Long? = when {
+                !obj.has("expires_at") || obj.isNull("expires_at") -> null
+                obj.optLong("expires_at", 0L) > 0L -> obj.optLong("expires_at")
+                else -> parseTimestamp(obj.optString("expires_at"))
+            }
             val isViewed = obj.optBoolean("is_viewed", false)
             // Favoris et « supprimé pour moi » : propres à ce téléphone
             val isStarred = synchronized(starredIds) { id in starredIds }
@@ -1823,6 +1833,7 @@ class MikayalaRepository(private val context: Context) {
                 readAt = parsedReadAt,
                 isViewOnce = isViewOnce,
                 isViewed = isViewed,
+                expiresAt = expiresAt,
                 isStarred = isStarred,
                 isPinned = isPinned,
                 isDeletedForEveryone = isDeletedForEveryone,
@@ -4656,6 +4667,9 @@ class MikayalaRepository(private val context: Context) {
         // 1. Renvoi des messages en attente (hors ligne, P2P, échec d'envoi)
         uploadPendingMessages()
 
+        // 1 bis. Messages éphémères arrivés à expiration : retirés de l'écran et du cache
+        purgeExpiredMessages()
+
         // 2. Messages du serveur : léger (nouveaux seulement) ou complet (fenêtre récente)
         val needFull = fullSyncRequested || lastRemoteCreatedAtIso == null || now - lastFullSyncAt > FULL_SYNC_EVERY_MS
         val remoteMsgs = if (needFull) {
@@ -4675,8 +4689,9 @@ class MikayalaRepository(private val context: Context) {
         // 3. Temps réel : (ré)abonnement seulement s'il n'est ni actif ni en cours
         connectRealtime()
 
-        // 4. Coffre partagé
+        // 4. Coffre partagé (+ réglage « messages éphémères » du couple)
         if (now - lastVaultSyncAt > VAULT_SYNC_EVERY_MS) {
+            supabaseService.fetchDisappearingSeconds(coupleId)?.let { _disappearingSeconds.value = it }
             lastVaultSyncAt = now
             syncVaultFromSupabase(coupleId, pairingCode)
         }
@@ -4752,6 +4767,29 @@ class MikayalaRepository(private val context: Context) {
     }
 
     /** Renvoie les messages restés en attente ou en échec. Jamais un média dont le fichier n'est pas envoyé. */
+    // --- Messages éphémères (réglage partagé, stocké dans couples.disappearing_seconds) ---
+
+    /** 0 = désactivé, 86400 = 24 h, 604800 = 7 jours, 7776000 = 90 jours. */
+    suspend fun setDisappearingSeconds(seconds: Int): Boolean {
+        val coupleId = _coupleSpace.value.id
+        if (coupleId.isBlank()) return false
+        val ok = supabaseService.setDisappearingSeconds(coupleId, seconds)
+        if (ok) {
+            _disappearingSeconds.value = seconds
+            prefs.edit().putInt("disappearing_seconds", seconds).apply()
+        } else {
+            _actionErrors.tryEmit("Réglage non enregistré (vérifiez la connexion).")
+        }
+        return ok
+    }
+
+    private fun purgeExpiredMessages() {
+        val now = System.currentTimeMillis()
+        if (_messages.value.none { (it.expiresAt ?: Long.MAX_VALUE) < now }) return
+        _messages.update { cur -> cur.filter { (it.expiresAt ?: Long.MAX_VALUE) >= now } }
+        saveLocalMessagesCache()
+    }
+
     private suspend fun uploadPendingMessages() {
         val (myUserId, _) = resolveCoupleMembers()
         val pendingMsgs = _messages.value.filter {

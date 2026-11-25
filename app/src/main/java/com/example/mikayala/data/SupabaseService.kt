@@ -1283,6 +1283,20 @@ class SupabaseService(
         false
     }
 
+    /** Réglage « messages éphémères » du couple (secondes, 0 = désactivé). null si illisible. */
+    suspend fun fetchDisappearingSeconds(coupleId: String): Int? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || coupleId.isEmpty() || userAccessTokenOrNull() == null) return@withContext null
+        val r = executeGetResult("/rest/v1/couples?id=eq.$coupleId&select=disappearing_seconds")
+        if (!r.ok) return@withContext null
+        try { JSONArray(r.body ?: "[]").optJSONObject(0)?.optInt("disappearing_seconds", 0) } catch (_: Exception) { null }
+    }
+
+    suspend fun setDisappearingSeconds(coupleId: String, seconds: Int): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || coupleId.isEmpty() || userAccessTokenOrNull() == null) return@withContext false
+        val r = executePatchResult("/rest/v1/couples?id=eq.$coupleId", JSONObject().put("disappearing_seconds", seconds).toString())
+        r.ok && (r.body ?: "[]").let { it.length > 2 }
+    }
+
     /** Supprime un élément du coffre ; true seulement si le serveur confirme la suppression d'une ligne. */
     suspend fun deleteVaultItem(id: String): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || id.isEmpty()) return@withContext false

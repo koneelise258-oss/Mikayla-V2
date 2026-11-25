@@ -344,6 +344,43 @@ fun MainDashboardScreen(
                                 }
                                 Box {
                                     var menuOpen by remember { mutableStateOf(false) }
+                                    val disappearingSecs by repository.disappearingSeconds.collectAsState()
+                                    var showDisappearingDialog by remember { mutableStateOf(false) }
+                                    if (showDisappearingDialog) {
+                                        AlertDialog(
+                                            onDismissRequest = { showDisappearingDialog = false },
+                                            containerColor = c.modal,
+                                            title = { Text("Messages éphémères", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
+                                            text = {
+                                                Column {
+                                                    Text(
+                                                        "Les nouveaux messages disparaîtront pour vous deux après la durée choisie.",
+                                                        color = c.textSecondary, fontSize = 13.sp
+                                                    )
+                                                    Spacer(Modifier.height(8.dp))
+                                                    listOf(0 to "Désactivé", 86400 to "24 heures", 604800 to "7 jours", 7776000 to "90 jours").forEach { (secs, label) ->
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .clickable {
+                                                                    showDisappearingDialog = false
+                                                                    callScope.launch { repository.setDisappearingSeconds(secs) }
+                                                                }
+                                                                .padding(vertical = 10.dp)
+                                                        ) {
+                                                            RadioButton(selected = disappearingSecs == secs, onClick = null)
+                                                            Spacer(Modifier.width(10.dp))
+                                                            Text(label, color = c.textPrimary)
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            confirmButton = {
+                                                TextButton(onClick = { showDisappearingDialog = false }) { Text("Fermer", color = c.accent) }
+                                            }
+                                        )
+                                    }
                                     val isOnlineMode = userSettings.connectionMode == ConnectionMode.ONLINE
                                     IconButton(
                                         onClick = { menuOpen = true },
@@ -378,6 +415,18 @@ fun MainDashboardScreen(
                                                 text = { Text("Messages favoris", color = c.textPrimary) },
                                                 leadingIcon = { Icon(AppleSvgIcons.Star, contentDescription = null, tint = AccentGold, modifier = Modifier.size(18.dp)) },
                                                 onClick = { menuOpen = false; chatSearchMode = "starred" }
+                                            )
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        "Messages éphémères" + when (disappearingSecs) {
+                                                            86400 -> " · 24 h"; 604800 -> " · 7 j"; 7776000 -> " · 90 j"; else -> ""
+                                                        },
+                                                        color = c.textPrimary
+                                                    )
+                                                },
+                                                leadingIcon = { Icon(Icons.Rounded.Timer, contentDescription = null, tint = c.secondary, modifier = Modifier.size(18.dp)) },
+                                                onClick = { menuOpen = false; showDisappearingDialog = true }
                                             )
                                             DropdownMenuItem(
                                                 text = { Text(if (showNavBarInChat) "Plein écran" else "Afficher les onglets", color = c.textPrimary) },

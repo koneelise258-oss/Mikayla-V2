@@ -157,6 +157,8 @@ data class MessageEntity(
     val isBurned: Boolean = false,
     val isViewOnce: Boolean = false,
     val isViewed: Boolean = false,
+    /** Message éphémère : date de disparition (ms), fixée par le serveur selon le réglage du couple. */
+    val expiresAt: Long? = null,
     val isDeletedForEveryone: Boolean = false,
     val deletedFor: List<String> = emptyList(),
     val editedAt: Long? = null,
