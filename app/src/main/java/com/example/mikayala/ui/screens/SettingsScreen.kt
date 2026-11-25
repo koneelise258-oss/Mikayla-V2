@@ -29,6 +29,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -473,8 +475,16 @@ fun SettingsScreen(
                                         }
                                         .padding(6.dp)
                                 ) {
-                                    androidx.compose.foundation.Image(
-                                        painter = androidx.compose.ui.res.painterResource(id = icon.preview),
+                                    // Aperçu dessiné depuis le Drawable : painterResource plante sur les
+                                    // icônes adaptatives (Android 8+), ce qui fermait l'appli à l'ouverture.
+                                    val previewBitmap = remember(icon.preview) {
+                                        try {
+                                            androidx.core.content.ContextCompat.getDrawable(context, icon.preview)
+                                                ?.toBitmap(160, 160)?.asImageBitmap()
+                                        } catch (_: Exception) { null }
+                                    }
+                                    if (previewBitmap != null) androidx.compose.foundation.Image(
+                                        bitmap = previewBitmap,
                                         contentDescription = icon.label,
                                         modifier = Modifier
                                             .size(60.dp)
@@ -1023,7 +1033,7 @@ fun SettingsScreen(
                         icon = Icons.Rounded.AppShortcut,
                         iconTint = AccentGold,
                         title = "Icône de l'application",
-                        subtitle = "10 icônes au choix pour l'écran d'accueil",
+                        subtitle = "14 icônes au choix, dont 4 violet & vert",
                         onClick = { showAppIconModal = true }
                     )
 

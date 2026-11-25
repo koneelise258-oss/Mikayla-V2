@@ -20,6 +20,11 @@ object AppIconManager {
 
     val ICONS = listOf(
         AppIcon("main", ".LauncherMain", "Deux bulles (principal)", R.mipmap.ic_launcher_round),
+        // Violet & vert
+        AppIcon("v1", ".LauncherV1", "Cœur violet", R.mipmap.ic_launcher_v1),
+        AppIcon("v2", ".LauncherV2", "Papillon vert", R.mipmap.ic_launcher_v2),
+        AppIcon("v3", ".LauncherV3", "Violet & vert", R.mipmap.ic_launcher_v3),
+        AppIcon("v4", ".LauncherV4", "Nuit étoilée", R.mipmap.ic_launcher_v4),
         AppIcon("a", ".LauncherA", "Papillon dans une bulle", R.mipmap.ic_launcher_a_round),
         AppIcon("b", ".LauncherB", "Papillon seul", R.mipmap.ic_launcher_b_round),
         AppIcon("c", ".LauncherC", "Fond blanc, papillon dégradé", R.mipmap.ic_launcher_c_round),

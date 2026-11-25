@@ -227,8 +227,8 @@ class AppIconManagerTest {
     @Test fun idInconnuRetombeSurPrincipal() {
         assertEquals(".LauncherMain", m.planFor("inexistant").first)
     }
-    @Test fun dixIconesDistinctes() {
-        assertEquals(10, m.ICONS.map { it.alias }.toSet().size)
+    @Test fun quatorzeIconesDistinctes() {
+        assertEquals(14, m.ICONS.map { it.alias }.toSet().size)
     }
 }
 
