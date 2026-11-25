@@ -62,7 +62,20 @@ fun MessageOptionBottomSheet(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Expéditeur : ${if (isFromMe) "Vous" else "Votre partenaire"}", color = c.textSecondary, fontSize = 13.sp)
                     Text("Date d'envoi : ${dateFormat.format(Date(message.createdAt))}", color = c.textSecondary, fontSize = 13.sp)
-                    Text("Statut : ${message.status.uppercase()}", color = c.secondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Statut : " + when (message.status) {
+                            "read" -> "Lu ✓✓"
+                            "delivered" -> "Reçu ✓✓"
+                            "sent" -> "Envoyé ✓"
+                            "pending" -> "En attente 🕓"
+                            "failed" -> "Échec d'envoi"
+                            else -> message.status
+                        },
+                        color = c.secondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
+                    )
+                    message.deliveredAt?.let {
+                        Text("Reçu à : ${dateFormat.format(Date(it))}", color = c.textSecondary, fontSize = 13.sp)
+                    }
                     message.readAt?.let {
                         Text("Lu à : ${dateFormat.format(Date(it))}", color = c.accent, fontSize = 13.sp)
                     }
@@ -83,15 +96,43 @@ fun MessageOptionBottomSheet(
         )
     }
 
+    // Choix de suppression façon WhatsApp : un seul bouton « Supprimer », puis « pour moi / pour tous »
+    var showDeleteChoice by remember { mutableStateOf(false) }
+    if (showDeleteChoice) {
+        AlertDialog(
+            onDismissRequest = { showDeleteChoice = false },
+            containerColor = c.modal,
+            title = { Text("Supprimer le message ?", color = c.textPrimary, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
+            text = null,
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    if (isFromMe) {
+                        TextButton(onClick = { showDeleteChoice = false; onDeleteForEveryone(); onDismiss() }) {
+                            Text("Supprimer pour tous", color = c.danger)
+                        }
+                    }
+                    TextButton(onClick = { showDeleteChoice = false; onDeleteForMe(); onDismiss() }) {
+                        Text("Supprimer pour moi", color = c.danger)
+                    }
+                    TextButton(onClick = { showDeleteChoice = false }) {
+                        Text("Annuler", color = c.textSecondary)
+                    }
+                }
+            }
+        )
+    }
+
+    // Menu simplifié façon WhatsApp : réactions, 4 actions rapides, puis une courte liste.
+    // Avant : 12 lignes avec sous-titres, trop long à parcourir.
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = c.modal,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         dragHandle = {
             Box(
                 modifier = Modifier
-                    .padding(vertical = 10.dp)
-                    .width(40.dp)
+                    .padding(vertical = 8.dp)
+                    .width(36.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(c.borderStrong)
@@ -102,14 +143,14 @@ fun MessageOptionBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
+                .padding(horizontal = 14.dp)
+                .padding(bottom = 16.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Quick Emojis Row
+            // Réactions rapides (un appui = réagir, un 2e appui sur la même = retirer)
             Surface(
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(28.dp),
                 color = c.surfaceElevated,
                 border = androidx.compose.foundation.BorderStroke(0.5.dp, c.border),
                 modifier = Modifier.fillMaxWidth()
@@ -117,11 +158,11 @@ fun MessageOptionBottomSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf("❤️", "🔥", "😘", "🥺", "✨", "😂", "😍", "👍").forEach { emoji ->
+                    listOf("❤️", "😂", "😮", "😢", "🙏", "👍", "🔥").forEach { emoji ->
                         IconButton(
                             onClick = {
                                 onToggleReaction(emoji)
@@ -129,13 +170,37 @@ fun MessageOptionBottomSheet(
                             },
                             modifier = Modifier.size(44.dp)
                         ) {
-                            Text(text = emoji, fontSize = 22.sp)
+                            Text(text = emoji, fontSize = 24.sp)
                         }
                     }
                 }
             }
 
-            // Group 1: Conversation actions
+            // 4 actions rapides en icônes
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                QuickAction(Icons.Rounded.Reply, "Répondre", Modifier.weight(1f)) { onReply(); onDismiss() }
+                if (message.content.isNotBlank()) {
+                    QuickAction(Icons.Rounded.ContentCopy, "Copier", Modifier.weight(1f)) {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Mikayala Message", message.content))
+                        Toast.makeText(context, "Texte copié", Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    }
+                }
+                QuickAction(
+                    if (message.isStarred) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    if (message.isStarred) "Retirer" else "Favori",
+                    Modifier.weight(1f)
+                ) { onToggleStar(); onDismiss() }
+                QuickAction(Icons.Rounded.DeleteOutline, "Supprimer", Modifier.weight(1f), danger = true) {
+                    showDeleteChoice = true
+                }
+            }
+
+            // Liste courte : une ligne par action, sans sous-titre
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = c.surfaceElevated,
@@ -143,138 +208,63 @@ fun MessageOptionBottomSheet(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    OptionItem(
-                        icon = Icons.Rounded.Reply,
-                        title = "Répondre",
-                        subtitle = "Citer dans le fil de discussion",
-                        iconColor = c.accent,
-                        onClick = { onReply(); onDismiss() }
-                    )
-                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 54.dp))
-                    OptionItem(
-                        icon = Icons.Rounded.Checklist,
-                        title = "Sélectionner",
-                        subtitle = "Choisir plusieurs messages",
-                        iconColor = c.accent,
-                        onClick = { onSelect(); onDismiss() }
-                    )
-                    if (message.content.isNotBlank()) {
-                        HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 54.dp))
-                        OptionItem(
-                            icon = Icons.Rounded.ContentCopy,
-                            title = "Copier le texte",
-                            subtitle = "Copie dans le presse-papier",
-                            iconColor = c.textPrimary,
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("Mikayala Message", message.content)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "Texte copié", Toast.LENGTH_SHORT).show()
-                                onDismiss()
-                            }
-                        )
-                    }
                     if (isFromMe && message.type == "text") {
-                        HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 54.dp))
-                        OptionItem(
-                            icon = Icons.Rounded.Edit,
-                            title = "Modifier",
-                            subtitle = "Corriger le message",
-                            iconColor = c.secondary,
-                            onClick = { onEdit(); onDismiss() }
-                        )
+                        OptionItem(Icons.Rounded.Edit, "Modifier", c.textPrimary) { onEdit(); onDismiss() }
+                        HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 48.dp))
                     }
-                }
-            }
-
-            // Group 2: Organize & Share
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = c.surfaceElevated,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, c.border),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    OptionItem(
-                        icon = if (message.isStarred) Icons.Rounded.StarBorder else Icons.Rounded.Star,
-                        title = if (message.isStarred) "Retirer des favoris" else "Ajouter aux favoris",
-                        subtitle = "Conserver parmi les messages importants",
-                        iconColor = AccentGold,
-                        onClick = { onToggleStar(); onDismiss() }
-                    )
-                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 54.dp))
-                    OptionItem(
-                        icon = Icons.Rounded.PushPin,
-                        title = if (message.isPinned) "Détacher du haut" else "Épingler en haut",
-                        subtitle = "Afficher en bannière dans le chat",
-                        iconColor = c.accent,
-                        onClick = { onTogglePin(); onDismiss() }
-                    )
-                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 54.dp))
-                    OptionItem(
-                        icon = Icons.Rounded.Lock,
-                        title = "Enregistrer dans le Coffre-Fort",
-                        subtitle = "Copier dans l'album privé du couple",
-                        iconColor = c.secondary,
-                        onClick = { onSaveToVault(); onDismiss() }
-                    )
-                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 54.dp))
-                    OptionItem(
-                        icon = Icons.Rounded.Share,
-                        title = "Partager",
-                        subtitle = "Envoyer via une autre application",
-                        iconColor = c.textSecondary,
-                        onClick = {
-                            try {
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, "Mikayala")
-                                    putExtra(Intent.EXTRA_TEXT, message.content)
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Partager"))
-                            } catch (_: Exception) {
+                    OptionItem(Icons.Rounded.PushPin, if (message.isPinned) "Détacher" else "Épingler", c.textPrimary) {
+                        onTogglePin(); onDismiss()
+                    }
+                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 48.dp))
+                    OptionItem(Icons.Rounded.Lock, "Mettre dans le coffre", c.textPrimary) { onSaveToVault(); onDismiss() }
+                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 48.dp))
+                    OptionItem(Icons.Rounded.Checklist, "Sélectionner", c.textPrimary) { onSelect(); onDismiss() }
+                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 48.dp))
+                    OptionItem(Icons.Rounded.Share, "Partager", c.textPrimary) {
+                        try {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "Mikayala")
+                                putExtra(Intent.EXTRA_TEXT, message.content)
                             }
-                            onDismiss()
+                            context.startActivity(Intent.createChooser(shareIntent, "Partager"))
+                        } catch (_: Exception) {
                         }
-                    )
-                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 54.dp))
-                    OptionItem(
-                        icon = Icons.Rounded.Info,
-                        title = "Infos du message",
-                        subtitle = "Horodatages d'envoi et de lecture",
-                        iconColor = c.textSecondary,
-                        onClick = { showInfoDialog = true }
-                    )
-                }
-            }
-
-            // Group 3: Destructive actions
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = c.surfaceElevated,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, c.border),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    OptionItem(
-                        icon = Icons.Rounded.DeleteOutline,
-                        title = "Supprimer pour moi",
-                        subtitle = "Masquer sur cet appareil",
-                        iconColor = c.textSecondary,
-                        onClick = { onDeleteForMe(); onDismiss() }
-                    )
-                    if (isFromMe) {
-                        HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 54.dp))
-                        OptionItem(
-                            icon = Icons.Rounded.DeleteForever,
-                            title = "Supprimer pour tout le monde",
-                            subtitle = "Effacer chez les deux partenaires",
-                            iconColor = c.danger,
-                            onClick = { onDeleteForEveryone(); onDismiss() }
-                        )
+                        onDismiss()
                     }
+                    HorizontalDivider(color = c.border, thickness = 0.5.dp, modifier = Modifier.padding(start = 48.dp))
+                    OptionItem(Icons.Rounded.Info, "Infos", c.textPrimary) { showInfoDialog = true }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun QuickAction(
+    icon: ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    danger: Boolean = false,
+    onClick: () -> Unit
+) {
+    val c = MikayalaColors
+    val tint = if (danger) c.danger else c.accent
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = c.surfaceElevated,
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, c.border),
+        modifier = modifier.height(64.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(label, fontSize = 11.sp, color = if (danger) c.danger else c.textPrimary, maxLines = 1)
         }
     }
 }
@@ -283,7 +273,6 @@ fun MessageOptionBottomSheet(
 private fun OptionItem(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     iconColor: Color,
     onClick: () -> Unit
 ) {
@@ -293,42 +282,17 @@ private fun OptionItem(
         color = Color.Transparent,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
+            .heightIn(min = 46.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 9.dp),
+                .padding(horizontal = 14.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(iconColor.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconColor,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (iconColor == c.danger) c.danger else c.textPrimary
-                )
-                Text(
-                    text = subtitle,
-                    fontSize = 11.sp,
-                    color = c.textSecondary
-                )
-            }
+            Icon(imageVector = icon, contentDescription = null, tint = c.textSecondary, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(14.dp))
+            Text(text = title, fontSize = 15.sp, color = iconColor)
         }
     }
 }
