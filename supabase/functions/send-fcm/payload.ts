@@ -82,7 +82,9 @@ export const EXPECTED_FCM_PROJECT_ID = "gen-lang-client-0988385912";
  * Valide le compte de service sans jamais renvoyer ni journaliser de valeur secrète.
  * Retourne null si valide, sinon un code d'erreur neutre.
  */
-export function validateServiceAccount(raw: string, expectedProjectId = EXPECTED_FCM_PROJECT_ID): string | null {
+// Projet attendu vérifié seulement s'il est fourni (FCM_EXPECTED_PROJECT_ID) : la clé doit venir du
+// MÊME projet Firebase que l'application Android (celui de son google-services.json).
+export function validateServiceAccount(raw: string, expectedProjectId?: string): string | null {
   if (!raw) return "missing_service_account";
   let sa: Record<string, unknown>;
   try {
@@ -93,7 +95,8 @@ export function validateServiceAccount(raw: string, expectedProjectId = EXPECTED
   if (sa.type !== "service_account") return "not_a_service_account";
   if (typeof sa.client_email !== "string" || !sa.client_email) return "missing_client_email";
   if (typeof sa.private_key !== "string" || !String(sa.private_key).includes("PRIVATE KEY")) return "missing_private_key";
-  if (sa.project_id !== expectedProjectId) return "unexpected_project_id";
+  if (typeof sa.project_id !== "string" || !sa.project_id) return "missing_project_id";
+  if (expectedProjectId && sa.project_id !== expectedProjectId) return "unexpected_project_id";
   return null;
 }
 

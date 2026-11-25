@@ -93,10 +93,12 @@ test("compte de service : validé sans exposer de valeur", () => {
   assert.equal(validateServiceAccount(ok), null);
   assert.equal(validateServiceAccount(""), "missing_service_account");
   assert.equal(validateServiceAccount("{oops"), "invalid_service_account_json");
-  assert.equal(validateServiceAccount(ok.replace("gen-lang-client-0988385912", "autre-projet")), "unexpected_project_id");
+  // projet libre par défaut ; vérifié seulement si un projet attendu est fourni
+  assert.equal(validateServiceAccount(ok.replace("gen-lang-client-0988385912", "autre-projet")), null);
+  assert.equal(validateServiceAccount(ok.replace("gen-lang-client-0988385912", "autre-projet"), "gen-lang-client-0988385912"), "unexpected_project_id");
   assert.equal(validateServiceAccount(JSON.stringify({ type: "service_account", project_id: "gen-lang-client-0988385912", client_email: "x@y" })), "missing_private_key");
   // le code d'erreur ne contient jamais la clé
-  const bad = validateServiceAccount(ok.replace("gen-lang-client-0988385912", "p"));
+  const bad = validateServiceAccount(ok.replace("gen-lang-client-0988385912", "p"), "gen-lang-client-0988385912");
   assert.ok(!String(bad).includes("PRIVATE"));
 });
 
