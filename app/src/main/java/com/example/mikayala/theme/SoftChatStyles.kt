@@ -49,7 +49,7 @@ object SoftChatStyles {
     )
 
     fun bubble(style: String, p: MikayalaPalette, isSender: Boolean): Bubble {
-        if (!isSender) return Bubble(p.bubbleIncoming, p.textPrimary, outlined = !p.isDark && p.bubbleIncoming == Color.White)
+        if (!isSender) return Bubble(p.bubbleIncoming, p.textPrimary, outlined = !p.isDark)
         val bg = when (style) {
             "emerald_luxury" -> if (p.isDark) Color(0xFF125A43) else Color(0xFFD1FAE5)
             "neon_cyan" -> if (p.isDark) Color(0xFF4C2E7A) else Color(0xFFF3E8FF)
