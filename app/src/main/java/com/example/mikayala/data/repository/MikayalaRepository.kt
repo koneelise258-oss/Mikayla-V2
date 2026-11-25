@@ -50,7 +50,17 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
-    private fun notifyPartnerAfterInsert(type: String, previewText: String, messageId: String = "") {
+    /** Types acceptés par l'Edge Function send-fcm ; tout autre type (document, jeux, position…) devient chat_message. */
+    private val PUSH_TYPES = setOf(
+        "chat_message", "call", "missed_call", "audio", "image", "video", "vault_add", "game", "game_turn",
+        "anniversary", "mood_update", "poll_created", "love_bomb", "calendar_event", "cycle",
+        "call_declined", "call_cancelled", "call_ended"
+    )
+
+    private fun notifyPartnerAfterInsert(rawType: String, previewText: String, messageId: String = "") {
+        // Avant : un document ou un coup de jeu renvoyé après coupure partait avec son type brut,
+        // refusé par send-fcm (HTTP 400) → aucune notification.
+        val type = if (rawType in PUSH_TYPES) rawType else "chat_message"
         val couple = _coupleSpace.value
         val (myUserId, partnerId) = resolveCoupleMembers()
         if (couple.id.isNotBlank() && partnerId.isNotBlank() && myUserId != partnerId) {
