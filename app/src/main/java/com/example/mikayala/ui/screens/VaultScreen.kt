@@ -26,6 +26,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import coil.compose.AsyncImage
 import com.example.mikayala.data.model.VaultItemEntity
 import com.example.mikayala.data.repository.MikayalaRepository
@@ -43,12 +49,14 @@ fun VaultScreen(
     // À l'ouverture : rechargement depuis le serveur (ajouts et suppressions faits sur l'autre téléphone)
     LaunchedEffect(Unit) { repository.refreshVault() }
 
-    var selectedCategory by remember { mutableStateOf("intime") }
+    // « Tout » par défaut : avant, un ajout du partenaire dans une autre catégorie semblait avoir disparu
+    var selectedCategory by remember { mutableStateOf("tout") }
     var searchQuery by remember { mutableStateOf("") }
     var selectedItemForPreview by remember { mutableStateOf<VaultItemEntity?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
     val categories = listOf(
+        "tout" to "Tout 💜",
         "intime" to "Intime 🔒",
         "souvenirs" to "Souvenirs 📸",
         "projets" to "Projets ✈️",
@@ -57,90 +65,136 @@ fun VaultScreen(
 
     val filteredItems = remember(vaultItems, selectedCategory, searchQuery) {
         vaultItems.filter { item ->
-            item.category == selectedCategory &&
+            (selectedCategory == "tout" || item.category == selectedCategory) &&
                     (searchQuery.isBlank() || item.title.contains(searchQuery, ignoreCase = true) || item.caption.contains(searchQuery, ignoreCase = true))
         }
     }
 
     val palette = MikayalaColors
 
-    // Full screen / Dialog Preview
+    // Aperçu plein écran (avant : petite fenêtre recadrée, et « Supprimer » sans confirmation :
+    // un appui de trop effaçait la photo pour les deux)
+    val settingsForVault by repository.userSettings.collectAsState()
     selectedItemForPreview?.let { item ->
         var previewUrl by remember(item.id, item.mediaUrl) { mutableStateOf<String?>(null) }
+        var loadingPreview by remember(item.id) { mutableStateOf(item.type == "photo" && item.mediaUrl.isNotBlank()) }
+        var confirmDelete by remember(item.id) { mutableStateOf(false) }
+        var scale by remember(item.id) { mutableStateOf(1f) }
+        var offset by remember(item.id) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
         LaunchedEffect(item.id, item.mediaUrl) {
             if (item.type == "photo" && item.mediaUrl.isNotBlank()) {
                 previewUrl = repository.resolveVaultMediaUrl(item.mediaUrl)
             }
+            loadingPreview = false
         }
-        Dialog(onDismissRequest = { selectedItemForPreview = null }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = palette.modal,
-                border = BorderStroke(0.5.dp, palette.borderStrong),
-                modifier = Modifier.fillMaxWidth()
+        val addedByMe = item.addedBy.isNotBlank() && item.addedBy == repository.getCurrentUserId()
+        val whoAdded = when {
+            addedByMe -> "Ajouté par toi"
+            item.addedBy.isNotBlank() -> "Ajouté par ${settingsForVault.partnerNickname.ifBlank { "ton partenaire" }}"
+            else -> ""
+        }
+        val whenAdded = remember(item.dateAdded) {
+            if (item.dateAdded > 0) java.text.SimpleDateFormat("d MMM yyyy 'à' HH'h'mm", java.util.Locale.FRANCE).format(java.util.Date(item.dateAdded)) else ""
+        }
+        Dialog(
+            onDismissRequest = { selectedItemForPreview = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
             ) {
+                val resolved = previewUrl
+                if (resolved != null) {
+                    AsyncImage(
+                        model = resolved,
+                        contentDescription = item.title,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(item.id) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    offset = if (scale > 1f) offset + pan else androidx.compose.ui.geometry.Offset.Zero
+                                }
+                            }
+                            .pointerInput(item.id) {
+                                detectTapGestures(onDoubleTap = {
+                                    scale = if (scale > 1f) 1f else 2.5f
+                                    offset = androidx.compose.ui.geometry.Offset.Zero
+                                })
+                            }
+                            .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)
+                    )
+                } else if (loadingPreview) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
+                } else {
+                    Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = when (item.type) {
+                                "photo" -> "📸"
+                                "video" -> "🎬"
+                                "audio" -> "🎙️"
+                                "letter" -> "💌"
+                                else -> "📝"
+                            },
+                            fontSize = 64.sp
+                        )
+                        if (item.type == "photo") {
+                            Text("Photo indisponible (vérifie la connexion)", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                        }
+                    }
+                }
+
+                // Barre du haut : fermer / supprimer
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { selectedItemForPreview = null }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Fermer", tint = Color.White)
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = { confirmDelete = true }) {
+                        Icon(AppleSvgIcons.Trash, contentDescription = "Supprimer", tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                }
+
+                // Légende en bas
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .align(Alignment.BottomCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))))
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(210.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(palette.surfaceElevated),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val resolved = previewUrl
-                        if (resolved != null) {
-                            AsyncImage(
-                                model = resolved,
-                                contentDescription = item.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Text(
-                                text = when (item.type) {
-                                    "photo" -> "📸"
-                                    "video" -> "🎬"
-                                    "audio" -> "🎙️"
-                                    "letter" -> "💌"
-                                    else -> "📝"
-                                },
-                                fontSize = 64.sp
-                            )
-                        }
+                    Text(item.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    if (item.caption.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(item.caption, color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp)
                     }
+                    val meta = listOf(whoAdded, whenAdded).filter { it.isNotBlank() }.joinToString(" · ")
+                    if (meta.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(meta, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    }
+                }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = item.title,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.textPrimary
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = item.caption,
-                        fontSize = 13.sp,
-                        color = palette.textSecondary,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Button(
-                            onClick = {
+                if (confirmDelete) {
+                    AlertDialog(
+                        onDismissRequest = { confirmDelete = false },
+                        title = { Text("Supprimer ce souvenir ?") },
+                        text = { Text("Il sera supprimé du coffre pour vous deux. Cette action est définitive.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirmDelete = false
                                 vaultScreenScope.launch {
                                     val ok = repository.deleteVaultItem(item.id)
                                     if (ok) {
@@ -150,23 +204,12 @@ fun VaultScreen(
                                         Toast.makeText(context, "Suppression impossible : vérifiez la connexion", Toast.LENGTH_LONG).show()
                                     }
                                 }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = palette.danger.copy(alpha = 0.16f)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(AppleSvgIcons.Trash, contentDescription = null, tint = palette.danger, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Supprimer", color = palette.danger)
+                            }) { Text("Supprimer", color = palette.danger) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmDelete = false }) { Text("Annuler") }
                         }
-
-                        Button(
-                            onClick = { selectedItemForPreview = null },
-                            colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Fermer", color = Color.White)
-                        }
-                    }
+                    )
                 }
             }
         }
@@ -299,7 +342,7 @@ fun VaultScreen(
                             if (photo == null) {
                                 saving = true
                                 vaultScope.launch {
-                                    val ok = repository.addVaultItem(newTitle, selectedTextType, selectedCategory, newCaption)
+                                    val ok = repository.addVaultItem(newTitle, selectedTextType, selectedCategory.takeIf { it != "tout" } ?: "souvenirs", newCaption)
                                     saving = false
                                     if (ok) {
                                         showAddDialog = false
@@ -311,7 +354,7 @@ fun VaultScreen(
                             } else {
                                 saving = true
                                 vaultScope.launch {
-                                    val ok = repository.addVaultPhoto(photo, newTitle, newCaption, selectedCategory)
+                                    val ok = repository.addVaultPhoto(photo, newTitle, newCaption, selectedCategory.takeIf { it != "tout" } ?: "souvenirs")
                                     saving = false
                                     if (ok) {
                                         showAddDialog = false
