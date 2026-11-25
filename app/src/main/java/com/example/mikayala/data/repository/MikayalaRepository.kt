@@ -288,6 +288,21 @@ class MikayalaRepository(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
 
+    // Messages envoyés en P2P (Wi-Fi direct, sans Internet) pas encore copiés sur Supabase.
+    // Avant : ils passaient « envoyé / lu » via P2P et n'étaient JAMAIS publiés sur le serveur.
+    private val p2pUnsyncedIds: MutableSet<String> = java.util.Collections.synchronizedSet(
+        (prefs.getStringSet("p2p_unsynced_ids", emptySet()) ?: emptySet()).toMutableSet()
+    )
+    private fun markP2PUnsynced(id: String) {
+        p2pUnsyncedIds.add(id)
+        prefs.edit().putStringSet("p2p_unsynced_ids", HashSet(p2pUnsyncedIds)).apply()
+    }
+    private fun clearP2PUnsynced(id: String): Boolean {
+        val removed = p2pUnsyncedIds.remove(id)
+        if (removed) prefs.edit().putStringSet("p2p_unsynced_ids", HashSet(p2pUnsyncedIds)).apply()
+        return removed
+    }
+
     /** Favoris et messages masqués « pour moi » : propres à ce téléphone. */
     private val starredIds: MutableSet<String> = HashSet(prefs.getStringSet("starred_message_ids", emptySet()) ?: emptySet())
     private val hiddenIds: MutableSet<String> = HashSet(prefs.getStringSet("hidden_message_ids", emptySet()) ?: emptySet())
@@ -1905,6 +1920,8 @@ class MikayalaRepository(private val context: Context) {
         // If connected via P2P Direct, send over P2P socket
         if (hasP2P) {
             com.example.mikayala.util.P2PSocketManager.sendMessageWithId(context, messageUuid, content)
+            // Sans Internet : à publier sur Supabase dès le retour du réseau
+            if (!hasNetwork) markP2PUnsynced(messageUuid)
         }
 
         // Hors ligne : pas d'envoi en cours, la synchronisation le renverra dès le retour d'Internet
@@ -4738,7 +4755,7 @@ class MikayalaRepository(private val context: Context) {
     private suspend fun uploadPendingMessages() {
         val (myUserId, _) = resolveCoupleMembers()
         val pendingMsgs = _messages.value.filter {
-            (it.status == "pending" || it.status == "failed") &&
+            (it.status == "pending" || it.status == "failed" || p2pUnsyncedIds.contains(it.id)) &&
                 (it.senderId == myUserId || it.senderId == "me") &&
                 !it.isDeletedForEveryone && !isOutgoingInFlight(it.id) &&
                 System.currentTimeMillis() >= (retryNotBefore[it.id] ?: 0L)
@@ -4780,6 +4797,7 @@ class MikayalaRepository(private val context: Context) {
                 val success = supabaseService.postMessageEntity(toPost, storagePath = toPost.storagePath)
                 if (success) {
                     retryNotBefore.remove(pending.id); retryAttempts.remove(pending.id)
+                    val wasP2P = clearP2PUnsynced(pending.id)
                     _messages.update { cur -> cur.map {
                         if (it.id == pending.id && (it.status == "pending" || it.status == "failed"))
                             it.copy(status = "sent", senderId = toPost.senderId, mediaUrl = toPost.mediaUrl ?: it.mediaUrl) else it
@@ -4788,7 +4806,8 @@ class MikayalaRepository(private val context: Context) {
                         deleteOutgoingCopy(pending.mediaUrl)
                     }
                     changed = true
-                    notifyPartnerAfterInsert(
+                    // Déjà reçu en P2P par le partenaire : pas de notification en double
+                    if (!wasP2P) notifyPartnerAfterInsert(
                         if (toPost.type == "text") "chat_message" else toPost.type,
                         toPost.content, toPost.id
                     )
@@ -4800,7 +4819,7 @@ class MikayalaRepository(private val context: Context) {
                 endOutgoing(pending.id)
                 // Toujours en attente : prochain essai espacé (15 s, 30 s, 1 min… jusqu'à 10 min)
                 val still = _messages.value.firstOrNull { it.id == pending.id }
-                if (still != null && (still.status == "pending" || still.status == "failed")) {
+                if (still != null && (still.status == "pending" || still.status == "failed" || p2pUnsyncedIds.contains(still.id))) {
                     val n = (retryAttempts[pending.id] ?: 0) + 1
                     retryAttempts[pending.id] = n
                     retryNotBefore[pending.id] = System.currentTimeMillis() + minOf(15_000L shl minOf(n - 1, 6), 600_000L)

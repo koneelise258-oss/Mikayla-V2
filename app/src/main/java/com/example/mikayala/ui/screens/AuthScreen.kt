@@ -116,8 +116,8 @@ fun AuthScreen(
                 modifier = Modifier.padding(top = 6.dp, bottom = 22.dp)
             )
 
-            // Sélecteur de serveur cloud : Firebase (principal) vs Supabase (secondaire)
-            Surface(
+            // Sélecteur Firebase/Supabase masqué : application en Supabase seul
+            if (false) Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = palette.surface,
                 border = BorderStroke(1.dp, palette.border),

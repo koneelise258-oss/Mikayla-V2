@@ -1154,111 +1154,15 @@ fun SettingsScreen(
 
                     if (section == "couple") {
                     val palette = MikayalaColors
-                    val fbUser by FirebaseAuthManager.authStateFlow().collectAsState(initial = FirebaseAuthManager.currentUser())
-                    val isFirebase = settings.backendProvider == "firebase"
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = palette.surfaceElevated,
-                        border = BorderStroke(1.dp, if (isFirebase) palette.secondary.copy(alpha = 0.6f) else palette.accent.copy(alpha = 0.45f)),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(AppleSvgIcons.Cloud, contentDescription = null, tint = if (isFirebase) palette.secondary else palette.accent, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (isFirebase) "Version active : Firebase (Principal)" else "Version active : Supabase (Secondaire)",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                            }
-                            Text(
-                                text = if (isFirebase) {
-                                    if (fbUser != null) "Connecté avec Google : ${fbUser?.email ?: fbUser?.displayName ?: "Compte actif"}. Cloud Firestore, Storage & Auth actifs. Supabase reste conservé sur le côté."
-                                    else "Mode Firebase principal sélectionné. Connectez votre compte Google pour synchroniser Firestore et Storage."
-                                } else {
-                                    "Serveur Supabase actif en mode secondaire. Vous pouvez revenir à Firebase (Principal) à tout moment."
-                                },
-                                fontSize = 12.sp,
-                                color = TextSecondary,
-                                lineHeight = 16.sp
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        val next = if (isFirebase) "supabase" else "firebase"
-                                        scope.launch {
-                                            repository.setBackendProvider(next)
-                                            Toast.makeText(
-                                                context,
-                                                if (next == "firebase") "Firebase (Principal) activé" else "Supabase (Secondaire) activé",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("settings_switch_backend_button")
-                                ) {
-                                    Text(
-                                        text = if (isFirebase) "Passer sur Supabase" else "Revenir sur Firebase",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = palette.accent
-                                    )
-                                }
-                                if (isFirebase) {
-                                    Button(
-                                        onClick = {
-                                            val act = context as? android.app.Activity
-                                            if (act == null) {
-                                                Toast.makeText(context, "Activité introuvable", Toast.LENGTH_SHORT).show()
-                                            } else if (fbUser == null) {
-                                                scope.launch {
-                                                    repository.signInWithGoogle(act).onSuccess {
-                                                        Toast.makeText(context, "Connecté avec Google", Toast.LENGTH_SHORT).show()
-                                                    }.onFailure { err ->
-                                                        Toast.makeText(context, err.localizedMessage ?: "Échec Google Sign-In", Toast.LENGTH_LONG).show()
-                                                    }
-                                                }
-                                            } else {
-                                                scope.launch {
-                                                    FirebaseAuthManager.signOut(context)
-                                                    Toast.makeText(context, "Déconnecté de Google / Firebase", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (fbUser == null) palette.secondary else palette.danger.copy(alpha = 0.18f)
-                                        ),
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("settings_firebase_google_button")
-                                    ) {
-                                        Text(
-                                            text = if (fbUser == null) "Connexion Google" else "Déco. Google",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (fbUser == null) Color.White else palette.danger
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // Choix Firebase/Supabase retiré : l'application fonctionne uniquement avec Supabase
                     SettingRow(
                         icon = AppleSvgIcons.Cloud,
                         iconTint = palette.accent,
-                        title = "Serveur Supabase (relais gratuit)",
+                        title = "Serveur Supabase",
                         subtitle = if (repository.supabaseService.isConfigured()) {
-                            "Connecté pour les médias et notifications sans Blaze"
+                            "Connecté : messages, médias, coffre et notifications"
                         } else {
-                            "Configurer URL & clé pour médias et notifications gratuits"
+                            "Configurer l'URL et la clé du serveur"
                         },
                         onClick = { showSupabaseDialog = true }
                     )
