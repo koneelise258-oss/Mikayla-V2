@@ -78,11 +78,14 @@ fun MainDashboardScreen(
     var showOfflineP2PPage by remember { mutableStateOf(false) }
     var activeCallState by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) } // (isActive, isVideo)
     var callIsIncoming by remember { mutableStateOf(false) }
+    // Décroché depuis la notification : l'appel démarre sans second appui
+    var callAutoAccept by remember { mutableStateOf(false) }
     val callScope = rememberCoroutineScope()
     // Appel sortant : prévient réellement le partenaire (sonnerie) avant d'afficher l'écran d'appel.
     // Avant, les boutons de l'en-tête affichaient l'écran sans rien envoyer.
     val startOutgoingCall: (Boolean) -> Unit = { isVideo ->
         callIsIncoming = false
+        callAutoAccept = false
         activeCallState = Pair(true, isVideo)
         callScope.launch { repository.initiateSupabaseCall(isVideo) }
     }
@@ -106,6 +109,7 @@ fun MainDashboardScreen(
         if (isGranted) {
             val isVideo = pendingIntentExtras?.getBoolean("IS_VIDEO", false) ?: false
             callIsIncoming = true
+            callAutoAccept = true
             activeCallState = Pair(true, isVideo)
         } else {
             Toast.makeText(context, "Permission microphone requise pour décrocher l'appel", Toast.LENGTH_SHORT).show()
@@ -122,7 +126,13 @@ fun MainDashboardScreen(
         val isVideo = extras.getBoolean("IS_VIDEO", false)
 
         if (isOpenCall) {
-            selectedTab = 1
+            extras.getString("CALL_ID")?.takeIf { it.isNotBlank() }?.let { repository.currentIncomingCallId = it }
+            if (activeCallState == null) {
+                // Notification touchée : écran d'appel entrant (Refuser / Décrocher)
+                callIsIncoming = true
+                callAutoAccept = false
+                activeCallState = Pair(true, isVideo)
+            }
             if (isAutoAnswer) {
                 val hasAudioPerm = ContextCompat.checkSelfPermission(
                     context,
@@ -131,6 +141,7 @@ fun MainDashboardScreen(
 
                 if (hasAudioPerm) {
                     callIsIncoming = true
+                    callAutoAccept = true
                     activeCallState = Pair(true, isVideo)
                 } else {
                     recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -162,6 +173,7 @@ fun MainDashboardScreen(
                     val incomingCall = repository.checkForIncomingCall()
                     if (incomingCall != null && activeCallState == null) {
                         callIsIncoming = true
+                        callAutoAccept = false
                         activeCallState = incomingCall
                     }
                 } catch (_: Exception) {}
@@ -768,19 +780,34 @@ fun MainDashboardScreen(
 
         // Active Call Overlay if active
         activeCallState?.let { (_, isVideo) ->
-            ActiveCallOverlay(
-                partnerName = userSettings.partnerNickname.ifBlank { "Mon partenaire" },
-                isVideo = isVideo,
-                isIncoming = callIsIncoming,
-                onEndCall = { duration ->
-                    // Appel sortant déjà inscrit à l'historique au lancement : on n'ajoute que les appels reçus
-                    if (callIsIncoming) repository.addCallLog(isVideo = isVideo, durationSeconds = duration)
-                    activeCallState = null
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        repository.endOutgoingCall(duration)
+            // key : un nouvel écran (et un nouvel appel) à chaque appel
+            androidx.compose.runtime.key(activeCallState, callIsIncoming) {
+                val incoming = callIsIncoming
+                ActiveCallOverlay(
+                    partnerName = userSettings.partnerNickname.ifBlank { "Mon partenaire" },
+                    partnerAvatarUrl = userSettings.partnerAvatarUrl,
+                    isVideo = isVideo,
+                    isIncoming = incoming,
+                    autoAccept = callAutoAccept,
+                    resolveCallId = { repository.resolveActiveCallId(incoming) },
+                    signaling = repository.callSignaling,
+                    onDecline = { id ->
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                            repository.declineIncomingCall(id.orEmpty())
+                        }
+                    },
+                    onEndCall = { duration ->
+                        // Appel sortant déjà inscrit à l'historique au lancement : on n'ajoute que les appels reçus
+                        if (incoming) repository.addCallLog(isVideo = isVideo, durationSeconds = duration)
+                        activeCallState = null
+                        callAutoAccept = false
+                        repository.clearActiveCallIds()
+                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                            if (!incoming) repository.endOutgoingCall(duration)
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }

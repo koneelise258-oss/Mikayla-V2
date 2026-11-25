@@ -23,8 +23,10 @@ emoji2 = "1.5.0"
 firebaseBom = "33.7.0"
 credentials = "1.5.0"
 googleid = "1.1.1"
+streamWebrtc = "1.3.9"
 
 [libraries]
+stream-webrtc-android = { module = "io.getstream:stream-webrtc-android", version.ref = "streamWebrtc" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
 firebase-auth = { module = "com.google.firebase:firebase-auth" }

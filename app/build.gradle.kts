@@ -126,6 +126,9 @@ dependencies {
   implementation(libs.supabase.realtime)
   implementation(libs.supabase.storage)
 
+  // Appels audio/vidéo réels (WebRTC, binaires officiels empaquetés par Stream, licence BSD)
+  implementation(libs.stream.webrtc.android)
+
   // QR Code Generation
   implementation(libs.zxing.core)
 

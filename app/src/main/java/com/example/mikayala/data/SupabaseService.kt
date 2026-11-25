@@ -1347,7 +1347,12 @@ class SupabaseService(
     suspend fun fetchActiveCall(coupleId: String, pairingCode: String = ""): JSONObject? = withContext(Dispatchers.IO) {
         if (!isConfigured() || coupleId.isEmpty()) return@withContext null
         try {
-            val res = executeGet("/rest/v1/call_signals?couple_id=eq.$coupleId&status=in.(ringing,active)&order=created_at.desc&limit=1")
+            // Seulement les appels REÇUS (pas les miens) et récents : avant, un vieil appel resté
+            // « ringing » ou mon propre appel sortant pouvaient s'afficher comme appel entrant.
+            val me = getCurrentSessionUid().orEmpty()
+            val since = System.currentTimeMillis() - 60_000L
+            val mine = if (me.isNotEmpty()) "&or=(caller_id.is.null,caller_id.neq.$me)" else ""
+            val res = executeGet("/rest/v1/call_signals?couple_id=eq.$coupleId&status=in.(ringing,active)&created_at=gt.$since$mine&order=created_at.desc&limit=1")
             if (res != null) {
                 val array = JSONArray(res)
                 if (array.length() > 0) return@withContext array.getJSONObject(0)
@@ -1356,6 +1361,25 @@ class SupabaseService(
             Log.e("SupabaseService", "fetchActiveCall error: ${e.message}")
         }
         return@withContext null
+    }
+
+    /** Ligne complète d'un appel (statut, descriptions de session WebRTC). */
+    suspend fun fetchCall(callId: String): JSONObject? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || callId.isBlank()) return@withContext null
+        try {
+            val res = executeGet("/rest/v1/call_signals?id=eq.$callId&limit=1") ?: return@withContext null
+            JSONArray(res).optJSONObject(0)
+        } catch (e: Exception) {
+            Log.e("SupabaseService", "fetchCall error: ${e.message}")
+            null
+        }
+    }
+
+    /** Met à jour des champs d'un appel ; true seulement si une ligne a bien été modifiée. */
+    suspend fun updateCallFields(callId: String, fields: JSONObject): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || callId.isBlank()) return@withContext false
+        val res = executePatch("/rest/v1/call_signals?id=eq.$callId", fields.toString())
+        res != null && res.trim().let { it.isNotEmpty() && it != "[]" }
     }
 
     suspend fun updateCallStatus(callId: String, status: String): Boolean = withContext(Dispatchers.IO) {

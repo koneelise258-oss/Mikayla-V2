@@ -4984,6 +4984,7 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun initiateSupabaseCall(isVideo: Boolean): JSONObject? {
+        lastOutgoingCallId = "" // l'écran d'appel attend l'identifiant de CE nouvel appel
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return null
         val coupleId = couple.id
@@ -5047,6 +5048,39 @@ class MikayalaRepository(private val context: Context) {
         return res
     }
 
+    /** Identifiant de l'appel entrant détecté (sonnerie en cours). */
+    @Volatile var currentIncomingCallId: String = ""
+
+    /**
+     * Identifiant de l'appel affiché à l'écran : appel sortant (attend sa création, 10 s max)
+     * ou appel entrant (celui qui sonne, sinon recherche sur le serveur).
+     */
+    suspend fun resolveActiveCallId(incoming: Boolean): String? {
+        if (incoming) {
+            currentIncomingCallId.takeIf { it.isNotBlank() }?.let { return it }
+            val couple = _coupleSpace.value
+            val id = supabaseService.fetchActiveCall(couple.id, couple.pairingCode)?.optString("id").orEmpty()
+            return id.ifBlank { null }?.also { currentIncomingCallId = it }
+        }
+        repeat(40) {
+            lastOutgoingCallId.takeIf { it.isNotBlank() }?.let { return it }
+            kotlinx.coroutines.delay(250)
+        }
+        return null
+    }
+
+    /** Signalisation des appels WebRTC par la table call_signals (Supabase). */
+    val callSignaling: com.example.mikayala.call.CallSignaling = object : com.example.mikayala.call.CallSignaling {
+        override suspend fun fetch(callId: String): JSONObject? = supabaseService.fetchCall(callId)
+        override suspend fun update(callId: String, fields: JSONObject): Boolean = supabaseService.updateCallFields(callId, fields)
+    }
+
+    /** L'appel affiché est terminé : oublie les identifiants pour ne plus le redétecter. */
+    fun clearActiveCallIds() {
+        currentIncomingCallId = ""
+        try { com.example.mikayala.util.NotificationHelper.dismissIncomingCallNotification(context) } catch (_: Exception) {}
+    }
+
     suspend fun checkForIncomingCall(): Pair<Boolean, Boolean>? {
         if (isFirebaseMode()) return activeFirebaseIncomingCall
         val couple = _coupleSpace.value
@@ -5062,7 +5096,10 @@ class MikayalaRepository(private val context: Context) {
 
             if (status == "ringing") {
                 val callId = activeCall.optString("id")
-                com.example.mikayala.util.NotificationHelper.showIncomingCallNotification(context, callerName, isVideo, callId)
+                if (callId != currentIncomingCallId) {
+                    com.example.mikayala.util.NotificationHelper.showIncomingCallNotification(context, callerName, isVideo, callId)
+                }
+                currentIncomingCallId = callId
                 return Pair(true, isVideo)
             }
         }

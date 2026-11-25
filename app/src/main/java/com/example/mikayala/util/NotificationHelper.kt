@@ -132,14 +132,17 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Action Décrocher 💚
-        val answerIntent = Intent(context, com.example.mikayala.services.CallActionReceiver::class.java).apply {
-            action = com.example.mikayala.services.CallActionReceiver.ACTION_ANSWER_CALL
-            putExtra(com.example.mikayala.services.CallActionReceiver.EXTRA_CALLER_NAME, callerName)
-            putExtra(com.example.mikayala.services.CallActionReceiver.EXTRA_IS_VIDEO, isVideo)
+        // Action Décrocher 💚 : ouvre DIRECTEMENT l'appli (Android 12+ interdit d'ouvrir une activité
+        // depuis un récepteur lancé par une notification : avant, « Décrocher » ne faisait rien).
+        val answerIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("OPEN_CALL", true)
+            putExtra("AUTO_ANSWER", true)
+            putExtra("CALLER_NAME", callerName)
+            putExtra("IS_VIDEO", isVideo)
             if (callId.isNotBlank()) putExtra("CALL_ID", callId)
         }
-        val answerPendingIntent = PendingIntent.getBroadcast(
+        val answerPendingIntent = PendingIntent.getActivity(
             context, 1, answerIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
