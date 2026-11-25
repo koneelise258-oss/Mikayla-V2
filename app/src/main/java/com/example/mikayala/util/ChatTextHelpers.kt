@@ -105,4 +105,42 @@ object ChatTextHelpers {
         val diff = currentCreatedAt - previousCreatedAt
         return diff in 0L..180_000L
     }
+
+    /**
+     * Nombre d'émojis si le texte n'est QUE des émojis (espaces permis), sinon 0.
+     * Compte les graphèmes (un émoji composé, drapeau ou famille = 1).
+     */
+    fun emojiOnlyCount(text: String): Int {
+        val t = text.trim()
+        if (t.isEmpty() || t.length > 40) return 0
+        val it = java.text.BreakIterator.getCharacterInstance()
+        it.setText(t)
+        var count = 0
+        var start = it.first()
+        var end = it.next()
+        while (end != java.text.BreakIterator.DONE) {
+            val g = t.substring(start, end)
+            if (g.isBlank()) { start = end; end = it.next(); continue }
+            if (!isEmojiGrapheme(g)) return 0
+            count++
+            start = end
+            end = it.next()
+        }
+        return count
+    }
+
+    private fun isEmojiGrapheme(g: String): Boolean {
+        var hasEmoji = false
+        var i = 0
+        while (i < g.length) {
+            val cp = g.codePointAt(i)
+            val emojiLike = cp in 0x1F000..0x1FAFF || cp in 0x2600..0x27BF || cp in 0x2300..0x23FF ||
+                cp in 0x2B00..0x2BFF || cp == 0x2764 || cp in 0x1F1E6..0x1F1FF
+            val joiner = cp == 0x200D || cp in 0xFE00..0xFE0F || cp in 0x1F3FB..0x1F3FF || cp == 0x20E3 || cp in 0xE0020..0xE007F
+            if (emojiLike) hasEmoji = true
+            else if (!joiner && !(cp in 0x30..0x39 || cp == 0x23 || cp == 0x2A)) return false
+            i += Character.charCount(cp)
+        }
+        return hasEmoji
+    }
 }

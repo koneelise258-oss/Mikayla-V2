@@ -21,6 +21,24 @@ object ChatGames {
         return with(media, if (isSender) "$choice,$p" else "$s,$choice")
     }
 
+    // --- Jeux à choix secrets (Pierre-feuille-ciseaux, Qui de nous deux) : état "choixExpéditeur,choixPartenaire" ---
+    fun pairChoices(media: String?): Pair<Int, Int> = dilemmaChoices(media)
+    fun pairChoose(media: String?, isSender: Boolean, choice: Int): String = dilemmaChoose(media, isSender, choice)
+
+    /** Pierre(0) / Feuille(1) / Ciseaux(2) : 1 = l'expéditeur gagne, -1 = le partenaire gagne, 0 = égalité. */
+    fun rpsOutcome(sender: Int, partner: Int): Int = when {
+        sender !in 0..2 || partner !in 0..2 -> 0
+        sender == partner -> 0
+        (sender == 0 && partner == 2) || (sender == 1 && partner == 0) || (sender == 2 && partner == 1) -> 1
+        else -> -1
+    }
+
+    /**
+     * Qui de nous deux : chacun désigne « moi » (0) ou « toi » (1).
+     * Vous êtes d'accord si vous désignez la même personne, c'est-à-dire des réponses différentes.
+     */
+    fun whoOfUsAgree(sender: Int, partner: Int): Boolean = sender in 0..1 && partner in 0..1 && sender != partner
+
     // --- Quiz : état = réponse du partenaire ---
     fun quizReply(media: String?): String? = state(media)?.takeIf { it.isNotBlank() }
 

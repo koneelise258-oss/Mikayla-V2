@@ -61,4 +61,34 @@ object GameContent {
         "Revivre notre premier rendez-vous 💞|Découvrir un endroit nouveau ensemble 🗺️",
         "Un câlin de 10 minutes 🫂|Dix baisers 💋"
     )
+
+    /** « Qui de nous deux… ? » : chacun répond Moi ou Toi en secret. */
+    val whoOfUs = listOf(
+        "Qui de nous deux est le plus jaloux ? 😏",
+        "Qui de nous deux a dit « je t'aime » en premier ? 💜",
+        "Qui de nous deux est le plus têtu ? 🐐",
+        "Qui de nous deux cuisine le mieux ? 🍳",
+        "Qui de nous deux s'endort le premier devant un film ? 😴",
+        "Qui de nous deux est le plus romantique ? 🌹",
+        "Qui de nous deux s'excuse le premier après une dispute ? 🕊️",
+        "Qui de nous deux est le plus drôle ? 😂",
+        "Qui de nous deux dépense le plus ? 💸",
+        "Qui de nous deux est toujours en retard ? ⏰",
+        "Qui de nous deux danse le mieux ? 💃",
+        "Qui de nous deux pense le plus à l'autre dans la journée ? 💭"
+    )
+
+    val truths = truthOrDare.filter { it.contains("Vérité") }.map { it.substringAfter(": ").trim() } + listOf(
+        "Quelle est la chose la plus folle que tu aimerais faire avec moi ?",
+        "Quel est ton plus beau souvenir de cette année avec moi ?",
+        "Qu'est-ce qui t'a fait craquer chez moi ?"
+    )
+
+    val dares = truthOrDare.filter { it.contains("Action") }.map { it.substringAfter(": ").trim() } + listOf(
+        "Envoie-moi un selfie avec ta plus belle grimace.",
+        "Écris-moi un petit poème de 4 lignes.",
+        "Appelle-moi et dis-moi « je t'aime » de ta voix la plus grave."
+    )
+
+    val wheelDefaults = listOf("Massage 💆", "Dîner aux chandelles 🍷", "Soirée film 🎬", "Cuisiner ensemble 🍳", "Baiser doux 💋", "Vérité intime 🤫")
 }

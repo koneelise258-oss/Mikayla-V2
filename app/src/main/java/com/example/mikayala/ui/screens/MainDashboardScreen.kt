@@ -778,6 +778,9 @@ fun MainDashboardScreen(
             )
         }
 
+        // Petites animations violet/vert (cœurs, papillons, étoiles) : couche qui ne capte aucun toucher
+        com.example.mikayala.ui.effects.LoveEffectsLayer()
+
         // Active Call Overlay if active
         activeCallState?.let { (_, isVideo) ->
             // key : un nouvel écran (et un nouvel appel) à chaque appel

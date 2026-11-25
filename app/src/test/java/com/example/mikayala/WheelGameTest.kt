@@ -53,3 +53,27 @@ class WheelGameTest {
         assertEquals(5, ChatGames.wheelIndexAt(phoneB, count))
     }
 }
+
+class Connect4Test {
+    private val c = com.example.mikayala.util.Connect4
+
+    @org.junit.Test fun pionTombeEnBas() {
+        val b = c.play(c.EMPTY, 3, 'R')!!
+        org.junit.Assert.assertEquals('R', b[5 * c.COLS + 3])
+    }
+    @org.junit.Test fun pasSonTour() { org.junit.Assert.assertNull(c.play(c.EMPTY, 0, 'J')) }
+    @org.junit.Test fun quatreEnLigne() {
+        var b = c.EMPTY
+        for (col in 0..2) { b = c.play(b, col, 'R')!!; b = c.play(b, col, 'J')!! }
+        b = c.play(b, 3, 'R')!!
+        org.junit.Assert.assertEquals('R', c.winner(b))
+    }
+    @org.junit.Test fun pierreBatCiseaux() {
+        org.junit.Assert.assertEquals(1, com.example.mikayala.util.ChatGames.rpsOutcome(0, 2))
+        org.junit.Assert.assertEquals(-1, com.example.mikayala.util.ChatGames.rpsOutcome(2, 0))
+    }
+    @org.junit.Test fun quiDeNousDeuxAccord() {
+        org.junit.Assert.assertTrue(com.example.mikayala.util.ChatGames.whoOfUsAgree(0, 1))
+        org.junit.Assert.assertFalse(com.example.mikayala.util.ChatGames.whoOfUsAgree(0, 0))
+    }
+}

@@ -104,3 +104,11 @@ class ChatTextHelpersTest {
         )
     }
 }
+
+class EmojiOnlyTest {
+    private val h = com.example.mikayala.util.ChatTextHelpers
+    @org.junit.Test fun unCoeur() { org.junit.Assert.assertEquals(1, h.emojiOnlyCount("❤️")) }
+    @org.junit.Test fun deuxRires() { org.junit.Assert.assertEquals(2, h.emojiOnlyCount("😂 😂")) }
+    @org.junit.Test fun texteEtEmoji() { org.junit.Assert.assertEquals(0, h.emojiOnlyCount("salut 😂")) }
+    @org.junit.Test fun chiffre() { org.junit.Assert.assertEquals(0, h.emojiOnlyCount("1")) }
+}

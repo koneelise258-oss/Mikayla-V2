@@ -1,5 +1,7 @@
 package com.example.mikayala.ui.screens
 
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -238,6 +240,8 @@ fun ChatScreen(
         if (grants.values.any { it }) sendRealLocation()
         else Toast.makeText(context, "Autorisation de localisation refusée", Toast.LENGTH_SHORT).show()
     }
+    // Jeu en cours de préparation (on choisit / écrit son contenu avant de l'envoyer)
+    var gameComposer by remember { mutableStateOf<String?>(null) }
     var showPollComposer by remember { mutableStateOf(false) }
     var showQuizComposer by remember { mutableStateOf(false) }
     var showEventComposer by remember { mutableStateOf(false) }
@@ -284,7 +288,7 @@ fun ChatScreen(
             "media" -> afterSearch.filter { it.type in setOf("image", "photo", "video", "audio", "voice", "document") }
             "links" -> afterSearch.filter { ChatTextHelpers.containsLink(it.content) }
             "starred" -> afterSearch.filter { it.isStarred }
-            "games" -> afterSearch.filter { it.type in setOf("scratch_card", "truth_or_dare", "quiz", "tictactoe", "dilemma", "coupon", "wheel", "roue", "poll") }
+            "games" -> afterSearch.filter { it.type in setOf("scratch_card", "truth_or_dare", "quiz", "tictactoe", "dilemma", "coupon", "wheel", "roue", "poll", "rps", "whoofus", "connect4") }
             else -> afterSearch
         }
     }
@@ -334,6 +338,18 @@ fun ChatScreen(
     // Ouverture : positionnement immédiat sur le dernier message (avant : défilement animé depuis le
     // tout premier message à chaque ouverture). Ensuite : animation douce pour chaque nouveau message.
     var initialScrollDone by remember { mutableStateOf(false) }
+    // Message d'amour REÇU pendant que la conversation est ouverte : petite pluie de cœurs
+    var loveFxSeenId by remember { mutableStateOf(lastMessageId) }
+    LaunchedEffect(lastMessageId) {
+        val last = messages.lastOrNull()
+        if (last != null && last.id != loveFxSeenId && !repository.isMessageFromMe(last) &&
+            System.currentTimeMillis() - last.createdAt < 60_000L &&
+            com.example.mikayala.ui.effects.LoveEffects.isLoveMessage(last.content)
+        ) {
+            com.example.mikayala.ui.effects.LoveEffects.burst(com.example.mikayala.ui.effects.LoveEffects.Theme.LOVE, count = 12)
+        }
+        loveFxSeenId = lastMessageId
+    }
     LaunchedEffect(lastMessageId) {
         if (messages.isNotEmpty()) {
             val target = messages.size - 1 + if (hasOlderHeader) 1 else 0
@@ -1182,6 +1198,9 @@ fun ChatScreen(
                             replyToId = replyToMessage?.id,
                             replyToContent = replyToMessage?.content
                         )
+                        if (com.example.mikayala.ui.effects.LoveEffects.isLoveMessage(textInput)) {
+                            com.example.mikayala.ui.effects.LoveEffects.burst(com.example.mikayala.ui.effects.LoveEffects.Theme.LOVE)
+                        }
                         textInput = ""
                         replyToMessage = null
                     }
@@ -1288,13 +1307,11 @@ fun ChatScreen(
                 // Chat Games
                 onSendScratchCard = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "🎁 Carte mystère : " + com.example.mikayala.util.GameContent.scratchPrizes.random(), type = "scratch_card")
-                    Toast.makeText(context, "Carte à gratter envoyée 🎴", Toast.LENGTH_SHORT).show()
+                    gameComposer = "scratch"
                 },
                 onSendTruthOrDare = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = com.example.mikayala.util.GameContent.truthOrDare.random(), type = "truth_or_dare")
-                    Toast.makeText(context, "Défi Action ou Vérité lancé 🔥", Toast.LENGTH_SHORT).show()
+                    gameComposer = "truth"
                 },
                 onSendQuiz = {
                     showAttachmentSheet = false
@@ -1312,13 +1329,76 @@ fun ChatScreen(
                 },
                 onSendLoveCoupon = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "🎟️ Bon d'amour : " + com.example.mikayala.util.GameContent.coupons.random(), type = "coupon")
-                    Toast.makeText(context, "Bon d'Amour offert 🎟️💖", Toast.LENGTH_SHORT).show()
+                    gameComposer = "coupon"
                 },
                 onSendWheel = {
                     showAttachmentSheet = false
-                    repository.sendMessage(content = "Roue de la Fortune d'Amour 🎡", type = "wheel", mediaUrl = "Massage 💆|Dîner aux chandelles 🍷|Soirée Film 🎬|Cuisiner ensemble 🍳|Baiser doux 💋|Vérité Intime 🤫")
-                    Toast.makeText(context, "Roue de la Fortune lancée ! 🎡", Toast.LENGTH_SHORT).show()
+                    gameComposer = "wheel"
+                },
+                onSendRps = {
+                    showAttachmentSheet = false
+                    repository.sendMessage(content = "Pierre, feuille, ciseaux ! Choisis en secret 🤫", type = "rps", mediaUrl = "rps")
+                },
+                onSendWhoOfUs = {
+                    showAttachmentSheet = false
+                    gameComposer = "whoofus"
+                },
+                onSendConnect4 = {
+                    showAttachmentSheet = false
+                    repository.sendMessage(content = "Partie de Puissance 4 ! 🔴🟢", type = "connect4", mediaUrl = com.example.mikayala.util.Connect4.EMPTY)
+                }
+            )
+        }
+
+        when (gameComposer) {
+            "scratch" -> com.example.mikayala.ui.games.TextGameComposer(
+                title = "🎁 Ta carte à gratter",
+                hint = "Ce que ton amour va gagner…",
+                draftKey = "scratch",
+                suggestions = com.example.mikayala.util.GameContent.scratchPrizes,
+                onDismiss = { gameComposer = null },
+                onSend = { prize ->
+                    gameComposer = null
+                    repository.sendMessage(content = "🎁 Carte mystère : $prize", type = "scratch_card")
+                }
+            )
+            "coupon" -> com.example.mikayala.ui.games.TextGameComposer(
+                title = "🎟️ Ton bon d'amour",
+                hint = "Bon pour…",
+                draftKey = "coupon",
+                suggestions = com.example.mikayala.util.GameContent.coupons,
+                onDismiss = { gameComposer = null },
+                onSend = { text ->
+                    gameComposer = null
+                    repository.sendMessage(content = "🎟️ Bon d'amour : $text", type = "coupon")
+                }
+            )
+            "whoofus" -> com.example.mikayala.ui.games.TextGameComposer(
+                title = "👀 Qui de nous deux ?",
+                hint = "Qui de nous deux…",
+                draftKey = "whoofus",
+                suggestions = com.example.mikayala.util.GameContent.whoOfUs,
+                onDismiss = { gameComposer = null },
+                onSend = { q ->
+                    gameComposer = null
+                    repository.sendMessage(content = q, type = "whoofus", mediaUrl = "whoofus")
+                }
+            )
+            "truth" -> com.example.mikayala.ui.games.TruthOrDareComposer(
+                truths = com.example.mikayala.util.GameContent.truths,
+                dares = com.example.mikayala.util.GameContent.dares,
+                onDismiss = { gameComposer = null },
+                onSend = { isDare, text ->
+                    gameComposer = null
+                    repository.sendMessage(content = (if (isDare) "🔥 Action : " else "✨ Vérité : ") + text, type = "truth_or_dare", mediaUrl = if (isDare) "action" else "verite")
+                }
+            )
+            "wheel" -> com.example.mikayala.ui.games.WheelComposer(
+                defaults = com.example.mikayala.util.GameContent.wheelDefaults,
+                onDismiss = { gameComposer = null },
+                onSend = { items ->
+                    gameComposer = null
+                    repository.sendMessage(content = "Roue de l'amour 🎡", type = "wheel", mediaUrl = items.joinToString("|"))
                 }
             )
         }
@@ -1650,6 +1730,8 @@ private fun MessageBubble(
     var replyTriggered by remember { mutableStateOf(false) }
 
     var showQuickReactionPicker by remember { mutableStateOf(false) }
+    // Position de la bulle à l'écran (pas un état observé : aucune recomposition pendant le défilement)
+    val bubbleCenter = remember { FloatArray(2) }
     var showCustomEmojiDialog by remember { mutableStateOf(false) }
 
     val groupedReactions = remember(message.reactions, currentUserId) {
@@ -1800,16 +1882,31 @@ private fun MessageBubble(
         ) {
             // Clickable Bubble (Single tap toggles selection in multi-select mode or reactions, long press selects/options)
             Column(
-                modifier = Modifier.combinedClickable(
-                    onClick = {
-                        if (isMultiSelectActive) {
-                            onToggleSelect()
-                        } else {
-                            showQuickReactionPicker = !showQuickReactionPicker
-                        }
-                    },
-                    onLongClick = onLongPress
-                ),
+                modifier = Modifier
+                    .onGloballyPositioned { coords ->
+                        val p = coords.positionInRoot()
+                        bubbleCenter[0] = p.x + coords.size.width / 2f
+                        bubbleCenter[1] = p.y + coords.size.height / 2f
+                    }
+                    .combinedClickable(
+                        onClick = {
+                            if (isMultiSelectActive) {
+                                onToggleSelect()
+                            } else {
+                                showQuickReactionPicker = !showQuickReactionPicker
+                            }
+                        },
+                        // Double appui = ❤️ (comme Instagram/WhatsApp), avec une pluie de cœurs violets et verts
+                        onDoubleClick = if (isMultiSelectActive) null else ({
+                            showQuickReactionPicker = false
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onToggleReaction("❤️")
+                            com.example.mikayala.ui.effects.LoveEffects.burst(
+                                com.example.mikayala.ui.effects.LoveEffects.Theme.LOVE, bubbleCenter[0], bubbleCenter[1], count = 14
+                            )
+                        }),
+                        onLongClick = onLongPress
+                    ),
                 horizontalAlignment = if (isSender) Alignment.End else Alignment.Start
             ) {
                 // Clickable Reply quote bubble if present -> jumps to original message
@@ -2177,67 +2274,40 @@ private fun MessageBubble(
                 }
             }
 
-            "scratch_card" -> {
-                // Carte partagée : grattée par le destinataire, résultat visible chez les deux
+            "scratch_card", "truth_or_dare", "rps", "whoofus", "connect4" -> {
+                // Jeux à deux, synchronisés en direct (état dans media_url, voir util/ChatGames.kt)
                 val gameScope = rememberCoroutineScope()
                 val gameContext = LocalContext.current
-                fun save(newMedia: String, title: String) {
+                val gameTitle = when (message.type) {
+                    "scratch_card" -> "Carte à gratter"
+                    "truth_or_dare" -> "Action ou vérité"
+                    "rps" -> "Pierre, feuille, ciseaux"
+                    "whoofus" -> "Qui de nous deux ?"
+                    else -> "Puissance 4"
+                }
+                fun save(newMedia: String) {
                     gameScope.launch {
-                        if (!repository.playGameMove(message.id, newMedia, title)) {
+                        if (!repository.playGameMove(message.id, newMedia, gameTitle)) {
                             android.widget.Toast.makeText(gameContext, "Non enregistré : vérifiez la connexion", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
-                val isScratched = com.example.mikayala.util.ChatGames.isDone(message.mediaUrl)
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = CardModalSurface,
-                    border = BorderStroke(0.5.dp, BorderSubtleWhite),
-                    modifier = Modifier.widthIn(min = 220.dp, max = 300.dp)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "🎁 Carte mystère", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AccentGold)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        when {
-                            isScratched || isSender -> {
-                                Text(text = message.content, fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                Text(
-                                    text = if (isScratched) (if (isSender) "Grattée par votre partenaire ✨" else "Grattée ✨") else "Pas encore grattée",
-                                    fontSize = 11.sp, color = TextSecondary, modifier = Modifier.padding(top = 6.dp)
-                                )
-                            }
-                            else -> Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = AccentGold.copy(alpha = 0.18f),
-                                modifier = Modifier.fillMaxWidth().clickable { save(com.example.mikayala.util.ChatGames.with(message.mediaUrl, "1"), "Carte mystère") }
-                            ) {
-                                Row(modifier = Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Rounded.TouchApp, contentDescription = null, tint = AccentGold, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(text = "Toucher pour gratter", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AccentGold)
-                                }
-                            }
-                        }
+                when (message.type) {
+                    "scratch_card" -> com.example.mikayala.ui.games.ScratchCardGame(message, isSender, ::save)
+                    "truth_or_dare" -> com.example.mikayala.ui.games.TruthOrDareGame(message, isSender, ::save, onAnswer = onReply)
+                    "rps" -> com.example.mikayala.ui.games.RockPaperScissorsGame(message, isSender, ::save) {
+                        repository.sendMessage(content = "Pierre, feuille, ciseaux : revanche !", type = "rps", mediaUrl = "rps")
+                    }
+                    "whoofus" -> com.example.mikayala.ui.games.WhoOfUsGame(message, isSender, ::save) {
+                        val next = com.example.mikayala.util.GameContent.whoOfUs.filter { it != message.content }.random()
+                        repository.sendMessage(content = next, type = "whoofus", mediaUrl = "whoofus")
+                    }
+                    else -> com.example.mikayala.ui.games.Connect4Game(message, isSender, ::save) {
+                        repository.sendMessage(content = "Puissance 4 : revanche !", type = "connect4", mediaUrl = com.example.mikayala.util.Connect4.EMPTY)
                     }
                 }
-            }
-
-            "truth_or_dare" -> {
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = CardModalSurface,
-                    border = BorderStroke(1.dp, AccentRose.copy(alpha = 0.6f)),
-                    modifier = Modifier.widthIn(min = minOf(220.dp, bubbleMaxWidth), max = bubbleMaxWidth)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.LocalFireDepartment, contentDescription = null, tint = AccentRose, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Action ou Vérité de Couple 🔥", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentRose)
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(text = message.content, fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                    }
+                if (groupedReactions.isNotEmpty()) {
+                    ReactionsBadgeRow(reactions = groupedReactions, onToggleReaction = onToggleReaction)
                 }
             }
 
@@ -2502,8 +2572,17 @@ private fun MessageBubble(
                         }
                     }
                 }
+                // 1 à 3 émojis seuls : affichés en grand, sans bulle (comme WhatsApp)
+                val bigEmojiCount = remember(message.content) { ChatTextHelpers.emojiOnlyCount(message.content) }
                 Column(horizontalAlignment = if (isSender) Alignment.End else Alignment.Start) {
-                    Surface(
+                    if (bigEmojiCount in 1..3 && searchHighlightQuery.isBlank()) {
+                        Text(
+                            text = message.content.trim(),
+                            fontSize = when (bigEmojiCount) { 1 -> 52.sp; 2 -> 42.sp; else -> 34.sp },
+                            lineHeight = 60.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    } else Surface(
                         shape = bubbleShape,
                         color = resolvedBubble.background,
                         border = if (resolvedBubble.outlined) BorderStroke(0.5.dp, palette.borderStrong) else null,

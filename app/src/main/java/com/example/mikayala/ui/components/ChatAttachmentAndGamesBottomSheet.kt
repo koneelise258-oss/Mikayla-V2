@@ -54,7 +54,10 @@ fun ChatAttachmentAndGamesBottomSheet(
     onSendTicTacToe: () -> Unit,
     onSendDilemma: () -> Unit,
     onSendLoveCoupon: () -> Unit,
-    onSendWheel: () -> Unit
+    onSendWheel: () -> Unit,
+    onSendRps: () -> Unit = {},
+    onSendWhoOfUs: () -> Unit = {},
+    onSendConnect4: () -> Unit = {}
 ) {
     val c = MikayalaColors
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -158,13 +161,16 @@ fun ChatAttachmentAndGamesBottomSheet(
                     AttachmentGrid(items = mediaItems)
                 } else {
                     val gameItems = listOf(
-                        AttachmentGridItem("scratch_card", "Carte mystère", Icons.Rounded.CardGiftcard, c.sand, onSendScratchCard),
+                        AttachmentGridItem("scratch_card", "Carte à gratter", Icons.Rounded.CardGiftcard, c.sand, onSendScratchCard),
                         AttachmentGridItem("truth_dare", "Action / Vérité", Icons.Rounded.LocalFireDepartment, c.danger, onSendTruthOrDare),
                         AttachmentGridItem("quiz", "Quiz Couple", Icons.Rounded.Psychology, c.accent, onSendQuiz),
                         AttachmentGridItem("tictactoe", "Morpion", Icons.Rounded.Grid3x3, c.secondary, onSendTicTacToe),
                         AttachmentGridItem("dilemma", "Tu préfères ?", Icons.Rounded.Balance, c.secondary, onSendDilemma),
                         AttachmentGridItem("coupon", "Bon d'amour", Icons.Rounded.ConfirmationNumber, c.accent, onSendLoveCoupon),
-                        AttachmentGridItem("wheel", "Roue", Icons.Rounded.Casino, c.lavender, onSendWheel)
+                        AttachmentGridItem("wheel", "Roue", Icons.Rounded.Casino, c.lavender, onSendWheel),
+                        AttachmentGridItem("rps", "Pierre·Feuille·Ciseaux", Icons.Rounded.BackHand, c.secondary, onSendRps),
+                        AttachmentGridItem("whoofus", "Qui de nous deux ?", Icons.Rounded.People, c.accent, onSendWhoOfUs),
+                        AttachmentGridItem("connect4", "Puissance 4", Icons.Rounded.Circle, c.secondary, onSendConnect4)
                     )
                     Column {
                         Text(

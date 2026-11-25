@@ -166,6 +166,9 @@ fun MessageOptionBottomSheet(
                         IconButton(
                             onClick = {
                                 onToggleReaction(emoji)
+                                if (emoji == "❤️" || emoji == "🔥") {
+                                    com.example.mikayala.ui.effects.LoveEffects.burst(com.example.mikayala.ui.effects.LoveEffects.Theme.LOVE, count = 10)
+                                }
                                 onDismiss()
                             },
                             modifier = Modifier.size(44.dp)
