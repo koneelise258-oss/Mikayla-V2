@@ -382,14 +382,26 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = partnerStat,
-                            onValueChange = { partnerStat = it },
-                            label = { Text("Statut d'amour affiché pour elle/lui") },
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AccentViolet, cursorColor = AccentViolet),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        // Avant : ce champ modifiable affichait la PRÉSENCE (« Vu à l'instant ») comme si
+                        // c'était le statut d'amour. Désormais : statut écrit par le partenaire lui-même
+                        // et dernière connexion, en lecture seule (on ne peut pas les modifier à sa place).
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, BorderSubtleWhite, RoundedCornerShape(12.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text("Son statut d'amour", fontSize = 11.sp, color = TextSecondary)
+                            Text(
+                                settings.partnerBio.ifBlank { "Aucun statut pour l'instant" },
+                                fontSize = 14.sp,
+                                color = TextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Dernière connexion", fontSize = 11.sp, color = TextSecondary)
+                            Text(settings.partnerStatus.ifBlank { "Hors ligne" }, fontSize = 14.sp, color = TextPrimary)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(18.dp))
@@ -400,7 +412,7 @@ fun SettingsScreen(
                                 repository.updateProfile(myName, myStatus, settings.avatarUrl, myMood)
                                 Toast.makeText(context, "Mon profil a été mis à jour !", Toast.LENGTH_SHORT).show()
                             } else {
-                                repository.updatePartnerProfile(partnerNick, partnerStat, settings.partnerAvatarUrl)
+                                repository.updatePartnerProfile(partnerNick, settings.partnerStatus, settings.partnerAvatarUrl)
                                 Toast.makeText(context, "Surnom enregistré", Toast.LENGTH_SHORT).show()
                             }
                             showProfileModal = false

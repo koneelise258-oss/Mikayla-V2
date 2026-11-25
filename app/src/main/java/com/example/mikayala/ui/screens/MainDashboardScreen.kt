@@ -70,8 +70,9 @@ fun MainDashboardScreen(
     var chatSearchMode by remember { mutableStateOf<String?>(null) }
     // Badge « non lus » de l'onglet Discussions : messages du partenaire pas encore lus
     val dashboardMessages by repository.allMessages.collectAsState()
-    val unreadCount = remember(dashboardMessages) {
-        dashboardMessages.count { !it.isDeletedForEveryone && it.status != "read" && !repository.isMessageFromMe(it) }
+    val chatSeenUpTo by repository.chatSeenUpTo.collectAsState()
+    val unreadCount = remember(dashboardMessages, chatSeenUpTo) {
+        repository.countUnreadFromPartner(dashboardMessages, chatSeenUpTo)
     }
     var showPartnerProfileSheet by remember { mutableStateOf(false) }
     var showOfflineP2PPage by remember { mutableStateOf(false) }

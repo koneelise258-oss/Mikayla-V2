@@ -224,6 +224,26 @@ class MikayalaRepository(private val context: Context) {
 
     private val _messages = MutableStateFlow<List<MessageEntity>>(emptyList())
     val allMessages: StateFlow<List<MessageEntity>> = _messages.asStateFlow()
+
+    /**
+     * Badge « non lus » : date (ms) du dernier message reçu affiché à l'écran sur CE téléphone.
+     * Indépendant de l'accusé « lu » envoyé au partenaire (qui peut être désactivé ou échouer) :
+     * avant, le badge restait à « 5 » alors que les messages avaient été lus.
+     */
+    private val _chatSeenUpTo by lazy { MutableStateFlow(prefs.getLong("chat_seen_up_to", 0L)) }
+    val chatSeenUpTo: StateFlow<Long> get() = _chatSeenUpTo
+
+    fun markChatSeenLocally() {
+        val latest = _messages.value.maxOfOrNull { it.createdAt } ?: 0L
+        val v = maxOf(latest, _chatSeenUpTo.value)
+        if (v != _chatSeenUpTo.value) {
+            _chatSeenUpTo.value = v
+            prefs.edit().putLong("chat_seen_up_to", v).apply()
+        }
+    }
+
+    fun countUnreadFromPartner(list: List<MessageEntity>, seenUpTo: Long): Int =
+        list.count { !it.isDeletedForEveryone && it.status != "read" && it.createdAt > seenUpTo && !isMessageFromMe(it) }
     private val mediaUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private val _partnerIsTyping = MutableStateFlow(false)
@@ -3369,7 +3389,7 @@ class MikayalaRepository(private val context: Context) {
                     return@launch
                 }
                 val curProfile = supabaseService.getProfile(userId)
-                val avatarPath = curProfile?.optString("avatar_path", "") ?: ""
+                val avatarPath = curProfile?.optString("avatar_path", "").takeIf { it != "null" }.orEmpty() ?: ""
                 val avatarVer = curProfile?.optInt("avatar_version", 0) ?: 0
                 supabaseService.updateProfile(
                     userId = userId,
@@ -4190,8 +4210,8 @@ class MikayalaRepository(private val context: Context) {
                 // « En ligne » n'est JAMAIS déduit d'un horodatage : seule la présence temps réel le dit
                 // (isPartnerOnline). Un horodatage récent signifie seulement « vu récemment ».
                 when {
-                    diffMins < 2 -> "Vu à l'instant"
-                    diffMins < 60 -> "Vu il y a $diffMins min"
+                    // Heure précise comme WhatsApp (avant : « à l'instant » / « il y a X min » imprécis)
+                    diffMins < 1 -> "Vu à l'instant"
                     isToday -> "Vu aujourd'hui à $timeFormatted"
                     isYesterday -> "Vu hier à $timeFormatted"
                     else -> {
@@ -4239,7 +4259,10 @@ class MikayalaRepository(private val context: Context) {
         // le téléphone changeait d'identité et perdait définitivement son couple et ses messages.
         if (!supabaseService.hasActiveSession()) return
         // Dernière connexion (Paramètres > Confidentialité) : « nobody » = on ne publie pas notre activité
-        if (supabaseService.hasActiveSession() && _userSettings.value.lastSeenPrivacy != "nobody") {
+        // Seulement quand l'appli est vraiment ouverte à l'écran : avant, la synchronisation en
+        // arrière-plan publiait l'activité en continu, d'où « Vu à l'instant » permanent.
+        if (supabaseService.hasActiveSession() && _userSettings.value.lastSeenPrivacy != "nobody" &&
+            com.example.mikayala.util.AppForeground.isResumed) {
             supabaseService.touchUserActivity()
         }
 
@@ -4248,7 +4271,7 @@ class MikayalaRepository(private val context: Context) {
         if (myProfileJson != null) {
             val dispName = myProfileJson.optString("display_name", "")
             val bio = myProfileJson.optString("bio", "")
-            val avatarPath = myProfileJson.optString("avatar_path", "")
+            val avatarPath = myProfileJson.optString("avatar_path", "").takeIf { it != "null" }.orEmpty()
             myProfileVersion = myProfileJson.optInt("avatar_version", 0)
 
             var finalAvatarUrl = ""
@@ -4286,7 +4309,7 @@ class MikayalaRepository(private val context: Context) {
                     if (partnerProfileJson != null) {
                         val partnerDispName = partnerProfileJson.optString("display_name", "")
                         val partnerBioText = partnerProfileJson.optString("bio", "")
-                        val partnerAvatarPath = partnerProfileJson.optString("avatar_path", "")
+                        val partnerAvatarPath = partnerProfileJson.optString("avatar_path", "").takeIf { it != "null" }.orEmpty()
 
                         var partnerFinalAvatarUrl = ""
                         if (partnerAvatarPath.isNotEmpty()) {
@@ -4405,7 +4428,7 @@ class MikayalaRepository(private val context: Context) {
             val newPath = supabaseService.uploadAvatar(myUserId, avatarUuid, bytes)
             if (newPath != null) {
                 val curProfile = supabaseService.getProfile(myUserId)
-                val oldPath = curProfile?.optString("avatar_path", "") ?: ""
+                val oldPath = curProfile?.optString("avatar_path", "").takeIf { it != "null" }.orEmpty() ?: ""
                 val currentVer = curProfile?.optInt("avatar_version", 0) ?: 0
 
                 val success = supabaseService.updateProfile(

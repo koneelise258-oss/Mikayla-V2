@@ -104,7 +104,8 @@ class SupabaseService(
 
     /** Jeton utilisateur réel (jamais la clé anon), ou null si aucune session n'est chargée. */
     fun userAccessTokenOrNull(): String? = try {
-        supabase.auth.currentSessionOrNull()?.accessToken?.takeIf { it.isNotBlank() }
+        if (supabase.auth.currentSessionOrNull() == null) null
+        else getAuthToken().takeIf { it.isNotBlank() && it != supabaseKey }
     } catch (_: Exception) { null }
 
     suspend fun ensureAnonymousSession(): Boolean {
@@ -1377,17 +1378,56 @@ class SupabaseService(
      * Une fois l'upload anonyme supprimé côté Supabase, le repli échouera simplement (401/403).
      */
     internal fun storageAuthTokens(): List<String> {
-        val session = try { supabase.auth.currentSessionOrNull()?.accessToken } catch (_: Exception) { null }
+        val session = try { getAuthToken() } catch (_: Exception) { null }
         return listOfNotNull(session?.takeIf { it.isNotBlank() }, supabaseKey).distinct()
     }
 
+    /**
+     * Jeton utilisateur À JOUR pour les requêtes HTTP.
+     *
+     * Avant : le jeton de la session était utilisé tel quel. Une fois expiré (au bout d'une heure, ou
+     * quand l'appli revenait de l'arrière-plan), toutes les requêtes partaient avec la clé anon :
+     * « permission denied » (HTTP 401) en boucle — notamment la détection des appels entrants.
+     * Désormais : jeton expiré ou proche de l'expiration ⇒ rafraîchissement, puis seulement en
+     * dernier recours la clé anon.
+     */
     private fun getAuthToken(): String {
         return try {
-            supabase.auth.currentSessionOrNull()?.accessToken ?: supabaseKey
+            val session = supabase.auth.currentSessionOrNull()
+            val token = session?.accessToken?.takeIf { it.isNotBlank() }
+            val onMainThread = android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
+            if (token != null && !jwtExpiresSoon(token)) return token
+            if (onMainThread) return token ?: supabaseKey
+            synchronized(tokenRefreshLock) {
+                // Un autre fil a peut-être déjà rafraîchi
+                supabase.auth.currentSessionOrNull()?.accessToken
+                    ?.takeIf { it.isNotBlank() && !jwtExpiresSoon(it) }?.let { return it }
+                runBlocking {
+                    withTimeoutOrNull(8_000L) {
+                        try {
+                            if (supabase.auth.currentSessionOrNull() == null) supabase.auth.awaitInitialization()
+                            if (supabase.auth.currentSessionOrNull() != null) supabase.auth.refreshCurrentSession()
+                        } catch (e: Exception) {
+                            Log.w("MikayalaAuth", "[AUTH] rafraîchissement du jeton : ${e.message}")
+                        }
+                    }
+                }
+                supabase.auth.currentSessionOrNull()?.accessToken?.takeIf { it.isNotBlank() } ?: token ?: supabaseKey
+            }
         } catch (e: Exception) {
             supabaseKey
         }
     }
+
+    private val tokenRefreshLock = Any()
+
+    /** true si le JWT expire dans moins de 60 s (ou illisible). */
+    private fun jwtExpiresSoon(jwt: String): Boolean = try {
+        val payload = jwt.split('.').getOrNull(1) ?: return true
+        val json = String(android.util.Base64.decode(payload, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP))
+        val exp = JSONObject(json).optLong("exp", 0L)
+        exp == 0L || exp * 1000L - System.currentTimeMillis() < 60_000L
+    } catch (_: Exception) { false }
 
     private fun executeGet(path: String): String? {
         return try {
@@ -1832,12 +1872,15 @@ class SupabaseService(
     suspend fun updateProfile(userId: String, displayName: String, bio: String, avatarPath: String, avatarVersion: Int = 1): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || userId.isEmpty()) return@withContext false
         try {
+            // Valeurs nettoyées : avant, « null » (texte), une version 0 ou un nom vide faisaient
+            // refuser TOUTE la mise à jour du profil (HTTP 400) : nom et photo ne changeaient jamais.
+            val cleanPath = avatarPath.trim().takeIf { it.isNotEmpty() && it != "null" }
             val body = JSONObject().apply {
-                put("display_name", displayName)
-                put("bio", bio)
-                put("avatar_path", avatarPath)
-                put("avatar_version", avatarVersion)
-                put("updated_at", System.currentTimeMillis())
+                displayName.trim().take(50).takeIf { it.isNotEmpty() }?.let { put("display_name", it) }
+                put("bio", bio.trim().take(160))
+                put("avatar_path", cleanPath ?: JSONObject.NULL)
+                put("avatar_version", avatarVersion.coerceAtLeast(1))
+                // updated_at : rempli par le serveur (un nombre en millisecondes était refusé : HTTP 400)
             }
             val res = executePatch("/rest/v1/profiles?id=eq.$userId", body.toString())
             res != null
@@ -1879,13 +1922,14 @@ class SupabaseService(
     }
 
     suspend fun getSignedAvatarUrl(path: String, expiresInSeconds: Int = 2592000): String? = withContext(Dispatchers.IO) {
-        if (!isConfigured() || path.isEmpty()) return@withContext null
+        if (!isConfigured() || path.isBlank() || path == "null") return@withContext null
         try {
             val url = URL("$supabaseUrl/storage/v1/object/sign/avatars/$path")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("apikey", supabaseKey)
-            conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+            // Le dossier avatars est privé : il faut le jeton de l'utilisateur, pas la clé anon
+            conn.setRequestProperty("Authorization", "Bearer ${getAuthToken()}")
             conn.setRequestProperty("Content-Type", "application/json")
             conn.doOutput = true
             conn.connectTimeout = 6000

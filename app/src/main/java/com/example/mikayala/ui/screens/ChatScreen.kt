@@ -366,6 +366,7 @@ fun ChatScreen(
     val chatVisible = chatLifecycleState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
     LaunchedEffect(lastMessageId, coupleSpace.id, chatVisible) {
         val coupleId = coupleSpace.id
+        if (chatVisible) repository.markChatSeenLocally()
         if (coupleId.isNotEmpty() && chatVisible) {
             repository.markMessagesDelivered(coupleId)
             repository.markMessagesRead(coupleId)
