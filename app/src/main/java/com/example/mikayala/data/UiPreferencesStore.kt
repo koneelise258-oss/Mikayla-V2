@@ -56,7 +56,7 @@ object UiPreferencesStore {
             fontSizeScale = prefs.getString(P + "font_size", base.fontSizeScale) ?: base.fontSizeScale,
             proximityP2PEnabled = prefs.getBoolean(P + "p2p_enabled", base.proximityP2PEnabled),
             autoSendOfflineQueue = prefs.getBoolean(P + "auto_send_queue", base.autoSendOfflineQueue),
-            backendProvider = prefs.getString(P + "backend_provider", base.backendProvider) ?: base.backendProvider,
+            backendProvider = "supabase", // forcé : l'ancien mode Firebase est abandonné
             accentTheme = prefs.getString(P + "accent_theme", base.accentTheme) ?: base.accentTheme,
             bubbleCornerRadiusDp = prefs.getInt(P + "bubble_radius_dp", base.bubbleCornerRadiusDp).coerceIn(10, 26),
             showBubbleTails = prefs.getBoolean(P + "show_bubble_tails", base.showBubbleTails),

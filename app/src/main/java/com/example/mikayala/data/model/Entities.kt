@@ -244,7 +244,7 @@ data class UserSettingsEntity(
     /** Thème : suit le réglage clair/sombre du téléphone (prioritaire sur isDarkMode). */
     val followSystemTheme: Boolean = false,
     /** Serveur actif : "firebase" (principal) ou "supabase" (secondaire). */
-    val backendProvider: String = "firebase",
+    val backendProvider: String = "supabase", // Supabase seul (Firebase ne sert plus qu'au push FCM)
     /** Harmonie de couleurs : "violet_emerald" (défaut), "emerald_violet", "amethyst_mint", "forest_plum", "rose_soft". */
     val accentTheme: String = "violet_emerald",
     /** Arrondi des bulles de discussion en dp (10..26). */

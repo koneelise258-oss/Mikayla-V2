@@ -811,7 +811,7 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun setBackendProvider(provider: String) {
-        val normalized = if (provider == "firebase") "firebase" else "supabase"
+        val normalized = "supabase" // mode Firebase abandonné : Supabase seul
         if (_userSettings.value.backendProvider == normalized) return
         stopFirebaseListeners()
         disconnectRealtime()
@@ -846,6 +846,7 @@ class MikayalaRepository(private val context: Context) {
     }
 
     suspend fun attemptFirebaseAutoSignIn(): Boolean {
+        if (!isFirebaseMode()) return false // Supabase seul : plus de connexion Firebase automatique
         val res = FirebaseAuthManager.attemptAutoSignIn(context)
         val user = res.getOrNull() ?: return false
         _userSettings.update {

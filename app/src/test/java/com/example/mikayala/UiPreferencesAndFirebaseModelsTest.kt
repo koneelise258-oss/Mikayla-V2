@@ -96,7 +96,7 @@ class UiPreferencesAndFirebaseModelsTest {
         assertEquals("emerald_luxury", loaded.bubbleStyle)
         assertEquals(0.72f, loaded.wallpaperOpacity, 0.001f)
         assertEquals(8f, loaded.wallpaperBlur, 0.001f)
-        assertEquals("firebase", loaded.backendProvider)
+        assertEquals("supabase", loaded.backendProvider)
         assertEquals("emerald_violet", loaded.accentTheme)
         assertEquals(22, loaded.bubbleCornerRadiusDp)
         assertFalse(loaded.showBubbleTails)
@@ -188,12 +188,12 @@ class UiPreferencesAndFirebaseModelsTest {
     }
 
     @Test
-    fun defaultBackendProviderIsFirebasePrimary() {
+    fun defaultBackendProviderIsSupabaseOnly() {
         val prefs = InMemorySharedPreferences()
         val defaults = UserSettingsEntity()
-        assertEquals("firebase", defaults.backendProvider)
+        assertEquals("supabase", defaults.backendProvider)
         val loaded = UiPreferencesStore.load(prefs, defaults)
-        assertEquals("firebase", loaded.backendProvider)
+        assertEquals("supabase", loaded.backendProvider)
     }
 
     @Test

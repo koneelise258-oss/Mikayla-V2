@@ -1,0 +1,3 @@
+-- APPLIQUÉE en production le 2026-11-25 via le connecteur Supabase.
+-- Corrige : vocaux .m4a refusés, documents refusés, coffre (vault_items) refusé, politiques en double.
+-- Voir le contenu exact dans l'historique des migrations Supabase : mikayala_chat_vocaux_documents_coffre
