@@ -1037,6 +1037,18 @@ fun SettingsScreen(
                         onClick = { showAppIconModal = true }
                     )
 
+                    var loveFx by remember { mutableStateOf(com.example.mikayala.ui.effects.LoveEffects.isEnabled(context)) }
+                    SettingsSwitchRow(
+                        title = "Petites animations 💜💚",
+                        subtitle = "Cœurs, papillons et étoiles de temps en temps, et au double appui",
+                        checked = loveFx,
+                        onCheckedChange = {
+                            loveFx = it
+                            com.example.mikayala.ui.effects.LoveEffects.setEnabled(context, it)
+                            if (it) com.example.mikayala.ui.effects.LoveEffects.burst(com.example.mikayala.ui.effects.LoveEffects.Theme.MIXED, count = 14)
+                        }
+                    )
+
                     SettingsGroupTitle("Mode d'affichage")
                     val themeChoice = when {
                         settings.followSystemTheme -> "system"
