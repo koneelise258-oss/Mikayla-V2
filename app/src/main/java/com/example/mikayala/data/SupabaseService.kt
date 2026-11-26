@@ -1363,6 +1363,17 @@ class SupabaseService(
         return@withContext null
     }
 
+    /** Identifiants temporaires du relais TURN (fonction turn-credentials) ; null si indisponibles. */
+    suspend fun fetchTurnServers(): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext null
+        try {
+            executePost("/functions/v1/turn-credentials", "{}")
+        } catch (e: Exception) {
+            Log.w("SupabaseService", "fetchTurnServers error: ${e.message}")
+            null
+        }
+    }
+
     /** Ligne complète d'un appel (statut, descriptions de session WebRTC). */
     suspend fun fetchCall(callId: String): JSONObject? = withContext(Dispatchers.IO) {
         if (!isConfigured() || callId.isBlank()) return@withContext null

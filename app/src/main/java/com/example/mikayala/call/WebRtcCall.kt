@@ -43,6 +43,8 @@ import kotlin.coroutines.resumeWithException
 interface CallSignaling {
     suspend fun fetch(callId: String): JSONObject?
     suspend fun update(callId: String, fields: JSONObject): Boolean
+    /** Serveurs relais (TURN) temporaires, au format JSON { "iceServers": ... } ; null si indisponibles. */
+    suspend fun iceServers(): String? = null
 }
 
 /**
@@ -59,7 +61,8 @@ class WebRtcCall(
     private val callId: String,
     private val isCaller: Boolean,
     val isVideo: Boolean,
-    private val signaling: CallSignaling
+    private val signaling: CallSignaling,
+    private val partnerName: String = ""
 ) {
     enum class State { PREPARING, RINGING, CONNECTING, CONNECTED, ENDED, FAILED }
 
@@ -104,6 +107,7 @@ class WebRtcCall(
     private var previousAudioMode = AudioManager.MODE_NORMAL
 
     fun start() {
+        CallForegroundService.start(appContext, this, partnerName)
         mainJob = scope.launch {
             try {
                 setupMedia()
@@ -121,7 +125,7 @@ class WebRtcCall(
 
     // ---------------------------------------------------------------- médias
 
-    private fun setupMedia() {
+    private suspend fun setupMedia() {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(appContext).createInitializationOptions()
         )
@@ -136,10 +140,12 @@ class WebRtcCall(
             .createPeerConnectionFactory()
         factory = f
 
+        val relays = fetchRelayServers()
         val iceServers = listOf(
             PeerConnection.IceServer.builder(listOf("stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302")).createIceServer(),
             PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer()
-        )
+        ) + relays
+        Log.i(TAG, "Serveurs relais TURN : ${relays.size}")
         val config = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
@@ -155,6 +161,45 @@ class WebRtcCall(
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = _speakerOn.value
+    }
+
+    /**
+     * Relais TURN (Cloudflare, via la fonction Supabase turn-credentials). Indispensable en 4G :
+     * les opérateurs bloquent souvent la connexion directe entre deux téléphones.
+     * En cas d'échec, l'appel tente quand même la connexion directe.
+     */
+    private suspend fun fetchRelayServers(): List<PeerConnection.IceServer> {
+        val raw = try {
+            withTimeoutOrNull(5_000L) { signaling.iceServers() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Relais TURN indisponible : ${e.message}"); null
+        } ?: return emptyList()
+        return try { parseIceServers(raw) } catch (e: Exception) {
+            Log.w(TAG, "Relais TURN illisible : ${e.message}"); emptyList()
+        }
+    }
+
+    private fun parseIceServers(raw: String): List<PeerConnection.IceServer> {
+        val root = JSONObject(raw)
+        val node = root.opt("iceServers") ?: return emptyList()
+        val entries = when (node) {
+            is org.json.JSONArray -> (0 until node.length()).mapNotNull { node.optJSONObject(it) }
+            is JSONObject -> listOf(node)
+            else -> emptyList()
+        }
+        return entries.mapNotNull { e ->
+            val urls = when (val u = e.opt("urls")) {
+                is org.json.JSONArray -> (0 until u.length()).map { u.optString(it) }
+                is String -> listOf(u)
+                else -> emptyList()
+            }.filter { it.startsWith("turn:") || it.startsWith("turns:") || it.startsWith("stun:") }
+            if (urls.isEmpty()) return@mapNotNull null
+            val b = PeerConnection.IceServer.builder(urls)
+            val user = e.optString("username")
+            val pass = e.optString("credential")
+            if (user.isNotBlank() && pass.isNotBlank()) b.setUsername(user).setPassword(pass)
+            b.createIceServer()
+        }
     }
 
     private fun startCamera(f: PeerConnectionFactory) {
@@ -382,6 +427,7 @@ class WebRtcCall(
 
     private suspend fun finish(final: State, remoteStatus: String?) {
         if (!markFinished()) return
+        CallForegroundService.stop(appContext, this)
         if (remoteStatus != null) {
             try {
                 signaling.update(callId, JSONObject().put("status", remoteStatus).put("ended_at", System.currentTimeMillis()))

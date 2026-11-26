@@ -5073,6 +5073,7 @@ class MikayalaRepository(private val context: Context) {
     val callSignaling: com.example.mikayala.call.CallSignaling = object : com.example.mikayala.call.CallSignaling {
         override suspend fun fetch(callId: String): JSONObject? = supabaseService.fetchCall(callId)
         override suspend fun update(callId: String, fields: JSONObject): Boolean = supabaseService.updateCallFields(callId, fields)
+        override suspend fun iceServers(): String? = supabaseService.fetchTurnServers()
     }
 
     /** L'appel affiché est terminé : oublie les identifiants pour ne plus le redétecter. */

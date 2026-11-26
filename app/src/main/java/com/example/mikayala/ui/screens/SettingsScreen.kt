@@ -136,6 +136,26 @@ fun SettingsScreen(
     }
 
 
+    // Icône à partir d'une photo : raccourci épinglé sur l'écran d'accueil (voir AppIconManager)
+    var photoIconVersion by remember { mutableStateOf(0) }
+    val appIconPhotoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        val msg = when (com.example.mikayala.util.AppIconManager.pinPhotoShortcut(context, uri)) {
+            com.example.mikayala.util.AppIconManager.PhotoIconResult.REQUESTED ->
+                "Confirme « Ajouter à l'écran d'accueil » : l'icône avec ta photo va apparaître"
+            com.example.mikayala.util.AppIconManager.PhotoIconResult.UPDATED ->
+                "Photo de l'icône mise à jour sur l'écran d'accueil"
+            com.example.mikayala.util.AppIconManager.PhotoIconResult.UNSUPPORTED ->
+                "Ton écran d'accueil n'accepte pas les icônes personnalisées"
+            com.example.mikayala.util.AppIconManager.PhotoIconResult.UNREADABLE ->
+                "Impossible de lire cette photo"
+        }
+        photoIconVersion++
+        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+    }
+
     val scope = rememberCoroutineScope()
 
     val myAvatarPickerLauncher = rememberLauncherForActivityResult(
@@ -450,6 +470,48 @@ fun SettingsScreen(
                         text = "L'icône change sur l'écran d'accueil. Le téléphone peut mettre quelques secondes à l'afficher, et certains lanceurs retirent le raccourci : l'application reste alors dans la liste des applications.",
                         fontSize = 12.sp, color = TextSecondary
                     )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    // Icône avec une photo de la galerie
+                    val photoPreview = remember(photoIconVersion) {
+                        com.example.mikayala.util.AppIconManager.customPhotoFile(context)?.let {
+                            try { android.graphics.BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() } catch (_: Exception) { null }
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = AccentRose.copy(alpha = 0.12f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                appIconPhotoLauncher.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (photoPreview != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = photoPreview,
+                                    contentDescription = "Icône photo actuelle",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                                )
+                            } else {
+                                Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, tint = AccentRose, modifier = Modifier.size(40.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (photoPreview != null) "Changer la photo de l'icône" else "Utiliser une de mes photos",
+                                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary
+                                )
+                                Text(
+                                    text = "Ajoute sur l'écran d'accueil une icône Mikayala avec ta photo.",
+                                    fontSize = 11.sp, color = TextSecondary
+                                )
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
                     com.example.mikayala.util.AppIconManager.ICONS.chunked(3).forEach { row ->
                         Row(

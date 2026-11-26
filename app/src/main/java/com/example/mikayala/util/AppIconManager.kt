@@ -80,4 +80,91 @@ object AppIconManager {
             false
         }
     }
+
+    // ------------------------------------------------------------------ icône à partir d'une photo
+
+    enum class PhotoIconResult { REQUESTED, UPDATED, UNSUPPORTED, UNREADABLE }
+
+    private const val PHOTO_SHORTCUT_ID = "mikayala_photo_icon"
+    private const val PHOTO_FILE = "custom_app_icon.png"
+
+    /** Photo choisie précédemment (aperçu dans les réglages), ou null. */
+    fun customPhotoFile(context: Context): java.io.File? =
+        java.io.File(context.filesDir, PHOTO_FILE).takeIf { it.exists() && it.length() > 0 }
+
+    /**
+     * Android ne laisse pas une appli remplacer son icône par une image quelconque.
+     * Solution officielle : un RACCOURCI épinglé sur l'écran d'accueil, avec la photo comme icône,
+     * qui ouvre Mikayala. Le téléphone demande confirmation (« Ajouter à l'écran d'accueil »).
+     */
+    fun pinPhotoShortcut(context: Context, uri: android.net.Uri): PhotoIconResult {
+        val bitmap = decodeSquare(context, uri, 256) ?: return PhotoIconResult.UNREADABLE
+        try {
+            java.io.File(context.filesDir, PHOTO_FILE).outputStream().use {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+        } catch (_: Exception) {}
+
+        val launch = android.content.Intent(context, com.example.mikayala.MainActivity::class.java).apply {
+            action = android.content.Intent.ACTION_MAIN
+            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        }
+        val info = androidx.core.content.pm.ShortcutInfoCompat.Builder(context, PHOTO_SHORTCUT_ID)
+            .setShortLabel(context.applicationInfo.loadLabel(context.packageManager).toString().ifBlank { "Mikayala" })
+            .setIcon(androidx.core.graphics.drawable.IconCompat.createWithBitmap(bitmap))
+            .setIntent(launch)
+            .build()
+
+        return try {
+            // Raccourci déjà sur l'écran d'accueil : on change juste son image
+            val alreadyPinned = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                androidx.core.content.pm.ShortcutManagerCompat
+                    .getShortcuts(context, androidx.core.content.pm.ShortcutManagerCompat.FLAG_MATCH_PINNED)
+                    .any { it.id == PHOTO_SHORTCUT_ID }
+            } else false
+            if (alreadyPinned) {
+                androidx.core.content.pm.ShortcutManagerCompat.updateShortcuts(context, listOf(info))
+                PhotoIconResult.UPDATED
+            } else if (androidx.core.content.pm.ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
+                androidx.core.content.pm.ShortcutManagerCompat.requestPinShortcut(context, info, null)
+                PhotoIconResult.REQUESTED
+            } else {
+                PhotoIconResult.UNSUPPORTED
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AppIconManager", "Raccourci photo refusé : ${e.message}")
+            PhotoIconResult.UNSUPPORTED
+        }
+    }
+
+    /** Lit la photo (orientation corrigée), la recadre au centre en carré et la réduit. */
+    private fun decodeSquare(context: Context, uri: android.net.Uri, size: Int): android.graphics.Bitmap? = try {
+        val src: android.graphics.Bitmap? = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+            android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                val minSide = minOf(info.size.width, info.size.height)
+                if (minSide > size * 2) {
+                    val ratio = (size * 2).toFloat() / minSide
+                    decoder.setTargetSize((info.size.width * ratio).toInt().coerceAtLeast(1), (info.size.height * ratio).toInt().coerceAtLeast(1))
+                }
+            }
+        } else {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= size * 2) sample *= 2
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
+        }
+        src?.let {
+            val side = minOf(it.width, it.height)
+            val cropped = android.graphics.Bitmap.createBitmap(it, (it.width - side) / 2, (it.height - side) / 2, side, side)
+            android.graphics.Bitmap.createScaledBitmap(cropped, size, size, true)
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("AppIconManager", "Photo illisible : ${e.message}")
+        null
+    }
 }

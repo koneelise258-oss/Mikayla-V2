@@ -159,7 +159,7 @@ fun ActiveCallOverlay(
             return@LaunchedEffect
         }
         if (!audioGranted) return@LaunchedEffect
-        val c = WebRtcCall(context, id, isCaller = !isIncoming, isVideo = isVideo, signaling = signaling)
+        val c = WebRtcCall(context, id, isCaller = !isIncoming, isVideo = isVideo, signaling = signaling, partnerName = partnerName)
         call = c
         c.start()
     }
