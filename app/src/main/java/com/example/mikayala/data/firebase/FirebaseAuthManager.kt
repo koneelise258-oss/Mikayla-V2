@@ -59,13 +59,22 @@ object FirebaseAuthManager {
     }
 
     /**
+     * ID client Web Google (généré par google-services.json seulement si la connexion Google est
+     * activée dans Firebase). Absent → chaîne vide : la connexion Google est simplement ignorée.
+     */
+    private fun webClientId(context: Context): String {
+        val id = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+        return if (id != 0) context.getString(id) else ""
+    }
+
+    /**
      * Silent auto sign-in using GetGoogleIdOption for returning authorized Google accounts.
      * Each GetCredentialRequest carries strictly ONE credential option.
      */
     suspend fun attemptAutoSignIn(context: Context): Result<FirebaseUser?> {
         auth.currentUser?.let { return Result.success(it) }
         return try {
-            val serverClientId = context.getString(R.string.default_web_client_id)
+            val serverClientId = webClientId(context)
             if (serverClientId.isBlank()) {
                 return Result.success(null)
             }
@@ -112,7 +121,7 @@ object FirebaseAuthManager {
      */
     suspend fun signInWithGoogle(activityContext: Context): Result<FirebaseUser> {
         return try {
-            val serverClientId = activityContext.getString(R.string.default_web_client_id)
+            val serverClientId = webClientId(activityContext)
             require(serverClientId.isNotBlank()) { "Configuration Google Sign-In manquante." }
 
             val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(serverClientId)
