@@ -7,7 +7,7 @@ Branche GitHub : `claude/mikayala-v2-audit-dev-ryddh8`. Rien n'a été déployé
   pour `cycle`, aucun champ client n'est transmis (texte neutre « Vous avez une nouvelle notification ») ;
   champ `recipientId` ajouté au payload ; TTL 30 s pour `call`, `call_cancelled`, `call_ended`.
 - À faire : relire puis déployer les DEUX fichiers (`supabase functions deploy send-fcm`), garder `verify_jwt = true`,
-  vérifier que le secret `FCM_SERVICE_ACCOUNT_JSON` correspond au projet Firebase `gen-lang-client-0988385912`
+  vérifier que le secret `FCM_SERVICE_ACCOUNT_JSON` correspond au projet Firebase `mikayla-187c3`
   (l'app Android s'appelle maintenant `com.mikayla.app`).
 - Compatibilité : l'ancien APK fonctionne avec la nouvelle fonction, et le nouvel APK avec l'ancienne.
 

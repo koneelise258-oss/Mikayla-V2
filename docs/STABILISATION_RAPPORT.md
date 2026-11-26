@@ -159,7 +159,7 @@ tests de la fonction `send-fcm` : 16/16 ✅ (dont 7 nouveaux).
 - Solution dans le code : `normalizeServiceAccount()` accepte ces formats et, en secours, trois secrets
   séparés `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`, `FCM_PROJECT_ID`. Aucune valeur secrète n'est journalisée.
 - **Dépendances externes (non faisables d'ici)** :
-  1. vérifier/recoller le secret (fichier JSON du compte de service Firebase, projet `gen-lang-client-0988385912`) ;
+  1. vérifier/recoller le secret (fichier JSON du compte de service Firebase, projet `mikayla-187c3`) ;
   2. déployer : `supabase functions deploy send-fcm` (dossier complet : `index.ts` + `payload.ts`) ;
   3. vérifier dans les journaux de la fonction qu'il n'y a plus de 500. Rien n'indique que la version du dépôt
      soit déployée (procédure de comparaison : requête 15 de `AUDIT_SUPABASE_REQUETES.sql`).
@@ -457,7 +457,7 @@ Actions à chaque étape, 106 tests unitaires Android + 16 tests de la fonction 
 3. **Supabase — lecture seule d'abord** : exécuter `docs/AUDIT_SUPABASE_REQUETES.sql` (surtout la requête 13 :
    politique UPDATE de `messages`) et la requête de contrainte `message_type` (phase 2, C19).
 4. **Supabase — Firebase** : recoller le secret `FCM_SERVICE_ACCOUNT_JSON` (fichier JSON complet du compte de
-   service, projet `gen-lang-client-0988385912`) puis `supabase functions deploy send-fcm`.
+   service, projet `mikayla-187c3`) puis `supabase functions deploy send-fcm`.
 5. **Supabase — migrations proposées** (non destructives, à relire avant) : `20261105090000` parties A et B,
    `20261106090000` (accusés par message), `20261106091000` (coffre privé, après revue des politiques
    existantes), puis la partie C de `20261105090000` (Storage) une fois le nouvel APK sur les deux téléphones.

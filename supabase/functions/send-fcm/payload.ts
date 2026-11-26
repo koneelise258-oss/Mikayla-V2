@@ -76,7 +76,7 @@ export function isPairedCoupleMember(row: CoupleRow | null | undefined, senderId
   return members.includes(senderId) && members.includes(recipientId);
 }
 
-export const EXPECTED_FCM_PROJECT_ID = "gen-lang-client-0988385912";
+export const EXPECTED_FCM_PROJECT_ID = "mikayla-187c3";
 
 /**
  * Valide le compte de service sans jamais renvoyer ni journaliser de valeur secrète.

@@ -89,16 +89,16 @@ test("couple : status paired obligatoire", () => {
 });
 
 test("compte de service : validé sans exposer de valeur", () => {
-  const ok = JSON.stringify({ type: "service_account", project_id: "gen-lang-client-0988385912", client_email: "x@y", private_key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----" });
+  const ok = JSON.stringify({ type: "service_account", project_id: "mikayla-187c3", client_email: "x@y", private_key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----" });
   assert.equal(validateServiceAccount(ok), null);
   assert.equal(validateServiceAccount(""), "missing_service_account");
   assert.equal(validateServiceAccount("{oops"), "invalid_service_account_json");
   // projet libre par défaut ; vérifié seulement si un projet attendu est fourni
-  assert.equal(validateServiceAccount(ok.replace("gen-lang-client-0988385912", "autre-projet")), null);
-  assert.equal(validateServiceAccount(ok.replace("gen-lang-client-0988385912", "autre-projet"), "gen-lang-client-0988385912"), "unexpected_project_id");
-  assert.equal(validateServiceAccount(JSON.stringify({ type: "service_account", project_id: "gen-lang-client-0988385912", client_email: "x@y" })), "missing_private_key");
+  assert.equal(validateServiceAccount(ok.replace("mikayla-187c3", "autre-projet")), null);
+  assert.equal(validateServiceAccount(ok.replace("mikayla-187c3", "autre-projet"), "mikayla-187c3"), "unexpected_project_id");
+  assert.equal(validateServiceAccount(JSON.stringify({ type: "service_account", project_id: "mikayla-187c3", client_email: "x@y" })), "missing_private_key");
   // le code d'erreur ne contient jamais la clé
-  const bad = validateServiceAccount(ok.replace("gen-lang-client-0988385912", "p"), "gen-lang-client-0988385912");
+  const bad = validateServiceAccount(ok.replace("mikayla-187c3", "p"), "mikayla-187c3");
   assert.ok(!String(bad).includes("PRIVATE"));
 });
 

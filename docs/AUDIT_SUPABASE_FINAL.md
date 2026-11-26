@@ -31,7 +31,7 @@ La migration déjà appliquée « harden_mikayala_function_search_paths_and_trig
 | `app/…/services/DeviceInstallation.kt` (nouveau) | secret d'installation aléatoire (256 bits), stocké sur l'appareil | dans la branche |
 | `app/…/data/SupabaseService.kt` | appelle `register_device_push_token` (repli sur l'ancien upsert tant que la fonction n'existe pas) ; envoi de documents limité au bucket `chat_media` (l'ancien essai en cascade pouvait écrire dans `avatars`) | dans la branche |
 | `app/…/services/MyFirebaseMessagingService.kt` | transmet le secret d'installation | dans la branche |
-| `supabase/functions/send-fcm/{index.ts,payload.ts}` | couple `status = 'paired'` obligatoire, JWT vérifié, validation du compte de service Firebase (projet `gen-lang-client-0988385912`) sans exposer la clé, erreurs neutres, liste blanche de types (dont call_declined / call_cancelled / call_ended), cycle sans aucune donnée, TTL 30 s pour les appels, `recipientId` | **non déployée** |
+| `supabase/functions/send-fcm/{index.ts,payload.ts}` | couple `status = 'paired'` obligatoire, JWT vérifié, validation du compte de service Firebase (projet `mikayla-187c3`) sans exposer la clé, erreurs neutres, liste blanche de types (dont call_declined / call_cancelled / call_ended), cycle sans aucune donnée, TTL 30 s pour les appels, `recipientId` | **non déployée** |
 | `docs/AUDIT_SUPABASE_REQUETES.sql` | requêtes 1–15 en lecture seule (fonctions, droits, triggers, jeton dans un trigger, webhooks, Vault, politiques messages, temps réel, Storage) | prêt |
 
 ### F. send-fcm — comparaison avec la version déployée
