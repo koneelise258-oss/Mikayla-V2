@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -155,6 +156,29 @@ fun SettingsScreen(
     }
 
     val scope = rememberCoroutineScope()
+
+    // Icône d'écran d'accueil à partir d'une photo (raccourci épinglé, voir util/CustomIconManager.kt)
+    var customIconsVersion by remember { mutableStateOf(0) }
+    fun applyCustomIcon(file: java.io.File) {
+        val msg = when (com.example.mikayala.util.CustomIconManager.apply(context, file)) {
+            com.example.mikayala.util.CustomIconManager.Result.PINNED_REQUESTED ->
+                "Confirmez l'ajout de l'icône sur l'écran d'accueil. Vous pouvez ensuite retirer l'ancienne icône de l'écran d'accueil (l'appli reste dans la liste des applis)."
+            com.example.mikayala.util.CustomIconManager.Result.UPDATED -> "Icône de l'écran d'accueil mise à jour"
+            com.example.mikayala.util.CustomIconManager.Result.UNSUPPORTED -> "Ce téléphone ne permet pas d'ajouter une icône personnalisée."
+            com.example.mikayala.util.CustomIconManager.Result.FAILED -> "Le téléphone a refusé l'icône personnalisée."
+        }
+        customIconsVersion++
+        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+    }
+    val customIconPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let {
+            val file = com.example.mikayala.util.CustomIconManager.importImage(context, it)
+            if (file != null) applyCustomIcon(file)
+            else Toast.makeText(context, "Impossible de lire cette photo", Toast.LENGTH_LONG).show()
+        }
+    }
 
     val myAvatarPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -461,7 +485,7 @@ fun SettingsScreen(
                 color = CardModalSurface,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp)) {
                     Text(text = "Icône de l'application", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -564,6 +588,65 @@ fun SettingsScreen(
                             }
                         }
                     }
+                    // --- Ma propre image ---
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = "Ma propre image", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(
+                        text = "Android n'autorise aucune appli à mettre une photo comme icône principale. Mikayala ajoute donc une icône avec votre photo sur l'écran d'accueil : elle ouvre l'appli, et sa photo peut être changée à tout moment. Vos anciennes images restent ici.",
+                        fontSize = 12.sp, color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    val history = remember(customIconsVersion) { com.example.mikayala.util.CustomIconManager.history(context) }
+                    val currentCustom = remember(customIconsVersion) { com.example.mikayala.util.CustomIconManager.currentPath(context) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Bouton d'import
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, AccentRose, CircleShape)
+                                .clickable { customIconPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                        ) {
+                            Text("+", fontSize = 26.sp, color = AccentRose, fontWeight = FontWeight.Bold)
+                        }
+                        history.forEach { file ->
+                            val selected = file.absolutePath == currentCustom
+                            Box {
+                                coil.compose.AsyncImage(
+                                    model = file,
+                                    contentDescription = "Icône personnalisée",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(CircleShape)
+                                        .border(if (selected) 3.dp else 0.dp, if (selected) AccentRose else Color.Transparent, CircleShape)
+                                        .clickable { applyCustomIcon(file) }
+                                )
+                                if (!selected) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(20.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xCC000000))
+                                            .clickable {
+                                                com.example.mikayala.util.CustomIconManager.delete(context, file)
+                                                customIconsVersion++
+                                            }
+                                    ) {
+                                        Text("×", fontSize = 13.sp, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     TextButton(onClick = { showAppIconModal = false }, modifier = Modifier.align(Alignment.End)) {
                         Text("Fermer", color = AccentRose)
                     }
