@@ -26,7 +26,9 @@ import java.io.File
  * sans en recréer un. Les images déjà utilisées sont gardées pour pouvoir y revenir.
  */
 object CustomIconManager {
-    private const val SHORTCUT_ID = "mikayala_custom_icon"
+    // Même identifiant que l'ancienne version : une icône photo déjà posée est simplement mise à jour
+    private const val SHORTCUT_ID = "mikayala_photo_icon"
+    private const val LEGACY_FILE = "custom_app_icon.png"
     private const val DIR = "custom_icons"
     private const val MAX_HISTORY = 12
     private const val SIZE = 256
@@ -38,8 +40,21 @@ object CustomIconManager {
     private fun dir(context: Context): File = File(context.filesDir, DIR).apply { mkdirs() }
 
     /** Images déjà utilisées, de la plus récente à la plus ancienne. */
-    fun history(context: Context): List<File> =
-        dir(context).listFiles { f -> f.name.endsWith(".png") }?.sortedByDescending { it.lastModified() } ?: emptyList()
+    fun history(context: Context): List<File> {
+        migrateLegacy(context)
+        return dir(context).listFiles { f -> f.name.endsWith(".png") }?.sortedByDescending { it.lastModified() } ?: emptyList()
+    }
+
+    /** L'ancienne version gardait une seule photo : on la place dans l'historique. */
+    private fun migrateLegacy(context: Context) {
+        val legacy = File(context.filesDir, LEGACY_FILE)
+        if (!legacy.exists() || legacy.length() == 0L) return
+        val target = File(dir(context), "icon_${legacy.lastModified()}.png")
+        if (legacy.renameTo(target) && currentPath(context) == null) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_CURRENT, target.absolutePath).apply()
+        }
+    }
 
     fun currentPath(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_CURRENT, null)
