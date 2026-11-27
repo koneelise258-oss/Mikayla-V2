@@ -709,6 +709,33 @@ class MikayalaRepository(private val context: Context) {
         return result
     }
 
+    /** Code de récupération : permet de retrouver CE compte (couple, messages) après réinstallation. */
+    suspend fun createRecoveryCode(): String? {
+        val code = supabaseService.createRecoveryCode() ?: return null
+        prefs.edit().putBoolean("recovery_code_created", true).apply()
+        return code
+    }
+
+    fun hasRecoveryCode(): Boolean = prefs.getBoolean("recovery_code_created", false)
+
+    /**
+     * Se reconnecte au compte lié au code. En cas de succès, le couple local est oublié pour être
+     * rechargé depuis le serveur au redémarrage de l'application.
+     */
+    suspend fun restoreWithRecoveryCode(code: String): Pair<Boolean, String?> {
+        var n = code.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }
+        if (!n.startsWith("MIKA")) n = "MIKA$n" // le préfixe MIKA- est facultatif à la saisie
+        if (n.length != 16) return Pair(false, "Code incomplet : il a la forme MIKA-XXXX-XXXX-XXXX.")
+        val (email, pass) = supabaseService.recoveryCredentials(n)
+        val result = signIn(email, pass)
+        if (!result.first) {
+            return Pair(false, if (result.second?.contains("incorrect") == true) "Code de récupération inconnu." else result.second)
+        }
+        clearCoupleCache()
+        prefs.edit().remove("pairing_code").putBoolean("recovery_code_created", true).apply()
+        return Pair(true, null)
+    }
+
     suspend fun signUp(email: String, pass: String, displayName: String): Pair<Boolean, String?> {
         val result = supabaseService.signUpWithEmail(email, pass, displayName)
         if (result.first) {

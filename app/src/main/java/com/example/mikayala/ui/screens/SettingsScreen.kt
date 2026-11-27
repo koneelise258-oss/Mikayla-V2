@@ -1449,6 +1449,7 @@ fun SettingsScreen(
         }
 
         if (section == "couple") {
+            item { RecoveryCodeCard(repository) }
             item {
                 SettingsCategoryRow(Icons.Rounded.Logout, Color(0xFFC4605C), "Se déconnecter", "Quitte votre compte sur cet appareil. Le couple et les messages sont conservés.") {
                     showSignOutDialog = true
@@ -1963,6 +1964,86 @@ private fun BackgroundDeliveryCard(context: Context) {
                 )
             }
         }
+    }
+}
+
+/**
+ * Code de récupération : à noter quelque part. Après une réinstallation ou une déconnexion,
+ * « Récupérer mon Espace » avec ce code reconnecte le MÊME compte (couple, messages, coffre).
+ */
+@Composable
+private fun RecoveryCodeCard(repository: com.example.mikayala.data.repository.MikayalaRepository) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var code by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var confirmRenew by remember { mutableStateOf(false) }
+    val hasOne = remember(code) { repository.hasRecoveryCode() }
+    fun generate() {
+        loading = true
+        scope.launch {
+            val c = repository.createRecoveryCode()
+            loading = false
+            if (c != null) code = c
+            else Toast.makeText(context, "Impossible de créer le code : vérifiez la connexion internet.", Toast.LENGTH_LONG).show()
+        }
+    }
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0x22D9A441),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text("Code de récupération 🔑", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Text(
+                "Notez-le en lieu sûr. Si vous réinstallez l'application ou êtes déconnecté, ouvrez « Récupérer mon Espace » et saisissez ce code : vous retrouvez votre compte, votre couple et vos messages.",
+                color = TextSecondary, fontSize = 12.sp
+            )
+            val shown = code
+            if (shown != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(shown, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                Text("Ce code ne sera plus affiché. Un nouveau code remplace l'ancien.", color = AccentRose, fontSize = 11.sp)
+                Row(modifier = Modifier.padding(top = 6.dp)) {
+                    Text(
+                        "Copier",
+                        color = AccentGold, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                        modifier = Modifier.clickable {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Code Mikayala", shown))
+                            Toast.makeText(context, "Code copié", Toast.LENGTH_SHORT).show()
+                        }.padding(end = 18.dp, top = 4.dp, bottom = 4.dp)
+                    )
+                    Text(
+                        "Partager",
+                        color = AccentGold, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                        modifier = Modifier.clickable {
+                            val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+                                .setType("text/plain")
+                                .putExtra(android.content.Intent.EXTRA_TEXT, "Mon code de récupération Mikayala : $shown")
+                            context.startActivity(android.content.Intent.createChooser(send, "Garder le code").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }.padding(vertical = 4.dp)
+                    )
+                }
+            } else {
+                Text(
+                    if (loading) "Création…" else if (hasOne) "Créer un nouveau code" else "Créer mon code de récupération",
+                    color = AccentGold, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 8.dp).clickable(enabled = !loading) {
+                        if (hasOne) confirmRenew = true else generate()
+                    }.padding(vertical = 4.dp)
+                )
+            }
+        }
+    }
+    if (confirmRenew) {
+        AlertDialog(
+            onDismissRequest = { confirmRenew = false },
+            title = { Text("Nouveau code ?") },
+            text = { Text("L'ancien code ne fonctionnera plus. Pensez à noter le nouveau.") },
+            confirmButton = { TextButton(onClick = { confirmRenew = false; generate() }) { Text("Créer") } },
+            dismissButton = { TextButton(onClick = { confirmRenew = false }) { Text("Annuler") } }
+        )
     }
 }
 

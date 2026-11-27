@@ -1497,6 +1497,41 @@ class SupabaseService(
     }
 
     /** Réponse HTTP brute : permet de distinguer « vide » (succès) d'une erreur. */
+    // ---------------------------------------------------------------- code de récupération
+
+    /** Identifiants techniques dérivés du code (même calcul que la fonction account-recovery). */
+    fun recoveryCredentials(code: String): Pair<String, String> {
+        val n = code.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(("mikayala-recovery:" + n).toByteArray(Charsets.UTF_8))
+        val hex = digest.joinToString("") { "%02x".format(it) }
+        return Pair("r${hex.take(24)}@recup.mikayala.app", "Mk!$n")
+    }
+
+    /** Crée (ou remplace) le code de récupération du compte connecté. Null si échec. */
+    suspend fun createRecoveryCode(): String? = withContext(Dispatchers.IO) {
+        val token = userAccessTokenOrNull() ?: return@withContext null
+        try {
+            val conn = URL("$supabaseUrl/functions/v1/account-recovery").openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("apikey", supabaseKey)
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 20000
+            OutputStreamWriter(conn.outputStream).use { it.write("{}") }
+            if (conn.responseCode !in 200..299) {
+                Log.w("SupabaseService", "account-recovery HTTP ${conn.responseCode}: ${readAll(conn.errorStream)?.take(200)}")
+                return@withContext null
+            }
+            JSONObject(readAll(conn.inputStream) ?: "{}").optString("code").takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            Log.w("SupabaseService", "account-recovery: ${e.message}")
+            null
+        }
+    }
+
     // ---------------------------------------------------------------- espace couple partagé
 
     /**

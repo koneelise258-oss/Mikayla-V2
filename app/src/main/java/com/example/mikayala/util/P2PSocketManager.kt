@@ -92,7 +92,11 @@ object P2PSocketManager {
 
         scope.launch {
             try {
-                serverSocket = ServerSocket(port)
+                // reuseAddress : sans lui, relancer le mode Émetteur échouait (« port déjà utilisé »)
+                serverSocket = ServerSocket().apply {
+                    reuseAddress = true
+                    bind(java.net.InetSocketAddress(port))
+                }
                 Log.d(TAG, "ServerSocket listening on $localIp:$port")
 
                 while (_p2pState.value is P2PState.Hosting) {
@@ -473,19 +477,30 @@ object P2PSocketManager {
      * Obtenir l'adresse IP locale de l'appareil (Hotspot IP ou Wi-Fi IP)
      */
     fun getLocalIpAddress(context: Context): String {
+        // Avant : la PREMIÈRE adresse trouvée était prise, souvent celle des données mobiles
+        // (rmnet / ccmni sur MediaTek), injoignable par le partenaire. On choisit maintenant
+        // l'adresse du Wi-Fi ou du point d'accès (partage de connexion).
         try {
-            val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
-            for (networkInterface in interfaces) {
-                val addresses = Collections.list(networkInterface.inetAddresses)
-                for (address in addresses) {
-                    if (!address.isLoopbackAddress && address is InetAddress) {
-                        val host = address.hostAddress ?: ""
-                        if (!host.contains(":")) { // IPv4 check
-                            return host
-                        }
-                    }
+            data class Candidate(val ip: String, val score: Int)
+            val candidates = mutableListOf<Candidate>()
+            for (ni in Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp || ni.isLoopback) continue
+                val name = ni.name.lowercase()
+                if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("tun") ||
+                    name.startsWith("dummy") || name.startsWith("p2p-dev") || name.startsWith("v4-")) continue
+                for (address in Collections.list(ni.inetAddresses)) {
+                    if (address.isLoopbackAddress || address !is java.net.Inet4Address) continue
+                    val host = address.hostAddress ?: continue
+                    var score = 0
+                    if (name.startsWith("ap") || name.startsWith("swlan") || name.startsWith("softap")) score += 40 // point d'accès
+                    if (name.startsWith("wlan")) score += 30
+                    if (name.startsWith("p2p")) score += 20 // Wi-Fi Direct
+                    if (address.isSiteLocalAddress) score += 10
+                    if (host.startsWith("192.168.")) score += 5
+                    candidates.add(Candidate(host, score))
                 }
             }
+            candidates.maxByOrNull { it.score }?.let { return it.ip }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get network interface IP: ${e.message}")
         }

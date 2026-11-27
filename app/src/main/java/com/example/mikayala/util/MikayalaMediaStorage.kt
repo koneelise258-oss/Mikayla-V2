@@ -44,7 +44,31 @@ object MikayalaMediaStorage {
 
     fun getImagesFolder(context: Context): File = getDedicatedMediaFolder(context, "Mikayala Images")
     fun getVideosFolder(context: Context): File = getDedicatedMediaFolder(context, "Mikayala Videos")
-    fun getVoiceNotesFolder(context: Context): File = getDedicatedMediaFolder(context, "Mikayala Voice Notes")
+    /**
+     * Vocaux : gardés dans l'appli mais CACHÉS du système (comme WhatsApp). Le fichier .nomedia
+     * empêche Android de les montrer dans la musique, les fichiers audio ou les sonneries.
+     */
+    fun getVoiceNotesFolder(context: Context): File {
+        val folder = getDedicatedMediaFolder(context, "Mikayala Voice Notes")
+        hideFromMediaScanner(context, folder)
+        return folder
+    }
+
+    private fun hideFromMediaScanner(context: Context, folder: File) {
+        val marker = File(folder, ".nomedia")
+        if (marker.exists()) return
+        try {
+            marker.createNewFile()
+            // Les vocaux déjà indexés disparaissent des listes audio au prochain passage du scanner
+            val existing = folder.listFiles { f -> f.isFile && f.name != ".nomedia" }?.map { it.absolutePath }?.toTypedArray()
+            if (!existing.isNullOrEmpty()) {
+                android.media.MediaScannerConnection.scanFile(context.applicationContext, existing, null, null)
+            }
+            Log.d(TAG, "Vocaux masqués du système : ${marker.absolutePath}")
+        } catch (e: Exception) {
+            Log.w(TAG, "Impossible de masquer les vocaux : ${e.message}")
+        }
+    }
     fun getDocumentsFolder(context: Context): File = getDedicatedMediaFolder(context, "Mikayala Documents")
 
     /**

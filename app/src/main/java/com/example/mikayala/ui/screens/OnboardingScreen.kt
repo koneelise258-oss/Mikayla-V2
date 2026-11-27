@@ -375,6 +375,16 @@ fun OnboardingScreen(
                                 isRecoveryLoading = true
                                 recoveryError = null
                                 coroutineScope.launch {
+                                    // Code de récupération (MIKA-XXXX-XXXX-XXXX) : reconnexion au compte d'origine
+                                    val normalized = cleanedKey.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }
+                                    if (normalized.startsWith("MIKA") || normalized.length == 12) {
+                                        val (ok, err) = repository.restoreWithRecoveryCode(cleanedKey)
+                                        if (!ok) {
+                                            isRecoveryLoading = false
+                                            recoveryError = err ?: "Code de récupération inconnu."
+                                            return@launch
+                                        }
+                                    }
                                     val foundByUid = repository.findExistingCoupleSpace()
                                     val foundByCode = if (!foundByUid) {
                                         repository.checkPartnerConnectedInSupabase(cleanedKey) != null
@@ -1158,7 +1168,7 @@ fun RecoveryView(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "Saisissez votre clé de secours de sauvegarde ou code maître de jumelage",
+            text = "Saisissez votre code de récupération (MIKA-XXXX-XXXX-XXXX, dans Paramètres > Mon compte) ou votre code de jumelage",
             fontSize = 12.sp,
             color = TextSecondary,
             textAlign = TextAlign.Center

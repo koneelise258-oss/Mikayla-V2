@@ -12,8 +12,11 @@ android {
         applicationId = "com.mikayla.app"
         minSdk = 23
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        // Numéro de version qui augmente à chaque build GitHub : chaque nouvel APK s'installe
+        // PAR-DESSUS l'ancien (même clé de signature), sans désinstaller ni perdre la session.
+        val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
+        versionCode = 100 + runNumber
+        versionName = "1.2.$runNumber"
 
         val supabaseUrl = System.getenv("SUPABASE_URL") ?: "https://xyzcompany.supabase.co"
         val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummykey"
