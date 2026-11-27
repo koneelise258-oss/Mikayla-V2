@@ -75,6 +75,9 @@ dependencies {
 
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.work.runtime)
+  implementation(libs.androidx.biometric)
+  implementation(libs.androidx.fragment)
   // Police Noto Color Emoji embarquée : rendu identique sur Android 7 et 10 (licence SIL OFL 1.1)
   implementation(libs.androidx.emoji2.bundled)
   implementation(libs.androidx.lifecycle.runtime.ktx)

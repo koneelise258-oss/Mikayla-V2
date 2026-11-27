@@ -2010,7 +2010,7 @@ class SupabaseService(
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "DELETE"
             conn.setRequestProperty("apikey", supabaseKey)
-            conn.setRequestProperty("Authorization", "Bearer $supabaseKey")
+            conn.setRequestProperty("Authorization", "Bearer ${getAuthToken()}")
             conn.setRequestProperty("Content-Type", "application/json")
             conn.doOutput = true
 

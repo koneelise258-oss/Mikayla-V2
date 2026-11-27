@@ -26,6 +26,7 @@
     <!-- Ergonomie & Retours Haptiques & Notifications System -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Appel en cours : garder micro et caméra actifs écran verrouillé -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

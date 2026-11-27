@@ -29,6 +29,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         private const val KEY_PENDING_UNREG_SET = "pending_unregistrations_set"
         private const val PREFIX_LAST_SYNCED_TOKEN = "last_synced_token_"
 
+        private val MESSAGE_TYPES = setOf("chat_message", "audio", "image", "video")
+
+        /** Compte mémorisé localement par l'application à la connexion ("user_id"), effacé à la déconnexion. */
+        fun lastKnownUid(context: Context): String? =
+            context.applicationContext.getSharedPreferences("mikayala_prefs", Context.MODE_PRIVATE)
+                .getString("user_id", null)?.takeIf { it.isNotBlank() }
+
         private val processedMessageIds = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
         @Synchronized
@@ -274,6 +281,28 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
+    /**
+     * Envoie l'accusé « reçu » en attendant sa fin (Android peut fermer l'application dès que
+     * onMessageReceived rend la main). En cas d'échec (session pas encore renouvelée, réseau
+     * coupé), l'accusé est confié à WorkManager qui réessaie dès que le réseau revient.
+     */
+    private fun sendDeliveryAck(coupleId: String, rawMessageId: String?, useFirebase: Boolean, sessionReady: Boolean) {
+        val messageId = rawMessageId?.takeIf { it.isNotBlank() }
+        val ok = if (!sessionReady) false else try {
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeoutOrNull(6_000L) {
+                    DeliveryAckWorker.markDelivered(applicationContext, coupleId, messageId, useFirebase)
+                } ?: false
+            }
+        } catch (e: Exception) {
+            Log.w("FCM_MSG", "Échec confirmation message délivré: ${e.message}")
+            false
+        }
+        if (!ok) {
+            DeliveryAckWorker.enqueue(applicationContext, coupleId, messageId, useFirebase)
+        }
+    }
+
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         Log.d("FCM_TOKEN", "Nouveau jeton Firebase généré : ${maskToken(token)}")
@@ -314,11 +343,17 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 }
             } catch (_: Exception) {}
 
-            // Ne jamais notifier l'utilisateur de ses propres messages
-            val currentUid = try {
+            // Compte de la session rechargée (peut être null si le renouvellement réseau n'a pas
+            // abouti à temps, fréquent quand l'application est fermée et le téléphone en veille).
+            val sessionUid = try {
                 if (useFirebase) FirebaseService.getInstance(applicationContext).getCurrentSessionUid()
                 else SupabaseService.getInstance().getCurrentSessionUid()
             } catch (_: Exception) { null }
+            // Repli : compte mémorisé sur le téléphone à la connexion (effacé à la déconnexion).
+            // Sans ce repli, la notification était jetée silencieusement appli fermée.
+            val currentUid = sessionUid?.takeIf { it.isNotBlank() } ?: lastKnownUid(applicationContext)
+
+            // Ne jamais notifier l'utilisateur de ses propres messages
             if (shouldIgnoreNotification(currentUid, senderId)) {
                 Log.d("FCM_MSG", "Notification ignorée : l'expéditeur est l'utilisateur courant")
                 return
@@ -355,6 +390,12 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             if (isForAnotherAccount(currentUid, data["recipientId"])) {
                 Log.d("FCM_MSG", "Notification ignorée : destinée à un autre compte")
                 return
+            }
+
+            // Accusé « reçu » (2e coche) : envoyé AVANT les filtres d'affichage, pour qu'un message
+            // reçu soit toujours confirmé, même si sa notification est masquée ou désactivée.
+            if (type in MESSAGE_TYPES && coupleId.isNotEmpty()) {
+                sendDeliveryAck(coupleId, data["messageId"], useFirebase, sessionReady = !sessionUid.isNullOrBlank())
             }
 
             // Catégorie désactivée par l'utilisateur dans Paramètres > Notifications
@@ -426,26 +467,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         )
                     }
 
-                    // Signaler la délivrance sur le serveur sans bloquer
-                    if (coupleId.isNotEmpty()) {
-                        CoroutineScope(Dispatchers.IO).launch {
-                            try {
-                                if (useFirebase) {
-                                    if (!data["messageId"].isNullOrBlank()) {
-                                        FirebaseService.getInstance(applicationContext)
-                                            .markMessagesDeliveredIds(coupleId, listOf(messageId))
-                                    }
-                                } else {
-                                    // Accusé « reçu » pour CE message (repli : tout le couple si la fonction serveur manque)
-                                    val svc = SupabaseService.getInstance()
-                                    if (data["messageId"].isNullOrBlank()) svc.markMessagesDelivered(coupleId)
-                                    else svc.markMessagesDeliveredIds(coupleId, listOf(messageId))
-                                }
-                            } catch (e: Exception) {
-                                Log.w("FCM_MSG", "Échec confirmation message délivré: ${e.message}")
-                            }
-                        }
-                    }
                 }
                 "vault_add" -> {
                     val partnerName = data["partnerName"] ?: "Mon Amour"

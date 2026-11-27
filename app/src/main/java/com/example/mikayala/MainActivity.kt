@@ -1,7 +1,7 @@
 package com.example.mikayala
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
@@ -39,7 +39,7 @@ enum class AppNavigationState {
     ERROR
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private lateinit var repository: MikayalaRepository
     private var startupError: String? = null
