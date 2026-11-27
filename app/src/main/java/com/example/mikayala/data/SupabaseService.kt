@@ -1497,6 +1497,51 @@ class SupabaseService(
     }
 
     /** Réponse HTTP brute : permet de distinguer « vide » (succès) d'une erreur. */
+    // ---------------------------------------------------------------- espace couple partagé
+
+    /**
+     * Enregistre (ou marque supprimé) un élément de l'espace couple : agenda, cycle, temps ensemble,
+     * jeux. Visible et modifiable par les deux partenaires (table couple_items, RLS par couple).
+     */
+    suspend fun upsertCoupleItem(coupleId: String, itemId: String, kind: String, payloadJson: String, deleted: Boolean = false): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!isConfigured() || coupleId.isBlank() || itemId.isBlank()) return@withContext false
+            if (userAccessTokenOrNull() == null) return@withContext false
+            val payload: Any = try {
+                val t = payloadJson.trim()
+                if (t.startsWith("[")) JSONArray(t) else JSONObject(t.ifBlank { "{}" })
+            } catch (_: Exception) { JSONObject() }
+            val row = JSONObject().apply {
+                put("couple_id", coupleId)
+                put("item_id", itemId.take(80))
+                put("kind", kind)
+                put("payload", payload)
+                put("deleted", deleted)
+            }
+            val r = executePostResult(
+                "/rest/v1/couple_items?on_conflict=couple_id,item_id",
+                JSONArray().put(row).toString(),
+                prefer = "resolution=merge-duplicates,return=minimal"
+            )
+            if (!r.ok) Log.w("SupabaseService", "[COUPLE_SYNC] upsert $kind/$itemId HTTP ${r.code}: ${r.error}")
+            r.ok
+        }
+
+    /** Éléments de l'espace couple modifiés après [sinceIso] (tous si null), du plus ancien au plus récent. */
+    suspend fun fetchCoupleItems(coupleId: String, sinceIso: String?): JSONArray? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || coupleId.isBlank()) return@withContext null
+        if (userAccessTokenOrNull() == null) return@withContext null
+        val since = if (sinceIso.isNullOrBlank()) "" else "&updated_at=gt." + java.net.URLEncoder.encode(sinceIso, "UTF-8")
+        val r = executeGetResult(
+            "/rest/v1/couple_items?couple_id=eq.$coupleId&select=item_id,kind,payload,deleted,updated_at&order=updated_at.asc&limit=1000$since"
+        )
+        if (!r.ok) {
+            Log.w("SupabaseService", "[COUPLE_SYNC] fetch HTTP ${r.code}: ${r.error}")
+            return@withContext null
+        }
+        try { JSONArray(r.body ?: "[]") } catch (_: Exception) { null }
+    }
+
     data class HttpResult(val code: Int, val body: String?, val error: String?) {
         val ok: Boolean get() = code in 200..299
     }

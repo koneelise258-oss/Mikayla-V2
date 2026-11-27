@@ -7,6 +7,16 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -96,7 +106,10 @@ fun ActiveCallOverlay(
         latestOnEnd(duration)
     }
 
-    BackHandler { /* l'appel se termine avec le bouton rouge, pas avec « retour » */ }
+    // Appel réduit : petite fenêtre flottante, le reste de l'application reste utilisable
+    var minimized by remember { mutableStateOf(false) }
+    // « Retour » réduit l'appel en cours (il ne se termine qu'avec le bouton rouge)
+    BackHandler(enabled = !minimized) { if (accepted) minimized = true }
 
     LaunchedEffect(accepted) {
         if (accepted && isIncoming) {
@@ -175,6 +188,7 @@ fun ActiveCallOverlay(
     val micOn = currentCall?.micOn?.collectAsState()?.value ?: true
     val speakerOn = currentCall?.speakerOn?.collectAsState()?.value ?: isVideo
     val cameraOn = currentCall?.cameraOn?.collectAsState()?.value ?: isVideo
+    val frontCamera = currentCall?.frontCamera?.collectAsState()?.value ?: true
 
     var seconds by remember { mutableIntStateOf(0) }
     LaunchedEffect(state) {
@@ -205,11 +219,30 @@ fun ActiveCallOverlay(
     }
 
     val bg = Color(0xFF15131A)
-    Box(
+    if (minimized) {
+        MinimizedCallBubble(
+            showVideo = isVideo && remoteVideo != null && currentCall?.eglBase != null,
+            remoteVideo = remoteVideo,
+            egl = currentCall?.eglBase,
+            partnerName = partnerName,
+            partnerAvatarUrl = partnerAvatarUrl,
+            statusText = statusText,
+            onExpand = { minimized = false },
+            onHangUp = {
+                val c = currentCall
+                if (c != null) c.hangUp() else close(0)
+            }
+        )
+        return
+    }
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(bg)
     ) {
+        val density = LocalDensity.current
+        val maxWpx = with(density) { maxWidth.toPx() }
+        val maxHpx = with(density) { maxHeight.toPx() }
         val egl = currentCall?.eglBase
         val showRemoteVideo = isVideo && remoteVideo != null && egl != null
         if (showRemoteVideo) {
@@ -246,18 +279,45 @@ fun ActiveCallOverlay(
             Text(statusText, fontSize = 15.sp, color = Color.White.copy(alpha = 0.75f))
         }
 
-        // Ma caméra en petit, en haut à droite
+        // Réduire l'appel pour continuer à utiliser l'application
+        if (accepted) {
+            IconButton(
+                onClick = { minimized = true },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, top = 8.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.35f))
+            ) {
+                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Réduire l'appel", tint = Color.White, modifier = Modifier.size(28.dp))
+            }
+        }
+
+        // Ma caméra en petit : se déplace avec le doigt n'importe où sur l'écran
         if (isVideo && localVideo != null && egl != null && cameraOn) {
+            val pipW = with(density) { 104.dp.toPx() }
+            val pipH = with(density) { 150.dp.toPx() }
+            val margin = with(density) { 12.dp.toPx() }
+            var pipOffset by remember { mutableStateOf(Offset(maxWpx - pipW - margin * 1.4f, with(density) { 110.dp.toPx() })) }
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(top = 90.dp, end = 16.dp)
+                    .offset { IntOffset(pipOffset.x.roundToInt(), pipOffset.y.roundToInt()) }
                     .size(width = 104.dp, height = 150.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(Color.Black)
+                    .pointerInput(maxWpx, maxHpx) {
+                        detectDragGestures { change, drag ->
+                            change.consume()
+                            pipOffset = Offset(
+                                (pipOffset.x + drag.x).coerceIn(margin, maxWpx - pipW - margin),
+                                (pipOffset.y + drag.y).coerceIn(margin, maxHpx - pipH - margin)
+                            )
+                        }
+                    }
             ) {
-                VideoRenderer(track = localVideo, egl = egl, mirror = true, overlay = true, modifier = Modifier.fillMaxSize())
+                VideoRenderer(track = localVideo, egl = egl, mirror = frontCamera, overlay = true, modifier = Modifier.fillMaxSize())
             }
         }
 
@@ -302,6 +362,93 @@ fun ActiveCallOverlay(
                     val c = currentCall
                     if (c != null) c.hangUp() else close(0)
                 }
+            }
+        }
+    }
+}
+
+/** Appel réduit : bulle flottante déplaçable (vidéo du partenaire ou photo + durée). Toucher = agrandir. */
+@Composable
+private fun MinimizedCallBubble(
+    showVideo: Boolean,
+    remoteVideo: VideoTrack?,
+    egl: EglBase?,
+    partnerName: String,
+    partnerAvatarUrl: String,
+    statusText: String,
+    onExpand: () -> Unit,
+    onHangUp: () -> Unit
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val maxWpx = with(density) { maxWidth.toPx() }
+        val maxHpx = with(density) { maxHeight.toPx() }
+        val w = if (showVideo) 120.dp else 190.dp
+        val h = if (showVideo) 176.dp else 64.dp
+        val wPx = with(density) { w.toPx() }
+        val hPx = with(density) { h.toPx() }
+        val margin = with(density) { 12.dp.toPx() }
+        var offset by remember { mutableStateOf(Offset(maxWpx - wPx - margin, with(density) { 120.dp.toPx() })) }
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+                .size(width = w, height = h)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xFF15131A))
+                .pointerInput(maxWpx, maxHpx) {
+                    detectDragGestures { change, drag ->
+                        change.consume()
+                        offset = Offset(
+                            (offset.x + drag.x).coerceIn(margin, maxWpx - wPx - margin),
+                            (offset.y + drag.y).coerceIn(margin, maxHpx - hPx - margin)
+                        )
+                    }
+                }
+                .pointerInput(Unit) { detectTapGestures(onTap = { onExpand() }) }
+        ) {
+            if (showVideo && remoteVideo != null && egl != null) {
+                VideoRenderer(track = remoteVideo, egl = egl, mirror = false, overlay = true, modifier = Modifier.fillMaxSize())
+                Text(
+                    statusText,
+                    fontSize = 11.sp,
+                    color = Color.White,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp)
+                        .clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.4f)).padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(40.dp).clip(CircleShape).background(Color(0xFF2D2538)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (partnerAvatarUrl.isNotBlank()) {
+                            coil.compose.AsyncImage(model = partnerAvatarUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        } else {
+                            Icon(Icons.Rounded.Person, contentDescription = null, tint = Color(0xFFB9A6E8), modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f).padding(end = 36.dp)) {
+                        Text(partnerName, fontSize = 12.sp, color = Color.White, maxLines = 1, fontWeight = FontWeight.SemiBold)
+                        Text(statusText, fontSize = 11.sp, color = Color(0xFF2FB463), maxLines = 1)
+                    }
+                }
+            }
+            // Raccrocher sans agrandir
+            IconButton(
+                onClick = onHangUp,
+                modifier = Modifier
+                    .align(if (showVideo) Alignment.BottomCenter else Alignment.CenterEnd)
+                    .padding(if (showVideo) 6.dp else 0.dp)
+                    .padding(end = if (showVideo) 0.dp else 8.dp)
+                    .size(if (showVideo) 36.dp else 32.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE5484D))
+            ) {
+                Icon(Icons.Rounded.CallEnd, contentDescription = "Raccrocher", tint = Color.White, modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -354,6 +501,7 @@ private fun VideoRenderer(track: VideoTrack, egl: EglBase, mirror: Boolean, over
         try { track.addSink(renderer) } catch (_: Exception) {}
         onDispose { try { track.removeSink(renderer) } catch (_: Exception) {} }
     }
+    LaunchedEffect(renderer, mirror) { try { renderer.setMirror(mirror) } catch (_: Exception) {} }
     DisposableEffect(renderer) {
         onDispose { try { renderer.release() } catch (_: Exception) {} }
     }

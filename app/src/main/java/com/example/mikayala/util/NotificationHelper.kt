@@ -23,6 +23,7 @@ object NotificationHelper {
     private const val CHANNEL_CALENDAR_ID = "mikayala_calendar_v2"
 
     private const val NOTIF_ID_CALL = 1001
+    private const val CHANNEL_RING_ID = "mikayala_call_ring"
     private const val NOTIF_ID_LOVE_TIME = 1002
     private const val NOTIF_ID_CYCLE = 1003
     private const val NOTIF_ID_ANNIVERSARY = 1004
@@ -157,9 +158,17 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, alertChannel(context, CHANNEL_CALLS_ID))
-            .also { applyLegacyAlerts(context, it) }
+        val profile = NotificationPrefs.alertProfile(context)
+        val builder = NotificationCompat.Builder(context, ringChannel(context))
+            .also {
+                // Android 7 (sans canaux) : sonnerie du téléphone et vibration longue
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                    if (profile.sound) it.setSound(ringtoneUri(), android.media.AudioManager.STREAM_RING)
+                    if (profile.vibrate) it.setVibrate(RING_VIBRATION)
+                }
+            }
             .setSmallIcon(R.drawable.ic_stat_mikayala)
+            .setTimeoutAfter(60_000) // l'appel est manqué au bout d'une minute
             .setContentTitle(if (isVideo) "📹 Appel Vidéo Entrant" else "📞 Appel Vocal Entrant")
             .setContentText("$callerName vous appelle...")
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -171,8 +180,54 @@ object NotificationHelper {
             .addAction(R.mipmap.ic_launcher, "Refuser ❌", declinePendingIntent)
             .addAction(R.mipmap.ic_launcher, "Décrocher 💚", answerPendingIntent)
 
+        // FLAG_INSISTENT : la sonnerie et la vibration se répètent jusqu'à Décrocher / Refuser / fin d'appel
+        val notification = builder.build().apply { flags = flags or android.app.Notification.FLAG_INSISTENT }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIF_ID_CALL, builder.build())
+        manager.notify(NOTIF_ID_CALL, notification)
+    }
+
+    private val RING_VIBRATION = longArrayOf(0, 1000, 800, 1000, 800)
+
+    private fun ringtoneUri(): android.net.Uri = android.provider.Settings.System.DEFAULT_RINGTONE_URI
+
+    /**
+     * Canal « Sonnerie d'appel » : sonnerie du téléphone (et non le petit son de notification),
+     * en boucle grâce à FLAG_INSISTENT. Respecte le choix son / vibration de l'utilisateur.
+     */
+    private fun ringChannel(context: Context): String {
+        val profile = NotificationPrefs.alertProfile(context)
+        val id = CHANNEL_RING_ID + profile.channelSuffix
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (manager.getNotificationChannel(id) == null) {
+                val channel = NotificationChannel(id, "Sonnerie d'appel", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Fait sonner et vibrer le téléphone pendant un appel entrant"
+                    if (profile.sound) {
+                        setSound(
+                            ringtoneUri(),
+                            android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build()
+                        )
+                    } else {
+                        setSound(null, null)
+                    }
+                    enableVibration(profile.vibrate)
+                    vibrationPattern = if (profile.vibrate) RING_VIBRATION else null
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    setBypassDnd(false)
+                }
+                manager.createNotificationChannel(channel)
+                for (other in SUFFIXES) {
+                    val otherId = CHANNEL_RING_ID + other
+                    if (otherId != id && manager.getNotificationChannel(otherId) != null) {
+                        manager.deleteNotificationChannel(otherId)
+                    }
+                }
+            }
+        }
+        return id
     }
 
     fun dismissIncomingCallNotification(context: Context) {

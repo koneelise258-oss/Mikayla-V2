@@ -84,6 +84,9 @@ class WebRtcCall(
     val micOn: StateFlow<Boolean> = _micOn.asStateFlow()
     private val _cameraOn = MutableStateFlow(isVideo)
     val cameraOn: StateFlow<Boolean> = _cameraOn.asStateFlow()
+    private val _frontCamera = MutableStateFlow(true)
+    /** Caméra avant active (aperçu en miroir) ou arrière. */
+    val frontCamera: StateFlow<Boolean> = _frontCamera.asStateFlow()
     private val _speakerOn = MutableStateFlow(isVideo)
     val speakerOn: StateFlow<Boolean> = _speakerOn.asStateFlow()
 
@@ -204,9 +207,14 @@ class WebRtcCall(
 
     private fun startCamera(f: PeerConnectionFactory) {
         try {
-            val enumerator = Camera2Enumerator(appContext)
+            // Petits téléphones (Android Go, ex. Infinix Hot 8 Lite) : Camera2 souvent non supporté,
+            // on passe alors par l'ancienne API Camera1 au lieu de ne pas avoir de vidéo du tout.
+            val enumerator: org.webrtc.CameraEnumerator =
+                if (Camera2Enumerator.isSupported(appContext)) Camera2Enumerator(appContext)
+                else org.webrtc.Camera1Enumerator(false)
             val name = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
                 ?: enumerator.deviceNames.firstOrNull() ?: return
+            _frontCamera.value = enumerator.isFrontFacing(name)
             val cap = enumerator.createCapturer(name, null) ?: return
             val helper = SurfaceTextureHelper.create("mik_capture", eglBase.eglBaseContext)
             val source = f.createVideoSource(false)
@@ -405,7 +413,14 @@ class WebRtcCall(
     }
 
     fun switchCamera() {
-        try { capturer?.switchCamera(null) } catch (_: Exception) {}
+        try {
+            capturer?.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                override fun onCameraSwitchDone(isFrontCamera: Boolean) { _frontCamera.value = isFrontCamera }
+                override fun onCameraSwitchError(errorDescription: String?) {
+                    Log.w(TAG, "Changement de caméra impossible : $errorDescription")
+                }
+            })
+        } catch (_: Exception) {}
     }
 
     /** Raccrocher (ou annuler si personne n'a encore répondu). */

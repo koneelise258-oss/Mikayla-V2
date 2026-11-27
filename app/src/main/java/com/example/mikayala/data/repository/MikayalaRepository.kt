@@ -14,6 +14,7 @@ import com.example.mikayala.data.model.*
 import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -3585,6 +3586,8 @@ class MikayalaRepository(private val context: Context) {
         restoreList("local_game_quiz", _quizItems); persistList("local_game_quiz", _quizItems)
         restoreList("local_game_dilemmas", _dilemmas); persistList("local_game_dilemmas", _dilemmas)
         restoreList("local_game_truth_dare", _truthOrDare); persistList("local_game_truth_dare", _truthOrDare)
+        restoreList("local_game_milestones", _milestones); persistList("local_game_milestones", _milestones)
+        restoreList("local_game_capsules", _loveCapsules); persistList("local_game_capsules", _loveCapsules)
     }
 
     /**
@@ -3693,6 +3696,10 @@ class MikayalaRepository(private val context: Context) {
             partner2Name = partner2Name,
             loveQuote = loveQuote
         )
+        pushCoupleItem(
+            "love_time", "love_time",
+            org.json.JSONObject().put("anniversaryDate", anniversaryDate).put("loveQuote", loveQuote).toString()
+        )
         if (isFirebaseMode() && _coupleSpace.value.id.isNotBlank()) {
             val cid = _coupleSpace.value.id
             repositoryScope.launch {
@@ -3718,10 +3725,11 @@ class MikayalaRepository(private val context: Context) {
 
     fun deleteMilestone(id: String) {
         _milestones.value = _milestones.value.filterNot { it.id == id }
-        deleteGameFromFirebase(id)
+        deleteGameFromFirebase(id, "milestone")
     }
 
     private fun syncGameToFirebase(gameId: String, kind: String, payloadJson: String, isUpdate: Boolean) {
+        pushCoupleItem(kind, gameId, payloadJson)
         if (!isFirebaseMode()) return
         val couple = _coupleSpace.value
         if (!couple.isPaired || couple.id.isBlank()) return
@@ -3731,11 +3739,195 @@ class MikayalaRepository(private val context: Context) {
         }
     }
 
-    private fun deleteGameFromFirebase(gameId: String) {
+    private fun deleteGameFromFirebase(gameId: String, kind: String) {
+        pushCoupleItem(kind, gameId, "{}", deleted = true)
         if (!isFirebaseMode()) return
         val coupleId = _coupleSpace.value.id
         if (coupleId.isBlank()) return
         repositoryScope.launch { firebaseRepository.deleteGameItem(coupleId, gameId) }
+    }
+
+    // ------------------------------------------------------------ espace couple partagé (Supabase)
+    // Agenda, cycle, temps ensemble et jeux : chaque modification est envoyée à la table
+    // couple_items, et les modifications du partenaire sont récupérées toutes les quelques secondes.
+    // Les envois échoués (hors ligne) sont gardés et renvoyés à la prochaine synchronisation.
+
+    @Volatile private var lastCoupleItemsSyncAt = 0L
+    private val COUPLE_ITEMS_SYNC_EVERY_MS = 8_000L
+    private val coupleItemsMutex = kotlinx.coroutines.sync.Mutex()
+
+    @kotlinx.serialization.Serializable
+    private data class PendingCoupleItem(val kind: String, val id: String, val payload: String, val deleted: Boolean)
+
+    private fun pendingCoupleItems(): MutableMap<String, PendingCoupleItem> = try {
+        val raw = prefs.getString("couple_items_pending", null)
+        if (raw.isNullOrBlank()) mutableMapOf()
+        else localGamesJson.decodeFromString(
+            kotlinx.serialization.builtins.MapSerializer(kotlinx.serialization.serializer<String>(), PendingCoupleItem.serializer()), raw
+        ).toMutableMap()
+    } catch (_: Exception) { mutableMapOf() }
+
+    private fun savePendingCoupleItems(map: Map<String, PendingCoupleItem>) {
+        prefs.edit().putString(
+            "couple_items_pending",
+            localGamesJson.encodeToString(
+                kotlinx.serialization.builtins.MapSerializer(kotlinx.serialization.serializer<String>(), PendingCoupleItem.serializer()), map
+            )
+        ).apply()
+    }
+
+    /** Envoie une modification de l'espace couple au partenaire (en attente si hors ligne). */
+    private fun pushCoupleItem(kind: String, id: String, payloadJson: String, deleted: Boolean = false) {
+        if (isFirebaseMode()) return
+        val couple = _coupleSpace.value
+        if (!couple.isPaired || couple.id.isBlank()) return
+        val item = PendingCoupleItem(kind, id, payloadJson, deleted)
+        repositoryScope.launch {
+            coupleItemsMutex.withLock {
+                val pending = pendingCoupleItems()
+                pending[id] = item
+                savePendingCoupleItems(pending)
+            }
+            flushPendingCoupleItems(couple.id)
+        }
+    }
+
+    private fun pushCycle() {
+        pushCoupleItem("cycle", "cycle", localGamesJson.encodeToString(MenstrualCycleInfo.serializer(), _cycleInfo.value))
+    }
+
+    private suspend fun flushPendingCoupleItems(coupleId: String) {
+        coupleItemsMutex.withLock {
+            val pending = pendingCoupleItems()
+            if (pending.isEmpty()) return
+            val done = mutableListOf<String>()
+            for ((id, it) in pending) {
+                if (supabaseService.upsertCoupleItem(coupleId, id, it.kind, it.payload, it.deleted)) done.add(id)
+                else break // hors ligne : on réessaiera plus tard, dans le même ordre
+            }
+            if (done.isNotEmpty()) {
+                val fresh = pendingCoupleItems()
+                done.forEach { id -> if (fresh[id] == pending[id]) fresh.remove(id) }
+                savePendingCoupleItems(fresh)
+            }
+        }
+    }
+
+    /** Première synchronisation d'un couple : envoie ce qui existe déjà sur ce téléphone. */
+    private suspend fun seedLocalCoupleItems(coupleId: String) {
+        val all = mutableListOf<PendingCoupleItem>()
+        _events.value.forEach { all.add(PendingCoupleItem("event", it.id, localGamesJson.encodeToString(CoupleEventEntity.serializer(), it), false)) }
+        _coupons.value.forEach { all.add(PendingCoupleItem("coupon", it.id, localGamesJson.encodeToString(LoveCouponEntity.serializer(), it), false)) }
+        _bucketList.value.forEach { all.add(PendingCoupleItem("bucket", it.id, localGamesJson.encodeToString(CoupleBucketItemEntity.serializer(), it), false)) }
+        _quizItems.value.forEach { all.add(PendingCoupleItem("quiz", it.id, localGamesJson.encodeToString(QuizItemEntity.serializer(), it), false)) }
+        _dilemmas.value.forEach { all.add(PendingCoupleItem("dilemma", it.id, localGamesJson.encodeToString(CoupleDilemmaEntity.serializer(), it), false)) }
+        _truthOrDare.value.forEach { all.add(PendingCoupleItem("truth_dare", it.id, localGamesJson.encodeToString(TruthOrDareEntity.serializer(), it), false)) }
+        _milestones.value.forEach { all.add(PendingCoupleItem("milestone", it.id, localGamesJson.encodeToString(LoveMilestoneEntity.serializer(), it), false)) }
+        _loveCapsules.value.forEach { all.add(PendingCoupleItem("capsule", it.id, localGamesJson.encodeToString(LoveCapsuleEntity.serializer(), it), false)) }
+        coupleItemsMutex.withLock {
+            val pending = pendingCoupleItems()
+            all.forEach { if (!pending.containsKey(it.id)) pending[it.id] = it }
+            savePendingCoupleItems(pending)
+        }
+        flushPendingCoupleItems(coupleId)
+    }
+
+    private suspend fun syncCoupleItems(coupleId: String) {
+        val cursorKey = "couple_items_cursor_$coupleId"
+        var cursor = prefs.getString(cursorKey, null)
+        if (cursor == null) {
+            // Première fois : on récupère d'abord ce que le partenaire a déjà partagé,
+            // puis on envoie nos éléments locaux qu'il n'a pas encore.
+            val existing = supabaseService.fetchCoupleItems(coupleId, null) ?: return
+            val remoteIds = HashSet<String>()
+            for (i in 0 until existing.length()) remoteIds.add(existing.optJSONObject(i)?.optString("item_id").orEmpty())
+            applyCoupleItems(existing)
+            // Le cycle et le temps ensemble locaux ne sont envoyés que si le partenaire n'en a pas
+            if (_cycleInfo.value.isConfigured && "cycle" !in remoteIds) pushCycle()
+            if (_coupleSpace.value.anniversaryDate > 0L && "love_time" !in remoteIds) {
+                pushCoupleItem(
+                    "love_time", "love_time",
+                    org.json.JSONObject().put("anniversaryDate", _coupleSpace.value.anniversaryDate).put("loveQuote", _coupleSpace.value.loveQuote).toString()
+                )
+            }
+            seedLocalCoupleItems(coupleId)
+            cursor = lastUpdatedAt(existing) ?: "1970-01-01T00:00:00Z"
+            prefs.edit().putString(cursorKey, cursor).apply()
+            return
+        }
+        flushPendingCoupleItems(coupleId)
+        val rows = supabaseService.fetchCoupleItems(coupleId, cursor) ?: return
+        if (rows.length() == 0) return
+        applyCoupleItems(rows)
+        lastUpdatedAt(rows)?.let { prefs.edit().putString(cursorKey, it).apply() }
+    }
+
+    private fun lastUpdatedAt(rows: org.json.JSONArray): String? {
+        var last: String? = null
+        for (i in 0 until rows.length()) rows.optJSONObject(i)?.optString("updated_at")?.takeIf { it.isNotBlank() }?.let { last = it }
+        return last
+    }
+
+    private inline fun <T> MutableStateFlow<List<T>>.upsertOrRemove(id: String, deleted: Boolean, idOf: (T) -> String, decode: () -> T) {
+        val current = value
+        value = if (deleted) current.filterNot { idOf(it) == id }
+        else {
+            val item = decode()
+            if (current.any { idOf(it) == id }) current.map { if (idOf(it) == id) item else it } else current + item
+        }
+    }
+
+    private fun applyCoupleItems(rows: org.json.JSONArray) {
+        val pendingIds = pendingCoupleItems().keys
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            val id = row.optString("item_id")
+            if (id.isBlank() || id in pendingIds) continue // notre modification locale non envoyée prime
+            val kind = row.optString("kind")
+            val deleted = row.optBoolean("deleted", false)
+            val payload = row.opt("payload")?.toString() ?: "{}"
+            try {
+                when (kind) {
+                    "event" -> {
+                        _events.upsertOrRemove(id, deleted, { it.id }) { localGamesJson.decodeFromString(CoupleEventEntity.serializer(), payload) }
+                        _events.value = _events.value.sortedBy { it.date }
+                        if (!deleted) _events.value.firstOrNull { it.id == id }?.let { scheduleEventReminder(it) }
+                    }
+                    "coupon" -> _coupons.upsertOrRemove(id, deleted, { it.id }) { localGamesJson.decodeFromString(LoveCouponEntity.serializer(), payload) }
+                    "bucket" -> _bucketList.upsertOrRemove(id, deleted, { it.id }) { localGamesJson.decodeFromString(CoupleBucketItemEntity.serializer(), payload) }
+                    "quiz" -> _quizItems.upsertOrRemove(id, deleted, { it.id }) { localGamesJson.decodeFromString(QuizItemEntity.serializer(), payload) }
+                    "dilemma" -> _dilemmas.upsertOrRemove(id, deleted, { it.id }) { localGamesJson.decodeFromString(CoupleDilemmaEntity.serializer(), payload) }
+                    "truth_dare" -> _truthOrDare.upsertOrRemove(id, deleted, { it.id }) { localGamesJson.decodeFromString(TruthOrDareEntity.serializer(), payload) }
+                    "milestone" -> _milestones.upsertOrRemove(id, deleted, { it.id }) { localGamesJson.decodeFromString(LoveMilestoneEntity.serializer(), payload) }
+                    "capsule" -> _loveCapsules.upsertOrRemove(id, deleted, { it.id }) { localGamesJson.decodeFromString(LoveCapsuleEntity.serializer(), payload) }
+                    "cycle" -> if (!deleted) {
+                        val remote = localGamesJson.decodeFromString(MenstrualCycleInfo.serializer(), payload)
+                        _cycleInfo.value = remote
+                        // Phase recalculée pour aujourd'hui (le partenaire l'a enregistrée un autre jour)
+                        if (remote.isConfigured && remote.cycleLengthDays > 0) {
+                            val days = ((System.currentTimeMillis() - remote.lastPeriodStartDate) / 86400000L).toInt().coerceAtLeast(0)
+                            val cycleDay = (days % remote.cycleLengthDays) + 1
+                            val (phase, advice) = calculateCyclePhaseAndAdvice(cycleDay, remote.periodDurationDays, remote.cycleLengthDays)
+                            _cycleInfo.value = remote.copy(
+                                currentPhase = phase,
+                                partnerCareAdvice = advice,
+                                daysUntilNextPeriod = (remote.cycleLengthDays - cycleDay).coerceAtLeast(0)
+                            )
+                            scheduleCycleReminder()
+                        }
+                    }
+                    "love_time" -> if (!deleted) {
+                        val o = org.json.JSONObject(payload)
+                        _coupleSpace.value = _coupleSpace.value.copy(
+                            anniversaryDate = o.optLong("anniversaryDate", _coupleSpace.value.anniversaryDate),
+                            loveQuote = o.optString("loveQuote", _coupleSpace.value.loveQuote)
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("CoupleSync", "Élément illisible ($kind/$id): ${e.message}")
+            }
+        }
     }
 
     // --- Events & Calendar Actions ---
@@ -3749,6 +3941,7 @@ class MikayalaRepository(private val context: Context) {
         )
         _events.value = _events.value + newEvent
         scheduleEventReminder(newEvent)
+        pushCoupleItem("event", newEvent.id, localGamesJson.encodeToString(CoupleEventEntity.serializer(), newEvent))
         if (isFirebaseMode() && _coupleSpace.value.id.isNotBlank()) {
             val couple = _coupleSpace.value
             val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
@@ -3762,7 +3955,10 @@ class MikayalaRepository(private val context: Context) {
         _events.value = _events.value.map {
             if (it.id == id) it.copy(title = title, date = date, category = category, note = note) else it
         }
-        _events.value.firstOrNull { it.id == id }?.let { scheduleEventReminder(it) }
+        _events.value.firstOrNull { it.id == id }?.let {
+            scheduleEventReminder(it)
+            pushCoupleItem("event", it.id, localGamesJson.encodeToString(CoupleEventEntity.serializer(), it))
+        }
         if (isFirebaseMode() && _coupleSpace.value.id.isNotBlank()) {
             val couple = _coupleSpace.value
             val memberUids = listOf(couple.partner1Id, couple.partner2Id).filter { it.isNotBlank() }.distinct()
@@ -3774,6 +3970,7 @@ class MikayalaRepository(private val context: Context) {
 
     fun deleteEvent(id: String) {
         _events.value = _events.value.filterNot { it.id == id }
+        pushCoupleItem("event", id, "{}", deleted = true)
         if (isFirebaseMode() && _coupleSpace.value.id.isNotBlank()) {
             val cid = _coupleSpace.value.id
             repositoryScope.launch { firebaseRepository.deleteEvent(cid, id) }
@@ -3803,7 +4000,7 @@ class MikayalaRepository(private val context: Context) {
 
     fun deleteQuizItem(id: String) {
         _quizItems.value = _quizItems.value.filterNot { it.id == id }
-        deleteGameFromFirebase(id)
+        deleteGameFromFirebase(id, "quiz")
     }
 
     // --- Coupons Actions ---
@@ -3831,7 +4028,7 @@ class MikayalaRepository(private val context: Context) {
 
     fun deleteCoupon(id: String) {
         _coupons.value = _coupons.value.filterNot { it.id == id }
-        deleteGameFromFirebase(id)
+        deleteGameFromFirebase(id, "coupon")
     }
 
     // --- Bucket List Actions ---
@@ -3857,7 +4054,7 @@ class MikayalaRepository(private val context: Context) {
 
     fun deleteBucketItem(id: String) {
         _bucketList.value = _bucketList.value.filterNot { it.id == id }
-        deleteGameFromFirebase(id)
+        deleteGameFromFirebase(id, "bucket")
     }
 
     // --- Truth or Dare Actions ---
@@ -3874,7 +4071,7 @@ class MikayalaRepository(private val context: Context) {
 
     fun deleteTruthOrDare(id: String) {
         _truthOrDare.value = _truthOrDare.value.filterNot { it.id == id }
-        deleteGameFromFirebase(id)
+        deleteGameFromFirebase(id, "truth_dare")
     }
 
     // --- Dilemmas Actions ---
@@ -3916,12 +4113,14 @@ class MikayalaRepository(private val context: Context) {
             isConfigured = true
         )
         scheduleCycleReminder()
+        pushCycle()
     }
 
     fun saveCycleDailyLog(log: CycleDailyLogEntity) {
         val currentLogs = _cycleInfo.value.dailyLogs.toMutableMap()
         currentLogs[log.dateKey] = log
         _cycleInfo.value = _cycleInfo.value.copy(dailyLogs = currentLogs)
+        pushCycle()
     }
 
     fun updateCycleInfo(phase: String, advice: String) {
@@ -3929,6 +4128,7 @@ class MikayalaRepository(private val context: Context) {
             currentPhase = phase,
             partnerCareAdvice = advice
         )
+        pushCycle()
     }
 
     private fun calculateCyclePhaseAndAdvice(cycleDay: Int, periodDuration: Int, cycleLength: Int): Pair<String, String> {
@@ -4015,7 +4215,7 @@ class MikayalaRepository(private val context: Context) {
 
     fun deleteLoveCapsule(id: String) {
         _loveCapsules.value = _loveCapsules.value.filterNot { it.id == id }
-        deleteGameFromFirebase(id)
+        deleteGameFromFirebase(id, "capsule")
     }
 
     // --- Supabase Realtime & API Integrations ---
@@ -4692,6 +4892,12 @@ class MikayalaRepository(private val context: Context) {
         if (now - lastProfilesSyncAt > PROFILES_SYNC_EVERY_MS) {
             lastProfilesSyncAt = now
             try { syncProfiles() } catch (e: Exception) { Log.w("MikayalaRepository", "syncProfiles: ${e.message}") }
+        }
+
+        // 0 bis. Espace couple partagé (agenda, cycle, temps ensemble, jeux)
+        if (now - lastCoupleItemsSyncAt > COUPLE_ITEMS_SYNC_EVERY_MS) {
+            lastCoupleItemsSyncAt = now
+            try { syncCoupleItems(coupleId) } catch (e: Exception) { Log.w("CoupleSync", "syncCoupleItems: ${e.message}") }
         }
 
         // 1. Renvoi des messages en attente (hors ligne, P2P, échec d'envoi)

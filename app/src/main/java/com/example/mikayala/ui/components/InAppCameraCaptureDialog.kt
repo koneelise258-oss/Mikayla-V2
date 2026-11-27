@@ -184,49 +184,54 @@ fun InAppCameraCaptureDialog(
                 }
 
                 // Camera Preview Viewfinder
+                // La caméra est (re)liée à chaque changement d'objectif : avant, elle n'était liée
+                // qu'une fois à la création, et le bouton « Changer de caméra » ne faisait rien.
+                var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
+                LaunchedEffect(previewViewRef, lensFacing) {
+                    val previewView = previewViewRef ?: return@LaunchedEffect
+                    val ctx = previewView.context
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                    cameraProviderFuture.addListener({
+                        val cameraProvider = cameraProviderFuture.get()
+                        // Téléphone sans caméra avant (ou arrière) : on garde celle qui existe
+                        val wanted = CameraSelector.Builder().requireLensFacing(lensFacing).build()
+                        val selector = when {
+                            try { cameraProvider.hasCamera(wanted) } catch (_: Exception) { false } -> wanted
+                            lensFacing == CameraSelector.LENS_FACING_FRONT -> CameraSelector.DEFAULT_BACK_CAMERA
+                            else -> CameraSelector.DEFAULT_FRONT_CAMERA
+                        }
+                        val preview = Preview.Builder().build().also {
+                            it.surfaceProvider = previewView.surfaceProvider
+                        }
+                        val imgCapture = ImageCapture.Builder()
+                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                            .setFlashMode(
+                                when (flashMode) {
+                                    CameraFlashMode.ON -> ImageCapture.FLASH_MODE_ON
+                                    CameraFlashMode.AUTO -> ImageCapture.FLASH_MODE_AUTO
+                                    CameraFlashMode.OFF -> ImageCapture.FLASH_MODE_OFF
+                                }
+                            )
+                            .build()
+                        imageCaptureUseCase = imgCapture
+                        try {
+                            cameraProvider.unbindAll()
+                            val cam = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, imgCapture)
+                            cameraControl = cam.cameraControl
+                            if (cam.cameraInfo.hasFlashUnit()) cam.cameraControl.enableTorch(flashMode == CameraFlashMode.ON)
+                        } catch (e: Exception) {
+                            Log.e("InAppCamera", "Use case binding failed", e)
+                            Toast.makeText(ctx, "Cette caméra n'est pas disponible", Toast.LENGTH_SHORT).show()
+                        }
+                    }, ContextCompat.getMainExecutor(ctx))
+                }
                 AndroidView(
                     factory = { ctx ->
-                        val previewView = PreviewView(ctx).apply {
+                        PreviewView(ctx).apply {
                             scaleType = PreviewView.ScaleType.FILL_CENTER
-                        }
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.surfaceProvider = previewView.surfaceProvider
-                            }
-
-                            val imgCapture = ImageCapture.Builder()
-                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                                .setFlashMode(
-                                    when (flashMode) {
-                                        CameraFlashMode.ON -> ImageCapture.FLASH_MODE_ON
-                                        CameraFlashMode.AUTO -> ImageCapture.FLASH_MODE_AUTO
-                                        CameraFlashMode.OFF -> ImageCapture.FLASH_MODE_OFF
-                                    }
-                                )
-                                .build()
-                            imageCaptureUseCase = imgCapture
-
-                            val cameraSelector = CameraSelector.Builder()
-                                .requireLensFacing(lensFacing)
-                                .build()
-
-                            try {
-                                cameraProvider.unbindAll()
-                                val cam = cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    cameraSelector,
-                                    preview,
-                                    imgCapture
-                                )
-                                cameraControl = cam.cameraControl
-                                cam.cameraControl.enableTorch(flashMode == CameraFlashMode.ON)
-                            } catch (e: Exception) {
-                                Log.e("InAppCamera", "Use case binding failed", e)
-                            }
-                        }, ContextCompat.getMainExecutor(ctx))
-                        previewView
+                            // Compatibilité : certains petits téléphones affichent un écran noir en mode performance
+                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                        }.also { previewViewRef = it }
                     },
                     update = {
                         val imgCap = imageCaptureUseCase
