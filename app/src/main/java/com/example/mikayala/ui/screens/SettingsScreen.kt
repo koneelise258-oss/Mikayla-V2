@@ -119,11 +119,9 @@ fun SettingsScreen(
         uri?.let {
             // Copie dans l'application : l'autorisation de lecture de la galerie est temporaire,
             // la photo resterait sinon illisible après un redémarrage.
-            val saved = try {
-                val dest = java.io.File(context.filesDir, "chat_wallpaper.jpg")
-                context.contentResolver.openInputStream(it)?.use { input -> dest.outputStream().use { out -> input.copyTo(out) } }
-                android.net.Uri.fromFile(dest).toString() + "?v=" + System.currentTimeMillis()
-            } catch (e: Exception) { null }
+            // La photo est redimensionnée et convertie en JPEG : une photo trop lourde ou dans un
+            // format non lisible par Android (ex. HEIC sur Android 8) donnait un fond vide.
+            val saved = saveChatWallpaper(context, it)
             if (saved != null) {
                 repository.updateWallpaper("custom_image", saved)
                 Toast.makeText(context, "Fond de conversation appliqué", Toast.LENGTH_SHORT).show()
@@ -787,6 +785,7 @@ fun SettingsScreen(
                     }
                 }
             }
+            item { BackgroundDeliveryCard(context) }
             item { SettingsGroupTitle("Affichage") }
             item {
                 Column {
@@ -1877,6 +1876,132 @@ private fun NotificationCategorySwitch(
             onChanged(category, it)
         }
     )
+}
+
+/**
+ * Notifications appli fermée : Android (et surtout Infinix, Tecno, Itel, Xiaomi, Samsung) ferme les
+ * applications en arrière-plan pour économiser la batterie, ce qui bloque notifications et 2e coche.
+ * Cette carte affiche l'état et ouvre directement le bon réglage.
+ */
+@Composable
+private fun BackgroundDeliveryCard(context: Context) {
+    var unrestricted by remember { mutableStateOf(isBatteryUnrestricted(context)) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        unrestricted = isBatteryUnrestricted(context)
+        onPauseOrDispose { }
+    }
+    val brand = android.os.Build.MANUFACTURER.lowercase()
+    val brandTip = when {
+        brand.contains("infinix") || brand.contains("tecno") || brand.contains("itel") ->
+            "Sur ce téléphone, ouvrez aussi l'appli « Phone Master » (ou Gestionnaire) → Démarrage auto → activez Mikayala, et retirez Mikayala du nettoyage automatique."
+        brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") ->
+            "Sur ce téléphone, activez aussi « Démarrage automatique » pour Mikayala dans Paramètres → Applis."
+        brand.contains("samsung") ->
+            "Sur ce téléphone, vérifiez aussi que Mikayala n'est pas dans « Applis en veille » (Paramètres → Batterie)."
+        brand.contains("huawei") || brand.contains("honor") ->
+            "Sur ce téléphone, passez Mikayala en « Gestion manuelle » dans Paramètres → Batterie → Lancement d'applis, et activez tout."
+        brand.contains("oppo") || brand.contains("realme") || brand.contains("vivo") || brand.contains("oneplus") ->
+            "Sur ce téléphone, autorisez aussi « Démarrage automatique » et « Activité en arrière-plan » pour Mikayala."
+        else -> "Si un nettoyeur ou un économiseur est installé, excluez-en Mikayala."
+    }
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = if (unrestricted) Color(0x2257A773) else Color(0x33C4A35C),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                if (unrestricted) "Notifications appli fermée : autorisées ✅" else "Notifications appli fermée : limitées ⚠️",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp
+            )
+            Text(
+                if (unrestricted) "Android laisse Mikayala recevoir les messages en arrière-plan. $brandTip"
+                else "L'économiseur de batterie peut bloquer les notifications et les doubles coches quand l'appli est fermée. Touchez ci-dessous puis choisissez « Autoriser ». $brandTip",
+                color = TextSecondary,
+                fontSize = 12.sp
+            )
+            Row(modifier = Modifier.padding(top = 8.dp)) {
+                if (!unrestricted) {
+                    Text(
+                        "Autoriser en arrière-plan",
+                        fontWeight = FontWeight.SemiBold,
+                        color = AccentGold,
+                        fontSize = 13.sp,
+                        modifier = Modifier.clickable { requestBatteryUnrestricted(context) }.padding(end = 18.dp, top = 4.dp, bottom = 4.dp)
+                    )
+                }
+                Text(
+                    "Réglages de l'appli",
+                    fontWeight = FontWeight.SemiBold,
+                    color = AccentGold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable { openAppDetailsSettings(context) }.padding(vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+/** Enregistre le fond de conversation (max 1600 px, JPEG) et renvoie son adresse, ou null si illisible. */
+private fun saveChatWallpaper(context: Context, uri: Uri): String? = try {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+    val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
+    if (maxSide <= 0) null else {
+        var sample = 1
+        while (maxSide / (sample * 2) >= 1600) sample *= 2
+        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        val decoded = context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
+        // Respecter l'orientation de la photo (sinon elle peut apparaître couchée)
+        val degrees = if (android.os.Build.VERSION.SDK_INT >= 24) try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                when (android.media.ExifInterface(input).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)) {
+                    android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                    android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                    android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                    else -> 0f
+                }
+            } ?: 0f
+        } catch (_: Exception) { 0f } else 0f
+        val bitmap = if (decoded != null && degrees != 0f) {
+            val m = android.graphics.Matrix().apply { postRotate(degrees) }
+            android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, m, true)
+                .also { if (it !== decoded) decoded.recycle() }
+        } else decoded
+        if (bitmap == null) null else {
+            // Nom unique à chaque changement : l'image affichée est toujours la nouvelle
+            context.filesDir.listFiles { f -> f.name.startsWith("chat_wallpaper") }?.forEach { it.delete() }
+            val dest = java.io.File(context.filesDir, "chat_wallpaper_${System.currentTimeMillis()}.jpg")
+            dest.outputStream().use { out -> bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out) }
+            bitmap.recycle()
+            Uri.fromFile(dest).toString()
+        }
+    }
+} catch (e: Exception) {
+    android.util.Log.w("Wallpaper", "Fond de conversation illisible: ${e.message}")
+    null
+}
+
+private fun isBatteryUnrestricted(context: Context): Boolean {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return true
+    val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager ?: return true
+    return pm.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+@android.annotation.SuppressLint("BatteryLife")
+private fun requestBatteryUnrestricted(context: Context) {
+    val direct = android.content.Intent(
+        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+        Uri.parse("package:" + context.packageName)
+    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        context.startActivity(direct)
+    } catch (_: Exception) {
+        val list = android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { context.startActivity(list) } catch (_: Exception) { openAppDetailsSettings(context) }
+    }
 }
 
 private fun openAppNotificationSettings(context: Context) {

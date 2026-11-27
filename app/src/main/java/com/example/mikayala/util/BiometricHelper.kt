@@ -1,121 +1,108 @@
 package com.example.mikayala.util
 
 import android.content.Context
-import android.content.DialogInterface
-import android.content.pm.PackageManager
-import android.hardware.biometrics.BiometricPrompt
-import android.os.Build
-import android.os.CancellationSignal
 import android.util.Log
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 
+/**
+ * Biométrie via la bibliothèque officielle AndroidX : fonctionne dès Android 6 (empreinte),
+ * y compris sur les téléphones Android 8 / Go (ex. Infinix Hot 8 Lite). L'ancienne version
+ * utilisait l'API système réservée à Android 9+ et désactivait la biométrie en dessous.
+ */
 object BiometricHelper {
 
-    /**
-     * Vérifie si la biométrie (empreinte digitale ou reconnaissance faciale) est disponible.
-     */
+    // BIOMETRIC_WEAK inclut aussi les capteurs « forts » (empreinte) : le plus large possible
+    private const val AUTHENTICATORS = BIOMETRIC_WEAK
+
+    /** Vrai si le téléphone a un capteur utilisable (même si aucune empreinte n'est encore enregistrée). */
     fun isBiometricAvailable(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
-        val pm = context.packageManager
-        val hasFingerprint = pm.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)
-        val hasFace = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            pm.hasSystemFeature(PackageManager.FEATURE_FACE) || pm.hasSystemFeature("android.hardware.biometrics.face")
-        } else false
-
-        if (hasFingerprint || hasFace) return true
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val bm = context.getSystemService(android.hardware.biometrics.BiometricManager::class.java)
-            if (bm != null) {
-                // canAuthenticate(int) n'existe qu'à partir d'Android 11 : sur Android 10, version sans argument
-                val canAuth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    bm.canAuthenticate(
-                        android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                        android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
-                    )
-                } else {
-                    @Suppress("DEPRECATION")
-                    bm.canAuthenticate()
-                }
-                return canAuth == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS ||
-                        canAuth == android.hardware.biometrics.BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED
-            }
+        return when (BiometricManager.from(context).canAuthenticate(AUTHENTICATORS)) {
+            BiometricManager.BIOMETRIC_SUCCESS,
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> true
+            else -> false
         }
-        return true // Fallback sur appareils Android compatibles
     }
 
-    private fun findActivity(context: Context): android.app.Activity? {
+    private fun findActivity(context: Context): FragmentActivity? {
         var c = context
         while (c is android.content.ContextWrapper) {
-            if (c is android.app.Activity) return c
+            if (c is FragmentActivity) return c
             c = c.baseContext
         }
         return null
     }
 
     /**
-     * Déclenche l'invite d'authentification biométrique (Empreinte & Reconnaissance Faciale).
+     * Déclenche l'invite d'authentification biométrique (empreinte, ou visage si le téléphone
+     * le propose aux applications).
      */
     fun authenticate(
         context: Context,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            try {
-                val activityContext = findActivity(context) ?: context
-                val executor = ContextCompat.getMainExecutor(activityContext)
-                val cancellationSignal = CancellationSignal()
+        val activity = findActivity(context)
+        if (activity == null) {
+            onError("Impossible de lancer la biométrie")
+            return
+        }
 
-                val builder = BiometricPrompt.Builder(activityContext)
-                    .setTitle("Espace Sécurisé Mikayala 🔒")
-                    .setSubtitle("Déverrouillage Biométrique")
-                    .setDescription("Scannez votre empreinte digitale ou utilisez la reconnaissance faciale pour accéder à votre espace de couple.")
-                    .setNegativeButton("Utiliser le code PIN 🔢", executor, DialogInterface.OnClickListener { _, _ ->
-                        onError("Utilisation du code PIN")
-                    })
+        when (BiometricManager.from(activity).canAuthenticate(AUTHENTICATORS)) {
+            BiometricManager.BIOMETRIC_SUCCESS -> Unit
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
+                onError("Aucune empreinte enregistrée : ajoutez-en une dans les paramètres du téléphone")
+                return
+            }
+            BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE,
+            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
+                onError("Biométrie non disponible sur ce téléphone")
+                return
+            }
+            else -> {
+                onError("Biométrie non disponible pour le moment")
+                return
+            }
+        }
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    builder.setAllowedAuthenticators(
-                        android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                        android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
-                    )
+        try {
+            val executor = ContextCompat.getMainExecutor(activity)
+            val prompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    Log.d("BiometricHelper", "Authentification biométrique réussie !")
+                    onSuccess()
                 }
 
-                val prompt = builder.build()
-
-                prompt.authenticate(
-                    cancellationSignal,
-                    executor,
-                    object : BiometricPrompt.AuthenticationCallback() {
-                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult?) {
-                            super.onAuthenticationSucceeded(result)
-                            Log.d("BiometricHelper", "Authentification biométrique réussie !")
-                            onSuccess()
-                        }
-
-                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
-                            super.onAuthenticationError(errorCode, errString)
-                            Log.d("BiometricHelper", "Code erreur biométrique: $errorCode ($errString)")
-                            if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED &&
-                                errorCode != BiometricPrompt.BIOMETRIC_ERROR_CANCELED &&
-                                errorCode != 13) {
-                                onError(errString?.toString() ?: "Erreur d'authentification")
-                            }
-                        }
-
-                        override fun onAuthenticationFailed() {
-                            super.onAuthenticationFailed()
-                            onError("Biométrie non reconnue (empreinte / visage)")
-                        }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    Log.d("BiometricHelper", "Code erreur biométrique: $errorCode ($errString)")
+                    when (errorCode) {
+                        BiometricPrompt.ERROR_NEGATIVE_BUTTON -> onError("Utilisation du code PIN")
+                        BiometricPrompt.ERROR_USER_CANCELED,
+                        BiometricPrompt.ERROR_CANCELED -> Unit
+                        else -> onError(errString.toString().ifBlank { "Erreur d'authentification" })
                     }
-                )
-            } catch (e: Exception) {
-                Log.e("BiometricHelper", "Erreur lors du lancement de la biométrie: ${e.message}", e)
-                onError("Impossible de lancer la biométrie")
-            }
-        } else {
-            onError("Biométrie non supportée sur cette version d'Android")
+                }
+
+                override fun onAuthenticationFailed() {
+                    onError("Biométrie non reconnue (empreinte / visage)")
+                }
+            })
+
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Espace Sécurisé Mikayala 🔒")
+                .setSubtitle("Déverrouillage Biométrique")
+                .setDescription("Scannez votre empreinte digitale pour accéder à votre espace de couple.")
+                .setNegativeButtonText("Utiliser le code PIN 🔢")
+                .setAllowedAuthenticators(AUTHENTICATORS)
+                .build()
+
+            prompt.authenticate(info)
+        } catch (e: Exception) {
+            Log.e("BiometricHelper", "Erreur lors du lancement de la biométrie: ${e.message}", e)
+            onError("Impossible de lancer la biométrie")
         }
     }
 }

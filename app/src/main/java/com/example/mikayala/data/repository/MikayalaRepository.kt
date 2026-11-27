@@ -4215,9 +4215,8 @@ class MikayalaRepository(private val context: Context) {
             var finalAvatarUrl = ""
             if (avatarPath.isNotEmpty()) {
                 val signedUrl = supabaseService.getSignedAvatarUrl(avatarPath)
-                if (signedUrl != null) {
-                    finalAvatarUrl = signedUrl
-                }
+                // Échec ponctuel (réseau) : garder la photo déjà affichée plutôt que l'effacer
+                finalAvatarUrl = signedUrl ?: _userSettings.value.avatarUrl
             }
 
             _userSettings.value = _userSettings.value.copy(
@@ -4252,9 +4251,7 @@ class MikayalaRepository(private val context: Context) {
                         var partnerFinalAvatarUrl = ""
                         if (partnerAvatarPath.isNotEmpty()) {
                             val signedUrl = supabaseService.getSignedAvatarUrl(partnerAvatarPath)
-                            if (signedUrl != null) {
-                                partnerFinalAvatarUrl = signedUrl
-                            }
+                            partnerFinalAvatarUrl = signedUrl ?: _userSettings.value.partnerAvatarUrl
                         }
 
                         // Load private nickname if any
@@ -5051,6 +5048,8 @@ class MikayalaRepository(private val context: Context) {
                 }
                 stopFirebaseListeners()
                 FirebaseAuthManager.signOut(context)
+                // Le compte mémorisé sert de repli aux notifications appli fermée : l'effacer
+                prefs.edit().remove("user_id").apply()
                 try {
                     (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).cancelAll()
                 } catch (_: Exception) {}
